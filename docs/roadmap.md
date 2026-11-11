@@ -116,6 +116,7 @@ The current native window is an unaccepted engineering shell. Art explicitly
 rejected its visual quality. This design pass comes immediately after the session
 restoration feedback checkpoint, before the next editing/AI features.
 
+- [x] Compare three visual studies; Art selects Pocket and the `V_` brand mark.
 - [ ] Follow the [interface roadmap](interface-roadmap.md): visual studies, selected
   direction, compact chrome, custom tabs, typography, light/dark, and interaction.
 - [ ] Implement one coherent Mac interface increment and stop for hands-on feedback.

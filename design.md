@@ -5,6 +5,11 @@ Opening a blank scratch buffer must land on a focused cursor immediately.
 
 ## Immediate design priority
 
+Art selected **Pocket** as the Mac visual direction on 2026-11-11 and approved
+**`V_`** as the brand mark. Pocket is the internal name of the design direction;
+the product remains vibechar. See [Mac interface studies](docs/design-studies.md)
+for the original comparison and tradeoffs.
+
 The current window and segmented-control tab row are engineering placeholders,
 not an accepted product design. Art's first feedback explicitly rejected the visual
 quality. The Mac design pass now comes directly after recovery feedback, before
@@ -12,13 +17,28 @@ more editing/AI features. Follow [Interface roadmap](docs/interface-roadmap.md).
 
 ## Mac
 
+- Follow Pocket: a small, precise pocket instrument for text, with restrained
+  character in its proportions, typography, tabs, and interaction feedback.
 - Use AppKit text input, native menus/dialogs, system focus and accessibility behavior.
-- A compact title area, generous text canvas, and quiet status at the bottom.
+- Traffic lights and compact document tabs share the top row, with explicit close
+  and new-tab controls. Keep a generous text canvas and quiet status at the bottom.
 - Monospaced system font, 15 pt default; comfortable padding; system light/dark colors.
-- One warm orange accent for actions, source/result distinctions, and active details.
+- Warm light neutrals and graphite dark neutrals, with one restrained warm orange
+  accent for actions, active details, and the brand mark. Maintain readable contrast.
 - Keep large reading/editing surfaces opaque; translucent system chrome is optional.
 - Avoid onboarding walls, permanent AI chat panels, decorative cards, and dashboards.
 - Scratch buffers get useful generated labels, not mandatory naming dialogs.
+
+## Identity
+
+- Use the exact uppercase mark **`V_`**: a simple monospaced V with a cursor-like
+  underscore. Keep it small in the Mac chrome, with the underscore carrying the
+  warm orange accent. Do not animate it continuously.
+- The wordmark is **vibechar**. The mark is a compact signature, leaving the text
+  canvas dominant. Refine its optical spacing and app-icon treatment within this
+  identity rather than reopening the choice of direction.
+- The approved study establishes the visual direction. Exact metrics, native
+  materials, contrast, and overflow behavior still need qualification in the app.
 
 ## Terminal
 

@@ -9,13 +9,16 @@ native text input does not require keeping this window composition.
 
 ## Visual direction
 
-See [Mac interface studies](design-studies.md) for the Pocket, Paper, and Signal
-proposals and their tradeoffs. They are awaiting Art's feedback; none is accepted.
+Art selected **Pocket** and the **`V_`** mark on 2026-11-11. Follow the accepted
+[design direction](../design.md); [Mac interface studies](design-studies.md)
+preserves the comparison. The working Mac interface still awaits implementation
+and hands-on acceptance.
 
-- [ ] Produce two or three Mac window studies with the same realistic content.
-- [ ] Show an empty scratch, three tabs, and populated JSON/log/prose examples.
+- [x] Produce two or three Mac window studies with the same realistic content.
+- [x] Show an empty scratch, three tabs, and populated JSON/log/prose examples.
+- [x] Art selects Pocket and the uppercase `V_` mark.
 - [ ] Establish a distinctive vibechar identity: typography, palette, spacing, icon idea.
-- [ ] Art picks the direction; implement the selected direction in the next increment.
+- [ ] Implement Pocket in the next increment and stop for hands-on feedback.
 
 Studies must show a lightweight text editor. The editing canvas dominates the
 window; no dashboard, card grid, or permanent AI chat panel is required.
@@ -41,9 +44,9 @@ window; no dashboard, card grid, or permanent AI chat panel is required.
 ## Color and identity
 
 - [ ] Design light and dark appearances together with consistent contrast/hierarchy.
-- [ ] Choose one confident accent and an intentional neutral palette.
+- [x] Choose warm orange with warm light / graphite dark neutrals for Pocket.
 - [ ] Avoid generic all-grey controls, excessive borders, and decorative gradients.
-- [ ] Develop the app icon and wordmark after selecting the window direction.
+- [ ] Refine the approved `V_` mark, vibechar wordmark, and app icon.
 
 ## Interaction and states
 

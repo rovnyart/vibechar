@@ -1,8 +1,11 @@
 # Mac interface studies
 
-Status: proposals for Art to compare. No visual direction has been accepted yet.
-The existing Mac interface remains an engineering placeholder. This document does
-not change the implementation or lock in a palette, layout, or font.
+Decision, 2026-11-11: Art selected **Pocket** and approved **`V_`** as the brand mark.
+[Design direction](../design.md) records the accepted baseline. Paper and Signal
+remain archived alternatives, not active implementation directions.
+
+The existing Mac interface remains an engineering placeholder. Acceptance of the
+direction is separate from hands-on acceptance of its implementation.
 
 ## Product feeling
 
@@ -23,17 +26,18 @@ preview. These illustrate interactions; they are not running editor/AI features.
 ### Pocket
 
 Compact traffic lights and document tabs share one top row. A warm neutral canvas,
-restrained orange accent, monospaced text, and small `v_` signature give it the feel
+restrained orange accent, monospaced text, and small `V_` signature give it the feel
 of a pocket instrument. Status stays quiet at the bottom. A content-specific
 operation opens a change preview in the editing surface.
 
-Recommended starting direction: it best fits the mixed daily use of structured
-text, logs, and short drafts while keeping familiar Mac navigation.
+Selected by Art: it best fits the mixed daily use of structured text, logs, and
+short drafts while keeping familiar Mac navigation. The comparison sketch used
+a lowercase signature; the approved mark is the uppercase **`V_`**.
 
 Risk: without careful proportions and interaction work it could remain a plain
 editor with a different accent. The actual application must establish the quality.
 
-### Paper
+### Paper — archived alternative
 
 A separate title line and thin underlined document tabs frame a centered reading
 measure. Blue proofing details and editorial typography make prose feel deliberate.
@@ -43,7 +47,7 @@ Risk: it may imply a writing app rather than a general text workbench. Font/layo
 changes must be explicit choices; pasting text must not unexpectedly move the
 editing target or switch its typography.
 
-### Signal
+### Signal — archived alternative
 
 A compact instrument header, green/graphite palette, monospaced chrome, and a bottom
 row of numbered buffer keys give it the strongest visual personality. Those keys
@@ -70,9 +74,9 @@ distracting during long editing sessions. Test the interaction before adopting i
 
 ## Next checkpoint
 
-Art chooses a direction or describes which parts feel right. Then implement a
-single Mac visual increment: window composition, tabs, typography, palette, and
-quiet status. Defer the study's transformations and other new features.
+Implement a single Pocket Mac visual increment: window composition, tabs,
+typography, palette, the `V_` mark, and quiet status. Then stop for Art's hands-on
+feedback. Defer the study's transformations and other new features.
 
 Judge the result in the real app with empty, JSON, log, Russian/English prose,
 many-tab, long-name, narrow-window, and light/dark states. A study or successful
