@@ -96,9 +96,22 @@ def main():
             assert use(fast, "import os; print(os.environ['TEST_TOKEN']==os.environ['EXPECTED'])").stdout == b"True\n"
             editor.send(b"\x1b[19~")
             editor.wait_for(b"Clipboard already contains instructions")
-            editor.send(b"\x11\x11"); editor.finish()
+            editor.send(b"\x13")
+            editor.wait_for(b"Save as (ends private mode):")
+            editor.send(b"\x1b")
+            editor.wait_until(lambda: "Save as" not in editor.screen_text())
+            assert use(fast, "import os; print(bool(os.environ['TEST_TOKEN']))").stdout == b"True\n"
+            editor.send(b"\x13" + str(folder / "missing" / "file.txt").encode() + b"\r")
+            editor.wait_for(b"Save failed:")
+            assert use(fast, "import os; print(bool(os.environ['TEST_TOKEN']))").stdout == b"True\n"
+            saved = folder / "saved.txt"
+            editor.send(b"\x13" + str(saved).encode() + b"\r")
+            editor.wait_until(lambda: saved.exists() and saved.read_text() == FIXTURE)
+            editor.wait_until(lambda: "saved.txt" in editor.screen_text().splitlines()[0] and "PRIVATE" not in editor.screen_text().splitlines()[-2])
+            use(fast, no_child, expected=1); assert not marker.exists()
+            editor.send(b"\x11"); editor.finish()
         use(fast, no_child, expected=1); assert not marker.exists()
         assert not list(bridge.glob("*.sock"))
-    print(json.dumps({"secret_drop_pty_and_cli": "passed", "exact_injection_reuse_masking_exit_status": "passed", "wrong_revoked_edited_quit_no_child": "passed", "clipboard_fast_path_copy_failure_and_recovery_exclusion": "passed"}))
+    print(json.dumps({"secret_drop_pty_and_cli": "passed", "exact_injection_reuse_masking_exit_status": "passed", "wrong_revoked_edited_quit_no_child": "passed", "clipboard_fast_path_copy_failure_and_recovery_exclusion": "passed", "save_conversion_revokes_only_after_success": "passed"}))
 
 if __name__ == "__main__": main()

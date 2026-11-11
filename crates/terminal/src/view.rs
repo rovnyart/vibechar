@@ -96,7 +96,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         },
         |value| {
             if editor.session.active().is_private() {
-                format!(" Save private copy as: {value}  [Enter writes to disk · Esc cancels]")
+                format!(" Save as (ends private mode): {value}  [Enter save · Esc cancel]")
             } else {
                 format!(" Save as: {value}  [Enter save · Esc cancel]")
             }

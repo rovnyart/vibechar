@@ -109,7 +109,7 @@ are measured with larger documents.
 - [x] Mac local session checkpoints and restart restoration (first recovery increment).
 - [x] Wire terminal recovery, worker saves, quit flush, restart, and process ownership.
 - [x] Private scratches in both clients: recovery exclusion, generic titles,
-  persistent mode labels, explicit file copies, and close/quit confirmation.
+  persistent mode labels, explicit saving to ordinary file tabs, and close/quit confirmation.
 - [ ] Art's hands-on acceptance of private mode.
 - [ ] Qualify remaining durability cases and retention; audit private mode again
   when actions, diagnostics, and AI are introduced.
@@ -146,6 +146,8 @@ into a child process. Implement the same operation model in Mac and terminal.
 - [x] Verify exact injection without disclosure, output masking, no recovery data,
   reference isolation, expiry, edits, close/quit and failed access.
 - [x] Build a runnable Mac/terminal increment with native and real PTY checks.
+- [x] Saving a private tab ends private mode and revokes its grant only after a
+  successful write. Cancellation/failure preserves private mode; both clients agree.
 - [ ] Art's hands-on acceptance before the next feature.
 - [ ] Qualify actual OS lock/sleep notifications, Linux runtime/clipboard support,
   and terminal lock/sleep behavior. Remote/cloud agents need a separate design.

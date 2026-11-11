@@ -404,6 +404,24 @@ pub unsafe extern "C" fn vc_session_set_path(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn vc_session_complete_save(
+    session: *mut Session,
+    path: *const u8,
+    length: usize,
+) -> bool {
+    guard(|| {
+        let (Some(session), Some(path)) = (session.as_mut(), input(path, length)) else {
+            return false;
+        };
+        if path.is_empty() || path.contains('\0') {
+            return false;
+        }
+        session.complete_save(PathBuf::from(path));
+        true
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn vc_session_set_selection(
     session: *mut Session,
     start: usize,
@@ -509,7 +527,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn private_bridge_exposes_mode_and_protects_a_saved_private_tab_from_close() {
+    fn completed_save_converts_private_tab_but_invalid_paths_do_not() {
+        unsafe {
+            let session = vc_session_new();
+            assert!(vc_session_open_private(session));
+            let text = "SAVE_BRIDGE_FIXTURE";
+            assert!(vc_document_replace(
+                vc_session_document(session),
+                0,
+                0,
+                text.as_ptr(),
+                text.len()
+            ));
+            assert!(!vc_session_complete_save(ptr::null_mut(), ptr::null(), 0));
+            assert!(!vc_session_complete_save(session, ptr::null(), 0));
+            assert!(!vc_session_complete_save(session, b"\xff".as_ptr(), 1));
+            assert!(!vc_session_complete_save(session, b"no\0nul".as_ptr(), 6));
+            assert!(vc_session_buffer_private(session, 1));
+            assert!(vc_document_dirty(vc_session_document(session)));
+            let path = "/tmp/saved-fixture.txt";
+            assert!(vc_session_complete_save(session, path.as_ptr(), path.len()));
+            assert!(!vc_session_buffer_private(session, 1));
+            assert!(!vc_document_dirty(vc_session_document(session)));
+            assert!(!vc_session_needs_close_confirmation(session));
+            assert_eq!(vc_session_path(session, ptr::null_mut(), 0), path.len());
+            assert!(vc_session_close(session, false));
+            vc_session_free(session);
+        }
+    }
+
+    #[test]
+    fn private_bridge_exposes_mode_and_protects_a_clean_private_tab_from_close() {
         unsafe {
             assert!(!vc_session_open_private(ptr::null_mut()));
             assert!(!vc_session_buffer_private(ptr::null(), 0));

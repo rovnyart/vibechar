@@ -21,11 +21,15 @@ terminal; no provider account or per-secret MCP setup is required.
 - References use independent random routing and access tokens. The holder on the
   same OS user account may reuse access for multiple commands. This is not verified
   identity of a particular chat or model. Treat the reference as an access pass.
-- A real edit, undo/redo, tab close, Stop, or editor exit revokes future requests.
+- A real edit, undo/redo, successful file save, tab close, Stop, or editor exit revokes future requests.
   Grants expire after 30 minutes without a successful use. Metadata polling does
   not extend access. The Mac GUI also listens for screen lock, sleep and session
   resignation to revoke all its grants; actual OS-event delivery needs qualification.
   The terminal has no lock/sleep hooks in this increment.
+- Saving a private tab explicitly ends private mode after the write succeeds.
+  The tab becomes a regular file tab and enters ordinary local recovery. Its grant
+  is revoked; other tabs are unaffected. Cancelled/failed saves preserve the private
+  tab and existing access. This supersedes the original Save a Copy behavior.
 - Local Unix sockets only, owner-only runtime directory/socket, checked peer UID,
   bounded requests and timeouts. No TCP listener, secret files or grant registry.
 - The editor serves values only; it cannot execute requested commands. The CLI

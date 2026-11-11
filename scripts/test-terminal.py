@@ -295,10 +295,26 @@ def main():
                 if file.is_file():
                     assert private_text not in file.read_bytes(), "private text entered recovery"
             session.send(b"\x13")
-            session.wait_for(b"Save private copy as:")
-            private_copy = directory / "explicit-private-copy.txt"
-            session.send(str(private_copy).encode() + b"\r")
-            session.wait_until(lambda: session.file_matches(private_copy, private_text))
+            session.wait_for(b"Save as (ends private mode):")
+            session.send(b"\x1b")
+            session.wait_until(lambda: "PRIVATE" in session.screen_text().splitlines()[-2] and "Save as" not in session.screen_text())
+            session.send(b"\x13" + str(directory / "missing" / "save.txt").encode() + b"\r")
+            session.wait_for(b"Save failed:")
+            assert "PRIVATE" in session.screen_text().splitlines()[-2], "failed save ended private mode"
+            assert len(session.checkpoint()["buffers"]) == 1
+            private_file = directory / "saved-private.txt"
+            session.send(b"\x13" + str(private_file).encode() + b"\r")
+            session.wait_until(lambda: session.file_matches(private_file, private_text))
+            session.wait_until(lambda: "saved-private.txt" in session.screen_text().splitlines()[0] and "PRIVATE" not in session.screen_text().splitlines()[-2])
+            # Further Ctrl+S writes the same file without another filename prompt.
+            session.send(b"!\x13")
+            saved_text = private_text + b"!"
+            session.wait_until(lambda: session.file_matches(private_file, saved_text))
+            session.wait_until(lambda: (data := session.checkpoint()) is not None and len(data["buffers"]) == 2
+                               and data["buffers"][1]["text"] == saved_text.decode())
+            # A different unsaved private tab still requires confirmation when hidden.
+            hidden_private = b"HIDDEN_PRIVATE_UNSAVED_FIXTURE"
+            session.send(b"\x10" + hidden_private)
             session.send(b"\x17")
             session.wait_for(b"Private text is not recovered")
             assert session.process.poll() is None
@@ -307,15 +323,18 @@ def main():
             assert session.process.poll() is None, "hidden private tab was silently discarded"
             session.send(b"\x11")
             session.finish()
-            assert len(session.checkpoint()["buffers"]) == 1
-            assert private_text not in (private_state / "session.json").read_bytes()
-            assert str(private_copy).encode() not in (private_state / "session.json").read_bytes()
+            assert len(session.checkpoint()["buffers"]) == 2
+            assert hidden_private not in (private_state / "session.json").read_bytes()
+            assert str(private_file).encode() in (private_state / "session.json").read_bytes()
         with Session(state=private_state) as session:
-            session.wait_for(b"1/1")
+            session.wait_for(b"1/2")
             session.wait_for(b"public survives")
+            session.send(b"\x1b[17~")
+            session.wait_for(b"saved-private.txt")
+            session.wait_for(private_text)
             session.send(b"\x11")
             session.finish()
-        assert private_copy.read_bytes() == private_text, "explicitly saved file must remain"
+        assert private_file.read_bytes() == saved_text, "saved private text must remain an ordinary file"
 
         private_only = directory / "private-only"
         with Session(state=private_only) as session:
@@ -366,7 +385,7 @@ def main():
         "utf8_crlf_bytes": "preserved",
         "terminal_restoration": "passed",
         "session_restart_and_force_stop_recovery": "passed",
-        "private_background_copy_quit_and_crash_exclusion": "passed",
+        "private_save_conversion_cancellation_failure_and_unsaved_exclusion": "passed",
         "first_frame_single_sample_ms": round(startup, 2),
         "tui_single_sample_rss_kib": rss,
     }, indent=2))

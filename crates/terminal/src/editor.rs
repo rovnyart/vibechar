@@ -325,10 +325,14 @@ impl Editor {
             self.save_prompt = Some(String::new());
             return;
         };
+        self.save_to(path);
+    }
+
+    fn save_to(&mut self, path: PathBuf) {
         match files::save(&path, self.document()) {
             Ok(()) => {
-                self.session.active_mut().document.mark_saved();
                 self.message = format!("Saved {}", path.display());
+                self.session.complete_save(path);
             }
             Err(error) => self.message = format!("Save failed: {error}"),
         }
@@ -357,17 +361,7 @@ impl Editor {
                     self.message = "Choose a new filename; replacing an existing file needs a later save-as dialog".into();
                     return;
                 }
-                if self.session.active().is_private() {
-                    self.message = match files::save(&target, self.document()) {
-                        Ok(()) => {
-                            "Saved file on disk. This private tab still won't be recovered.".into()
-                        }
-                        Err(error) => format!("Save failed: {error}"),
-                    };
-                    return;
-                }
-                self.session.active_mut().path = Some(target);
-                self.save();
+                self.save_to(target);
             }
             return;
         }
@@ -480,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn hidden_private_text_requires_fresh_quit_confirmation_even_after_saving_a_copy() {
+    fn hidden_clean_private_text_still_requires_fresh_quit_confirmation() {
         let mut editor = Editor::new("public", None);
         let control = |ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL);
         editor.handle(control('p'));

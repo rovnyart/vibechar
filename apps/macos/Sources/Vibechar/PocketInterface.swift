@@ -362,7 +362,7 @@ final class PocketFooter: NSView {
         if let operationError { status.stringValue = privateTab ? "\(mode) · \(operationError)" : operationError }
         status.textColor = failed || operationError != nil ? PocketPalette.accent : PocketPalette.secondary
         status.toolTip = privateTab
-            ? "This tab is excluded from recovery. Files you explicitly save remain on disk.\(agentUses == nil ? "" : " Agent access is open; Stop closes future requests. Edits revoke access; 30 minutes without use expires it.")\(failed ? " Other tabs: " + recoveryMessage : "")"
+            ? "This tab is excluded from recovery. Saving a file ends private mode and closes its agent access.\(agentUses == nil ? "" : " Agent access is open; Stop closes future requests. Edits revoke access; 30 minutes without use expires it.")\(failed ? " Other tabs: " + recoveryMessage : "")"
             : failed ? recoveryMessage : "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
         if let operationError { status.toolTip = "\(status.toolTip ?? "") \(operationError)" }
     }

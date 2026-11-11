@@ -82,6 +82,11 @@ final class RustSession {
         precondition(bytes.withUnsafeBufferPointer { vc_session_set_path(handle, $0.baseAddress, $0.count) })
     }
 
+    func completeSave(to url: URL) {
+        let bytes = Array(url.path.utf8)
+        precondition(bytes.withUnsafeBufferPointer { vc_session_complete_save(handle, $0.baseAddress, $0.count) })
+    }
+
     func checkpoint() -> RustCheckpoint {
         guard let snapshot = vc_session_checkpoint(handle) else { preconditionFailure("Unable to snapshot the editing session") }
         return RustCheckpoint(handle: snapshot)

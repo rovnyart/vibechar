@@ -63,7 +63,7 @@ cleans up its processes and temporary files and uses no desktop terminal app.
 
 Mac controls: native text editing/selection and clipboard; Cmd+N new scratch,
 Shift+Cmd+N new private scratch, Cmd+O open UTF-8 file in a new buffer,
-Cmd+S save (Save a Copy for private text), Cmd+Z undo, Shift+Cmd+Z redo,
+Cmd+S save (ends private mode after success), Cmd+Z undo, Shift+Cmd+Z redo,
 Cmd+W close buffer, Cmd+Q quit. Click a tab or use Option+Cmd+Left/Right to switch.
 Each buffer remembers its selection and has independent undo history. Closing the
 last buffer starts a fresh empty scratch. Quitting preserves ordinary Mac tabs locally
@@ -108,9 +108,13 @@ They do not return after normal quit or forced termination. Ordinary tabs keep
 their own state; a private-only session restarts as one empty ordinary scratch.
 
 Nonempty private tabs require confirmation on close and on quit, even when hidden.
-Cmd+S / Ctrl+S explicitly saves a copy to a chosen file. The save UI states that
-this writes to disk; the copy remains after quitting. The tab stays private and
-does not retain that file destination. A later copy asks for a destination again.
+Cmd+S / Ctrl+S saves to a chosen file and turns that tab into an ordinary file tab.
+The save UI states that this ends private mode and enables local recovery. On
+success the tab shows its filename, loses its private label/lock/actions, remembers
+the destination for subsequent saves, and revokes its Secret Drop reference.
+Text, selection, and undo history are preserved. Cancellation or a failed write
+keeps it private and leaves any existing grant usable. Other private tabs and
+their grants are unaffected. Ordinary recovery can now include the saved text.
 
 Existing ordinary tabs cannot be converted to private: their earlier snapshots
 may already exist. This is recovery exclusion, not encrypted or securely wiped
@@ -128,7 +132,7 @@ Mac app includes the helper and uses its absolute path; no global install is nee
 Existing private tab: **Give to Agent** / Shift+Cmd+C on Mac, **Ctrl+G / F7** in
 the terminal. The footer reports open access and successful request count. **Stop**
 closes this tab on Mac; the Agent menu also closes all grants. **F9** closes all
-in the terminal. Actual edits/undo/redo, tab close, and quitting revoke access.
+in the terminal. Actual edits/undo/redo, successful file save, tab close, and quitting revoke access.
 After 30 minutes without a successful use the reference expires. The Mac GUI also
 listens for lock/sleep/session switching; the TUI does not yet have OS-event hooks.
 

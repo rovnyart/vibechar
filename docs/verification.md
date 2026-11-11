@@ -11,9 +11,9 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 39 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
-  Unicode scratch-label test, 7 core recovery, 3 Secret Drop transport/revocation,
-  4 C bridge, and 14 terminal model/layout/recovery/output-masking tests.
+- 41 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
+  Unicode scratch-label test, 7 core recovery, 4 Secret Drop transport/revocation/save,
+  5 C bridge, and 14 terminal model/layout/recovery/output-masking tests.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
@@ -25,10 +25,12 @@ This records local prototype evidence, not MVP release acceptance.
   termination; closed tabs staying closed; corrupt recovery; concurrent writer
   rejection; and failed quit flush with manual text rescue before explicit quit.
 - Private PTY cases verify mixed/private-only recovery, background exclusion,
-  explicit file copies, hidden-private quit confirmation, and forced termination.
+  conversion after successful file save, cancelled/failed saves, subsequent saves,
+  hidden-private quit confirmation, and forced termination.
 - An additional real PTY + helper scenario verifies Secret Drop clipboard actions,
   exact injection, reuse, literal stdout/stderr masking, exit status, failed-copy
-  revocation, edited/revoked/wrong references, quit, and recovery exclusion.
+  revocation, edited/revoked/wrong references, quit, recovery exclusion, and grant
+  preservation on cancelled/failed saves versus revocation on successful save.
 - PTY checks verify terminal attributes, alternate screen, and bracketed paste
   restoration on exit. All temporary processes/files are cleaned up by the harness.
 
@@ -147,6 +149,9 @@ not part of this increment. Art accepted the first working Pocket interface on
 
 ### Feedback increment: private scratches (2026-11-12)
 
+Historical behavior below used Save a Copy and kept the tab private. Art's later
+save feedback supersedes that behavior; see the private-save increment below.
+
 The shared session owns private flags. Checkpoint capture filters those buffers
 before cloning any text/path/selection; active indices are remapped and a
 private-only session saves an empty ordinary fallback. Existing version-1
@@ -237,6 +242,36 @@ lock/sleep behavior remain unqualified. No remote/cloud-agent transport exists.
 Output masking covers literal occurrences; arbitrary child code can transform or
 transmit a secret and already delivered values cannot be revoked. Art's hands-on
 Secret Drop feedback is the next gate.
+
+### Feedback increment: saving ends private mode (2026-11-12)
+
+Art reported that Cmd+S wrote a file but left the tab private. Successful Save now
+turns the same tab into an ordinary file tab in both clients. The shared completion
+operation attaches its path, marks the document saved, ends private mode and
+revokes only that tab's Secret Drop grant. Text, selection, tab identity and undo
+history survive. Other private tabs remain private. Future recovery includes the
+saved tab; subsequent Save writes the attached file without a filename prompt.
+Save UI and current product docs explain this behavior. Failed/cancelled saves
+preserve the original private mode, path, dirty state, and agent grant.
+
+Core/bridge regressions cover conversion, invalid inputs, unchanged revision and
+selection, other-tab isolation, grant revocation, recovery and undo after conversion.
+Native AppKit smoke exercises the same file-write path as Cmd+S with disposable
+UTF-8 fixtures: failed writes and rejected symlinks remain private with live access,
+successful saves show filename/ordinary footer and hide private controls, the old
+reference fails before child execution, checkpoint restart restores an ordinary
+file, and the next actual Save action writes the same file without opening a panel.
+
+Real PTY checks exercise cancellation, failure, successful conversion, repeated
+saving, restart, and hidden unsaved-private exclusion/confirmation. The separate
+Secret Drop PTY check proves access still works after cancellation/failure and
+is rejected after successful saving. The user's app, clipboard, files and session
+store are not used by these checks. Native save-panel wording/cancellation remains
+for Art's hands-on acceptance; automated native writes use the selected destination
+directly rather than interacting with the panel.
+
+Full `scripts/check.sh` passed with 41 Rust tests, formatting/Clippy, release builds,
+12 existing PTY scenarios, the Secret Drop PTY scenario and native smoke checks.
 
 ## Initial performance observations
 

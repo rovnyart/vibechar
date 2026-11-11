@@ -39,8 +39,9 @@ tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zo
 and quiet session status. Art accepted the first Pocket increment.
 Private scratches are now available in both clients: Shift+Cmd+N on Mac or Ctrl+P
 in the terminal. They are excluded from recovery and have generic titles. Closing
-or quitting with private text asks before discarding it; explicitly saving a copy
-creates a normal file on disk. The next feedback checkpoint is Secret Drop below.
+or quitting with private text asks before discarding it. Saving a private tab makes
+it an ordinary file tab, includes it in recovery, and closes that tab's agent access.
+Cancelled or failed saves keep the tab private. The next feedback checkpoint is Secret Drop below.
 See the roadmap for status and the development guide for runnable commands.
 
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
@@ -51,7 +52,7 @@ the value directly to a command's environment; the instruction contains only a
 temporary reference. No API key, account, or MCP configuration is needed.
 
 For an existing private tab, use **Give to Agent** / Shift+Cmd+C on Mac or
-Ctrl+G / F7 in the terminal. Stop, edits, tab close, and editor exit revoke future
+Ctrl+G / F7 in the terminal. Stop, edits, successful file save, tab close, and editor exit revoke future
 access; 30 minutes without use expires it. Keep the originating editor open.
 This first increment supports agents on the same computer and OS user account.
 The command receives the real value; output masking covers literal matches,

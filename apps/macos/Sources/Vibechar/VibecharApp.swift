@@ -500,7 +500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         if menuItem.action == #selector(closeAgentAccess) { return session.dropActive }
         if menuItem.action == #selector(closeAllAgentAccess) { return session.hasDropAccess }
         if menuItem.action == #selector(saveFile) {
-            menuItem.title = session.isPrivate ? "Save a Copy…" : "Save"
+            menuItem.title = session.isPrivate ? "Save…" : "Save"
         }
         if menuItem.action == #selector(changeAppearance(_:)) {
             let choice = UserDefaults.standard.string(forKey: "PocketAppearance") ?? "system"
@@ -510,35 +510,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func saveFile() {
-        let privateCopy = session.isPrivate
-        var destination = privateCopy ? nil : fileURL
+        let wasPrivate = session.isPrivate
+        var destination = wasPrivate ? nil : fileURL
         if destination == nil {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = "Untitled.txt"
-            if privateCopy {
-                panel.title = "Save Private Text"
-                panel.message = "This tab is not recovered. Saving a copy creates a file on disk."
+            if wasPrivate {
+                panel.title = "Save Private Tab"
+                panel.message = "Saving makes this a regular file tab, includes it in local recovery, and closes its agent access."
                 panel.nameFieldStringValue = "Private.txt"
             }
             guard panel.runModal() == .OK else { return }
             destination = panel.url
         }
         guard let destination else { return }
+        do { try saveActive(to: destination) }
+        catch { NSApp.presentError(error) }
+    }
+
+    private func saveActive(to destination: URL) throws {
         do {
             let values = try destination.resourceValues(forKeys: [.isSymbolicLinkKey])
             if values.isSymbolicLink == true { throw CocoaError(.fileWriteNoPermission) }
         } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
             // A new destination is expected not to exist before the first save.
-        } catch { NSApp.presentError(error); return }
-        do {
-            try document.text.write(to: destination, atomically: true, encoding: .utf8)
-            if !privateCopy {
-                document.markSaved()
-                session.setFileURL(destination)
-            }
-            refreshTitle()
-            scheduleSessionSave()
-        } catch { NSApp.presentError(error) }
+        }
+        try document.text.write(to: destination, atomically: true, encoding: .utf8)
+        session.completeSave(to: destination)
+        footer.operationError = nil
+        refreshTitle()
+        scheduleSessionSave()
     }
 
     private func confirmDiscard() -> Bool {
@@ -771,6 +772,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
         precondition(!app.session.hasDropAccess)
         precondition(useDrop("raise Exception('CHILD_MUST_NOT_START')").0 == 1)
+        let savedFolder = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-private-save-\(UUID().uuidString)", isDirectory: true)
+        try! FileManager.default.createDirectory(at: savedFolder, withIntermediateDirectories: true)
+        defer { try! FileManager.default.removeItem(at: savedFolder) }
+        let savedFile = savedFolder.appendingPathComponent("saved.txt")
+        app.copyForAgent()
+        reference = app.clipboard.string(forType: .string)!.components(separatedBy: "\n").first { $0.hasPrefix("vibechar://grant/") }!
+        do {
+            try app.saveActive(to: savedFolder.appendingPathComponent("missing/file.txt"))
+            preconditionFailure("A failed write must not complete a save")
+        } catch {}
+        precondition(app.session.isPrivate && app.session.fileURL == nil && app.document.isDirty)
+        precondition(app.session.dropActive && useDrop("import os; print(bool(os.environ['DROP_TOKEN']))").1 == "True\n")
+        let symlink = savedFolder.appendingPathComponent("link.txt")
+        try! "preserve destination".write(to: savedFile, atomically: true, encoding: .utf8)
+        try! FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: savedFile)
+        do {
+            try app.saveActive(to: symlink)
+            preconditionFailure("A symlink must not complete a save")
+        } catch {}
+        precondition(app.session.isPrivate && app.session.dropActive)
+        precondition(try! String(contentsOf: savedFile, encoding: .utf8) == "preserve destination")
+        let countBeforeSave = app.session.count
+        let selectionBeforeSave = app.textView.selectedRange()
+        try! app.saveActive(to: savedFile)
+        precondition(try! Data(contentsOf: savedFile) == Data(dropFixture.utf8))
+        precondition(!app.session.isPrivate && !app.document.isDirty && !app.session.dropActive)
+        precondition(app.session.count == countBeforeSave && app.textView.selectedRange() == selectionBeforeSave)
+        precondition(app.session.fileURL == savedFile && app.session.label(app.session.active) == "saved.txt")
+        precondition(!app.session.needsCloseConfirmation && !app.footer.status.stringValue.contains("Private"))
+        precondition(app.footer.subviews.compactMap { $0 as? NSButton }.allSatisfy { $0.isHidden })
+        precondition(useDrop("raise Exception('CHILD_MUST_NOT_START')").0 == 1)
+        let checkpointURL = savedFolder.appendingPathComponent("session.json")
+        precondition(app.session.checkpoint().save(to: checkpointURL))
+        let restored = RustSession()
+        precondition(try! restored.restore(from: checkpointURL))
+        precondition(!restored.isPrivate && restored.fileURL == savedFile)
+        precondition(RustDocument(session: restored).text == dropFixture)
+        precondition(app.document.replace(NSRange(location: dropFixture.utf16.count, length: 0), with: "!"))
+        app.showActiveBuffer()
+        app.saveFile() // A subsequent Cmd+S uses the attached file without a panel.
+        precondition(try! Data(contentsOf: savedFile) == Data((dropFixture + "!").utf8))
+        precondition(!app.document.isDirty && !app.session.isPrivate)
+        print("Private save native smoke passed: failed/symlink saves stay private, successful save converts/revokes, recovery, repeat save")
         print("Secret Drop native smoke passed: clipboard fast path, exact injection, masking, exit status, Stop/quit")
         print("Pocket window smoke test passed: light/dark, narrow/wide, native/tab click targets, text/history")
     }

@@ -99,6 +99,16 @@ impl Session {
             .any(|buffer| buffer.private && buffer.document.len_chars() > 0)
     }
 
+    /// Commit a successful file save. Call only after the write has succeeded.
+    /// Saving a private scratch ends private mode and revokes its agent access.
+    pub fn complete_save(&mut self, path: PathBuf) {
+        let buffer = self.active_mut();
+        buffer.document.revoke_drop();
+        buffer.path = Some(path);
+        buffer.private = false;
+        buffer.document.mark_saved();
+    }
+
     pub fn share_active(&mut self) -> std::io::Result<String> {
         if !self.active().is_private() {
             return Err(std::io::Error::new(

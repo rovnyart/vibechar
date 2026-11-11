@@ -70,8 +70,11 @@ terminal. Use a generic title, a lock on Mac, and a persistent "not recovered" l
 The shared checkpoint excludes their text, paths, and selections before worker
 serialization. Private mode cannot be applied to an existing ordinary buffer.
 Nonempty private tabs require close/quit confirmation, including hidden tabs.
-Explicit Save a Copy writes a file without changing the tab's private status or
-enabling recovery. Ordinary buffers are still saved locally without encryption.
+Cmd+S / Ctrl+S writes a file and turns the private tab into an ordinary file tab.
+The save UI states that this enables local recovery and closes its agent access.
+The filename replaces the generic title; the lock/private actions disappear.
+Cancellation or failure keeps the tab private and its agent grant unchanged.
+Later saves use the attached file. Ordinary recovery is local and unencrypted.
 
 ## Secret Drop
 

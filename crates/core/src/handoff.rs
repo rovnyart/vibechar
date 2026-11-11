@@ -443,6 +443,50 @@ mod tests {
     }
 
     #[test]
+    fn completing_save_ends_private_mode_and_revokes_only_that_tabs_access() {
+        let temp = Temp::new();
+        let mut session = Session::new("ordinary", None);
+        session.handoff = Some(DropHost::start_at(&temp.0, IDLE).unwrap());
+        session.open_private();
+        session
+            .active_mut()
+            .document
+            .replace(0..0, "STILL_PRIVATE")
+            .unwrap();
+        let other = session.share_active().unwrap();
+        session.open_private();
+        session
+            .active_mut()
+            .document
+            .replace(0..0, "SAVED_👩‍💻")
+            .unwrap();
+        session.active_mut().selection = 0..5;
+        let reference = session.share_active().unwrap();
+        let revision = session.active().document.revision();
+        session.complete_save(temp.0.join("saved.txt"));
+        assert!(!session.active().is_private());
+        assert!(!session.active().needs_close_confirmation());
+        assert_eq!(session.active().label(), "saved.txt");
+        assert_eq!(session.active().selection, 0..5);
+        assert_eq!(session.active().document.revision(), revision);
+        assert!(fetch_at(&reference, &temp.0).is_err());
+        assert_eq!(fetch_at(&other, &temp.0).unwrap(), "STILL_PRIVATE");
+        assert!(session.share_active().is_err());
+        let snapshot = serde_json::to_string(&Checkpoint::capture(&session)).unwrap();
+        assert!(snapshot.contains("SAVED_👩‍💻") && snapshot.contains("saved.txt"));
+        assert!(!snapshot.contains("STILL_PRIVATE") && !snapshot.contains(&reference));
+        let checkpoint = temp.0.join("session.json");
+        Checkpoint::capture(&session).save(&checkpoint).unwrap();
+        let restored = Checkpoint::load(&checkpoint).unwrap().unwrap();
+        assert_eq!(restored.buffers().len(), 2);
+        assert_eq!(restored.active().document.text(), "SAVED_👩‍💻");
+        assert!(!restored.active().is_private());
+        assert!(session.active_mut().document.undo().is_some());
+        assert!(session.active().document.is_dirty());
+        assert!(!session.active().is_private());
+    }
+
+    #[test]
     fn expiry_metadata_and_independent_instances_fail_closed() {
         let a = Temp::new();
         let b = Temp::new();

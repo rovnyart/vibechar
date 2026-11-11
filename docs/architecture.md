@@ -85,9 +85,12 @@ owned session before entering raw terminal mode. Idle input and worker queues bl
 Private scratches are chosen at creation; ordinary buffers cannot be converted
 after earlier checkpoints may have persisted them. Labels are generic even if a
 private document has a path. Closing a nonempty private tab requires confirmation,
-regardless of its dirty flag; quitting checks hidden private text too. The frontends
-allow an explicit file copy without attaching that path to the private tab or
-enabling its recovery. Private document text/history remain in process memory.
+regardless of its dirty flag; quitting checks hidden private text too. After a
+successful explicit file write, both frontends call shared `Session::complete_save`:
+revoke the tab's grant, attach the destination, end private mode, and mark saved.
+The tab then participates in ordinary recovery. Failed or cancelled writes never
+call completion and preserve mode, path, dirty state and grant. Text, selection and
+undo history remain intact; undoing text does not re-enter private mode.
 
 Retention remains pending. Recovery persists ordinary text without encryption.
 This feature excludes private buffers from app-owned recovery; it does not erase
@@ -105,7 +108,7 @@ save support must be labeled until these semantics are complete.
 The session lazily owns one `DropHost`, an embedded Unix-socket worker. Publishing
 is permitted only for a nonempty private document. It stores an immutable UTF-8
 value and random capability in memory; the document owns a revocation link.
-Real edits, undo/redo, closing, or dropping the document remove that grant. Session
+Real edits, undo/redo, successful file save, closing, or dropping the document remove that grant. Session
 Stop clears all grants. Recovery never captures the host, link, reference or value.
 
 Each editor uses a random socket under an owner-only per-user directory. Socket

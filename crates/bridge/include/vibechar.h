@@ -52,6 +52,8 @@ VcDocument *vc_session_document(VcSession *session);
 size_t vc_session_label(const VcSession *session, size_t index, uint8_t *output, size_t capacity);
 size_t vc_session_path(const VcSession *session, uint8_t *output, size_t capacity);
 bool vc_session_set_path(VcSession *session, const uint8_t *path, size_t length);
+// Call after a successful file write; ends private mode and revokes this tab's grant.
+bool vc_session_complete_save(VcSession *session, const uint8_t *path, size_t length);
 bool vc_session_set_selection(VcSession *session, size_t utf16_start, size_t utf16_length);
 bool vc_session_selection(const VcSession *session, size_t *utf16_start, size_t *utf16_length);
 
