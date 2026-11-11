@@ -33,6 +33,15 @@ bool vc_session_open_private(VcSession *session);
 bool vc_session_buffer_private(const VcSession *session, size_t index);
 bool vc_session_has_private_text(const VcSession *session);
 bool vc_session_needs_close_confirmation(const VcSession *session);
+// 1 = shared; 2 = invalid/ordinary text; 0 = local bridge unavailable.
+int32_t vc_session_share(VcSession *session);
+bool vc_session_drop_active(const VcSession *session);
+bool vc_session_has_drop_access(const VcSession *session);
+uint64_t vc_session_drop_uses(const VcSession *session);
+void vc_session_revoke_drop(VcSession *session);
+void vc_session_revoke_all_drops(VcSession *session);
+size_t vc_session_drop_instruction(const VcSession *session, const uint8_t *executable,
+                                  size_t length, uint8_t *output, size_t capacity);
 bool vc_session_close(VcSession *session, bool discard);
 bool vc_session_has_unsaved(const VcSession *session);
 bool vc_session_buffer_dirty(const VcSession *session, size_t index);

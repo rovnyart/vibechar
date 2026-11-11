@@ -52,8 +52,9 @@ bash scripts/build-mac.sh
 open dist/Vibechar.app
 ```
 
-The script builds the Rust static library, links the Swift app, wraps a .app bundle,
-ad-hoc signs it for local development, and runs the native bridge smoke test. This
+The script builds the Rust static library and CLI helper, links the Swift app,
+wraps a .app bundle, ad-hoc signs the helper and app for local development, and runs
+the native bridge/interface/Secret Drop smoke tests. This
 is not a notarized distributable. It is not copied to `/Applications`.
 
 `scripts/check.sh` includes a real PTY integration test; run it from a local
@@ -117,6 +118,39 @@ memory. It does not erase clipboard contents, explicit exports, or OS-managed
 swap/crash data. No AI/action/diagnostic service exists yet; each future service
 must enforce private-buffer exclusion before collecting content.
 
+## Secret Drop
+
+Fast path: copy a value, then use **Agent → Paste Secret for Agent** / Option+Cmd+V
+on Mac, or **F8** in the terminal. It creates a private tab, opens local access,
+and copies a ready instruction. Paste that instruction into your agent chat. The
+Mac app includes the helper and uses its absolute path; no global install is needed.
+
+Existing private tab: **Give to Agent** / Shift+Cmd+C on Mac, **Ctrl+G / F7** in
+the terminal. The footer reports open access and successful request count. **Stop**
+closes this tab on Mac; the Agent menu also closes all grants. **F9** closes all
+in the terminal. Actual edits/undo/redo, tab close, and quitting revoke access.
+After 30 minutes without a successful use the reference expires. The Mac GUI also
+listens for lock/sleep/session switching; the TUI does not yet have OS-event hooks.
+
+The prepared instruction asks the agent to invoke:
+
+```text
+vibechar run <reference> --env API_TOKEN -- <program> [args...]
+```
+
+The command reads its required environment variable inside the child process.
+The reference and copied instruction contain no secret text. Literal child output
+matches are masked, but arbitrary code can encode or transmit a secret; share only
+with a trusted task. Keep the originating editor open. This increment works on the
+same host and OS user account, including Mac GUI → terminal commands. It is not a
+network bridge to remote/cloud agents. See [Secret Drop](secret-drop.md) for the
+access boundary, 64 KiB input limit, clipboard providers, and test overrides.
+
+Run `python3 scripts/test-handoff.py` after a release workspace build to exercise
+the real TUI plus helper. The harness uses a synthetic Unicode/multiline value,
+isolated clipboard providers, and a temporary socket directory. Native smoke uses
+a unique AppKit pasteboard; neither test changes the user's clipboard or session.
+
 ## Mac session recovery
 
 Mac captures immutable rope snapshots after a 500 ms pause, then encodes/writes on
@@ -146,8 +180,8 @@ durability qualification remain later work.
 
 Terminal uses the same Rust checkpoint format and a dedicated worker thread.
 After a 500 ms input pause it captures and queues a snapshot; Ctrl+Q waits for the
-latest save. An idle session blocks on terminal input, rather than polling or
-redrawing continuously. The next launch restores ordinary buffers, text, cursor positions,
+latest save. An idle session blocks on terminal input. While Secret Drop access
+is open it checks status/expiry once per second. The next launch restores ordinary buffers, text, cursor positions,
 active buffer, file destinations, and modified flags. Undo starts fresh after restart.
 
 Default storage is `~/Library/Application Support/dev.vibechar.terminal/` on macOS

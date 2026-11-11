@@ -23,6 +23,7 @@ into a reusable text transformation, with a preview before anything changes.
 | [Architecture](docs/architecture.md) | Shared engine, native adapters, data ownership, and AI boundaries |
 | [Design](design.md) | Interaction and visual direction for both interfaces |
 | [Interface roadmap](docs/interface-roadmap.md) | The early Mac design pass and visual acceptance gates |
+| [Secret Drop](docs/secret-drop.md) | Private clipboard-to-agent workflow and local access contract |
 | [Development](docs/development.md) | Toolchain, commands, tests, and current limitations |
 | [Verification](docs/verification.md) | Observed prototype behavior, measurements, and open gates |
 
@@ -39,5 +40,19 @@ and quiet session status. Art accepted the first Pocket increment.
 Private scratches are now available in both clients: Shift+Cmd+N on Mac or Ctrl+P
 in the terminal. They are excluded from recovery and have generic titles. Closing
 or quitting with private text asks before discarding it; explicitly saving a copy
-creates a normal file on disk. Private-mode hands-on feedback is the next checkpoint.
+creates a normal file on disk. The next feedback checkpoint is Secret Drop below.
 See the roadmap for status and the development guide for runnable commands.
+
+Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
+Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar
+creates a private tab and replaces the clipboard with an instruction for your
+local agent. Paste it into the chat. The included `vibechar run` helper passes
+the value directly to a command's environment; the instruction contains only a
+temporary reference. No API key, account, or MCP configuration is needed.
+
+For an existing private tab, use **Give to Agent** / Shift+Cmd+C on Mac or
+Ctrl+G / F7 in the terminal. Stop, edits, tab close, and editor exit revoke future
+access; 30 minutes without use expires it. Keep the originating editor open.
+This first increment supports agents on the same computer and OS user account.
+The command receives the real value; output masking covers literal matches,
+not arbitrary transformations. See the [access contract](docs/secret-drop.md).

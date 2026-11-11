@@ -93,11 +93,46 @@ Retention remains pending. Recovery persists ordinary text without encryption.
 This feature excludes private buffers from app-owned recovery; it does not erase
 earlier ordinary snapshots, clipboard contents, explicit exports, or OS-managed
 swap/crash data. Future AI, recipes, and diagnostics must reject private buffers
-before collecting text. Those services do not exist in the current offline app.
+before collecting text. Those services do not exist in the current editor.
+Secret Drop is a separate, explicitly invoked local export described below.
 
 Save buffers through a same-directory temporary file + flush/sync + atomic replace,
 with a documented symlink/permissions policy and external-change check. Prototype
 save support must be labeled until these semantics are complete.
+
+## Secret Drop: explicit local export
+
+The session lazily owns one `DropHost`, an embedded Unix-socket worker. Publishing
+is permitted only for a nonempty private document. It stores an immutable UTF-8
+value and random capability in memory; the document owns a revocation link.
+Real edits, undo/redo, closing, or dropping the document remove that grant. Session
+Stop clears all grants. Recovery never captures the host, link, reference or value.
+
+Each editor uses a random socket under an owner-only per-user directory. Socket
+mode and peer UID are checked in both directions. Requests are length-prefixed,
+bounded JSON containing only the access token; replies contain the value or a
+generic denial. There is no enumeration, executable request, plaintext-read CLI,
+or TCP listener. The editor never runs the agent's requested program.
+
+`vibechar run <reference> --env NAME -- <program> [args...]` dispatches before TUI
+or recovery initialization. The helper fetches once, injects the environment
+variable, launches under the caller's permissions, streams literal output masking,
+and preserves exit status. Two independent stream filters handle stdout/stderr,
+including read-boundary matches, with bounded state and linear processing.
+Program arguments and helper errors never include the fetched value. A trusted
+child receives the actual value and can still retain, encode or transmit it.
+
+Successful requests refresh a 30-minute idle timeout. Status reads prune expired
+grants without extending access. Frontends update status once per second only while
+any grant is live; ordinary idle sessions still block. Mac additionally listens for
+lock/sleep/session resignation. Terminal OS-event hooks are deferred. Revocation
+affects future fetches, not data already delivered to a child.
+
+The Mac app bundles the helper; both interfaces copy a ready instruction containing
+its absolute path and opaque reference. Clipboard reads happen only on Paste Secret
+for Agent. Failed instruction copies revoke access. No provider API, model request,
+agent runtime, or per-agent MCP setup is involved. See the
+[full contract](secret-drop.md) for limits and remaining acceptance checks.
 
 ## Commands, transforms, proposals
 

@@ -62,6 +62,7 @@ pub struct Session {
     pub(crate) buffers: Vec<Buffer>,
     pub(crate) active: usize,
     pub(crate) next_scratch: usize,
+    pub(crate) handoff: Option<crate::handoff::DropHost>,
 }
 
 impl Session {
@@ -70,6 +71,7 @@ impl Session {
             buffers: Vec::new(),
             active: 0,
             next_scratch: 1,
+            handoff: None,
         };
         session.open(text, path);
         session
@@ -95,6 +97,40 @@ impl Session {
         self.buffers
             .iter()
             .any(|buffer| buffer.private && buffer.document.len_chars() > 0)
+    }
+
+    pub fn share_active(&mut self) -> std::io::Result<String> {
+        if !self.active().is_private() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Use a private tab or Paste Secret for Agent.",
+            ));
+        }
+        if self.active().document.drop_uses().is_some() {
+            return Ok(self.active().document.drop_reference().unwrap().to_owned());
+        }
+        let value = self.active().document.text();
+        crate::handoff::validate_secret(&value)?;
+        if self.handoff.is_none() {
+            self.handoff = Some(crate::handoff::DropHost::start()?);
+        }
+        let grant = self.handoff.as_ref().unwrap().publish(value)?;
+        let reference = grant.reference().to_owned();
+        self.active_mut().document.publish_drop(grant);
+        Ok(reference)
+    }
+    pub fn has_drop_access(&self) -> bool {
+        self.handoff.as_ref().is_some_and(|host| host.has_access())
+    }
+    pub fn revoke_all_drops(&mut self) {
+        // Stopping all access also releases the idle broker and its socket.
+        self.handoff = None;
+    }
+    pub fn drop_instruction(&self, executable: &str) -> Option<String> {
+        self.active()
+            .document
+            .drop_reference()
+            .map(|reference| crate::handoff::instruction(reference, executable))
     }
 
     /// Privacy is chosen before any text is inserted. Existing scratches cannot

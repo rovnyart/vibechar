@@ -1,11 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-bash "$root/scripts/cargo.sh" build --release -p vibechar-bridge
+bash "$root/scripts/cargo.sh" build --release -p vibechar-bridge -p vibechar
 swift build --package-path "$root/apps/macos" -c release \
   -Xlinker -L -Xlinker "$root/target/release"
 app="$root/dist/Vibechar.app"
 mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/Helpers"
+cp "$root/target/release/vibechar" "$app/Contents/Helpers/.vibechar-next-$$"
+mv -f "$app/Contents/Helpers/.vibechar-next-$$" "$app/Contents/Helpers/vibechar"
+codesign --force --sign - "$app/Contents/Helpers/vibechar"
 next_binary="$app/Contents/MacOS/.Vibechar-next-$$"
 trap 'rm -f "$next_binary"' EXIT
 cp "$root/apps/macos/.build/release/Vibechar" "$next_binary"

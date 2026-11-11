@@ -1,3 +1,5 @@
+mod agent;
+mod clipboard;
 mod editor;
 mod files;
 mod recovery;
@@ -31,11 +33,14 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "run") {
+        std::process::exit(agent::run(&args[1..])?);
+    }
     if args
         .first()
         .is_some_and(|arg| arg == "--help" || arg == "-h")
     {
-        println!("vibechar [FILE]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+S save file · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\n\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Explicitly saved files remain on disk. Highlighting and AI are still in development.");
+        println!("vibechar [FILE]\nvibechar run <reference> --env NAME -- <program> [args...]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+G / F7 Copy for Agent · F8 Paste Secret for Agent · F9 Close All Agent Access\nCtrl+S save file · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\n\nSecret Drop works with local agents on the same host. Keep the editor open.\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Explicitly saved files remain on disk. Highlighting and AI rewrites are still in development.");
         return Ok(());
     }
     if args.first().is_some_and(|arg| arg == "--version") {
@@ -120,7 +125,13 @@ fn edit(
             deadline = None;
         }
         terminal.draw(|frame| view::draw(frame, editor))?;
-        let timeout = deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        let mut timeout =
+            deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        if editor.session.has_drop_access() {
+            timeout = Some(timeout.map_or(Duration::from_secs(1), |value| {
+                value.min(Duration::from_secs(1))
+            }));
+        }
         let timeout = if recovery.is_saving() {
             Some(timeout.map_or(Duration::from_millis(50), |value| {
                 value.min(Duration::from_millis(50))

@@ -64,10 +64,14 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         .collect();
     frame.render_widget(Paragraph::new(lines), body);
     let recovery = if editor.session.active().is_private() {
-        format!(
-            "PRIVATE · not recovered · Other tabs: {}",
-            editor.recovery_status
-        )
+        if let Some(uses) = editor.document().drop_uses() {
+            format!("PRIVATE · Agent access open · {uses} uses · F9 stop")
+        } else {
+            format!(
+                "PRIVATE · not recovered · Other tabs: {}",
+                editor.recovery_status
+            )
+        }
     } else {
         editor.recovery_status.to_owned()
     };
@@ -84,7 +88,8 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     let prompt = editor.save_prompt.as_ref().map_or_else(
         || {
             if editor.message.is_empty() {
-                " ^N new  ^P private  F6 next  ^W close  ^S save  ^Z undo  ^Y redo  ^Q quit".into()
+                " ^N new  ^P private  ^G give  F8 paste+give  F9 stop  F6 next  ^S save  ^Q quit"
+                    .into()
             } else {
                 format!(" {}", editor.message)
             }

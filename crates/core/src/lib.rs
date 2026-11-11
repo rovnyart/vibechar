@@ -1,6 +1,7 @@
 //! Shared document storage and edit history for the native and terminal clients.
 
 pub mod checkpoint;
+pub mod handoff;
 pub mod session;
 
 use std::{fmt, ops::Range};
@@ -36,6 +37,13 @@ pub struct Document {
     next_state: u64,
     saved_state: u64,
     crlf: bool,
+    drop_access: Option<handoff::GrantLink>,
+}
+
+impl Drop for Document {
+    fn drop(&mut self) {
+        self.revoke_drop();
+    }
 }
 
 impl Document {
@@ -71,6 +79,7 @@ impl Document {
             state: 0,
             next_state: 1,
             saved_state: 0,
+            drop_access: None,
             crlf: text
                 .find('\n')
                 .is_some_and(|at| at > 0 && text.as_bytes()[at - 1] == b'\r'),
@@ -90,6 +99,7 @@ impl Document {
         if removed == inserted {
             return Ok(false);
         }
+        self.revoke_drop();
         self.text.remove(range.clone());
         self.text.insert(range.start, inserted);
         let change = Change {
@@ -109,6 +119,7 @@ impl Document {
 
     pub fn undo(&mut self) -> Option<usize> {
         let change = self.undo.pop()?;
+        self.revoke_drop();
         self.text
             .remove(change.start..change.start + change.inserted.chars().count());
         self.text.insert(change.start, &change.removed);
@@ -121,6 +132,7 @@ impl Document {
 
     pub fn redo(&mut self) -> Option<usize> {
         let change = self.redo.pop()?;
+        self.revoke_drop();
         self.text
             .remove(change.start..change.start + change.removed.chars().count());
         self.text.insert(change.start, &change.inserted);
@@ -133,6 +145,19 @@ impl Document {
 
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    pub fn revoke_drop(&mut self) {
+        self.drop_access = None;
+    }
+    pub fn drop_reference(&self) -> Option<&str> {
+        self.drop_access.as_ref().map(|grant| grant.reference())
+    }
+    pub fn drop_uses(&self) -> Option<u64> {
+        self.drop_access.as_ref().and_then(|grant| grant.uses())
+    }
+    pub(crate) fn publish_drop(&mut self, grant: handoff::GrantLink) {
+        self.drop_access = Some(grant);
     }
 
     pub fn is_dirty(&self) -> bool {

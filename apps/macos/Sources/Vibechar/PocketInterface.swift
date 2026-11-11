@@ -11,10 +11,14 @@ func preparePocketTitlebar(for window: NSWindow) {
     let accessory = NSTitlebarAccessoryViewController()
     accessory.layoutAttribute = .bottom
     accessory.view = PocketTitlebarSpacer(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+    // A fixed autoresizing width becomes a titlebar minimum and blocks shrinking.
+    accessory.view.translatesAutoresizingMaskIntoConstraints = false
+    let height = accessory.view.heightAnchor.constraint(equalToConstant: 1)
+    height.isActive = true
     window.addTitlebarAccessoryViewController(accessory)
     window.contentView?.superview?.layoutSubtreeIfNeeded()
     let nativeHeight = window.standardWindowButton(.closeButton)?.superview?.bounds.height ?? 54
-    accessory.view.setFrameSize(NSSize(width: 1, height: max(1, 1 + 54 - nativeHeight)))
+    height.constant = max(1, 1 + 54 - nativeHeight)
     window.contentView?.superview?.layoutSubtreeIfNeeded()
 }
 
@@ -306,6 +310,12 @@ final class PocketHeader: NSView {
 final class PocketFooter: NSView {
     let status = NSTextField(labelWithString: "Saved locally")
     let detail = NSTextField(labelWithString: "15 pt  ·  UTF-8")
+    private let give = NSButton(title: "Give to Agent", target: nil, action: nil)
+    private let stop = NSButton(title: "Stop", target: nil, action: nil)
+    var onGive: (() -> Void)?
+    var onStop: (() -> Void)?
+    var operationError: String? { didSet { renderStatus() } }
+    var agentUses: UInt64? { didSet { renderStatus(); needsLayout = true } }
     private(set) var failed = false
     private var recoveryMessage = "Saved locally"
     var privateTab = false { didSet { renderStatus() } }
@@ -321,6 +331,19 @@ final class PocketFooter: NSView {
         status.setAccessibilityLabel("Session recovery")
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.alignment = .right
+        for button in [give, stop] {
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 11, weight: .medium)
+            button.contentTintColor = PocketPalette.accent
+            button.target = self
+            addSubview(button)
+        }
+        give.action = #selector(giveToAgent)
+        give.toolTip = "Copy instructions and open temporary access to this private text · ⇧⌘C"
+        give.setAccessibilityLabel("Copy for Agent")
+        stop.action = #selector(stopAgent)
+        stop.setAccessibilityLabel("Close this tab's agent access")
+        renderStatus()
         status.toolTip = "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -330,21 +353,36 @@ final class PocketFooter: NSView {
         renderStatus()
     }
     private func renderStatus() {
-        status.stringValue = privateTab ? (failed ? "Private · \(recoveryMessage)" : "Private · not recovered") : recoveryMessage
-        status.textColor = failed ? PocketPalette.accent : PocketPalette.secondary
+        let mode = agentUses.map { "Private · Agent access open · \($0) uses" } ?? "Private · not recovered"
+        status.stringValue = privateTab ? (failed ? "\(mode) · \(recoveryMessage)" : mode) : recoveryMessage
+        give.isHidden = !privateTab
+        stop.isHidden = !privateTab || agentUses == nil
+        give.title = agentUses == nil ? "Give to Agent" : "Copy Again"
+        needsLayout = true
+        if let operationError { status.stringValue = privateTab ? "\(mode) · \(operationError)" : operationError }
+        status.textColor = failed || operationError != nil ? PocketPalette.accent : PocketPalette.secondary
         status.toolTip = privateTab
-            ? "This tab is excluded from recovery. Files you explicitly save remain on disk.\(failed ? " Other tabs: " + recoveryMessage : "")"
+            ? "This tab is excluded from recovery. Files you explicitly save remain on disk.\(agentUses == nil ? "" : " Agent access is open; Stop closes future requests. Edits revoke access; 30 minutes without use expires it.")\(failed ? " Other tabs: " + recoveryMessage : "")"
             : failed ? recoveryMessage : "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
+        if let operationError { status.toolTip = "\(status.toolTip ?? "") \(operationError)" }
     }
     override func layout() {
         super.layout()
+        let details: CGFloat = privateTab && bounds.width < 650 ? 0 : 144
+        let actions: CGFloat = privateTab ? (agentUses == nil ? 112 : 142) : 0
+        detail.isHidden = details == 0
         detail.frame = NSRect(x: bounds.width - 144, y: 8, width: 122, height: 16)
-        status.frame = NSRect(x: 26, y: 8, width: max(0, bounds.width - 190), height: 16)
+        let actionX = bounds.width - details - actions - 16
+        give.frame = NSRect(x: actionX, y: 4, width: 104, height: 24)
+        stop.frame = NSRect(x: actionX + 104, y: 4, width: 40, height: 24)
+        status.frame = NSRect(x: 26, y: 8, width: max(0, actionX - 38), height: 16)
     }
     override func draw(_ dirtyRect: NSRect) {
         (NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? PocketPalette.secondary : PocketPalette.rule).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 0.5).fill()
     }
+    @objc private func giveToAgent() { onGive?() }
+    @objc private func stopAgent() { onStop?() }
 }
 
 @MainActor

@@ -20,7 +20,7 @@ BINARY = ROOT / "target/release/vibechar"
 
 
 class Session:
-    def __init__(self, *arguments, piped=None, state=None, expect_ready=True):
+    def __init__(self, *arguments, piped=None, state=None, expect_ready=True, extra_env=None):
         self.temporary_state = tempfile.TemporaryDirectory(prefix="vibechar-state-") if state is None else None
         self.state = Path(self.temporary_state.name) if self.temporary_state else Path(state)
         self.master, self.slave = pty.openpty()
@@ -40,7 +40,7 @@ class Session:
             stderr=self.slave,
             pass_fds=(self.slave,),
             preexec_fn=controlling_terminal,
-            env={**os.environ, "TERM": "xterm-256color", "VIBECHAR_STATE_DIR": str(self.state)},
+            env={**os.environ, "TERM": "xterm-256color", "VIBECHAR_STATE_DIR": str(self.state), **(extra_env or {})},
         )
         if piped is not None:
             self.process.stdin.write(piped)

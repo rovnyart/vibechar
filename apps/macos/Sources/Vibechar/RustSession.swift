@@ -20,6 +20,23 @@ final class RustSession {
     var isPrivate: Bool { isPrivate(active) }
     func isPrivate(_ index: Int) -> Bool { vc_session_buffer_private(handle, index) }
     func openPrivate() { precondition(vc_session_open_private(handle)) }
+    var hasDropAccess: Bool { vc_session_has_drop_access(handle) }
+    var dropActive: Bool { vc_session_drop_active(handle) }
+    var dropUses: UInt64 { vc_session_drop_uses(handle) }
+    func revokeDrop() { vc_session_revoke_drop(handle) }
+    func revokeAllDrops() { vc_session_revoke_all_drops(handle) }
+    func shareForAgent(executable: String) throws -> String {
+        let result = vc_session_share(handle)
+        guard result == 1 else {
+            throw NSError(domain: "vibechar.drop", code: Int(result), userInfo: [NSLocalizedDescriptionKey:
+                result == 2 ? "Use a nonempty private tab, up to 64 KiB without NUL, or Paste Secret for Agent."
+                : "Could not open local agent access. Check the local runtime directory and try again."])
+        }
+        let bytes = Array(executable.utf8)
+        return bytes.withUnsafeBufferPointer { path in
+            metadata { vc_session_drop_instruction(handle, path.baseAddress, path.count, $0, $1) }
+        }
+    }
     var fileURL: URL? {
         let path = metadata { vc_session_path(handle, $0, $1) }
         return path.isEmpty ? nil : URL(fileURLWithPath: path)

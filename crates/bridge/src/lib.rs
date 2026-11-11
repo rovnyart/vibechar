@@ -235,6 +235,75 @@ pub unsafe extern "C" fn vc_session_needs_close_confirmation(session: *const Ses
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn vc_session_share(session: *mut Session) -> i32 {
+    guard(|| {
+        let Some(session) = session.as_mut() else {
+            return 0;
+        };
+        match session.share_active() {
+            Ok(_) => 1,
+            Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => 2,
+            Err(_) => 0,
+        }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_drop_active(session: *const Session) -> bool {
+    guard(|| {
+        session
+            .as_ref()
+            .is_some_and(|s| s.active().document.drop_uses().is_some())
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_has_drop_access(session: *const Session) -> bool {
+    guard(|| session.as_ref().is_some_and(Session::has_drop_access))
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_drop_uses(session: *const Session) -> u64 {
+    guard(|| {
+        session
+            .as_ref()
+            .and_then(|s| s.active().document.drop_uses())
+            .unwrap_or(0)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_revoke_drop(session: *mut Session) {
+    guard(|| {
+        if let Some(session) = session.as_mut() {
+            session.active_mut().document.revoke_drop();
+        }
+    });
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_revoke_all_drops(session: *mut Session) {
+    guard(|| {
+        if let Some(session) = session.as_mut() {
+            session.revoke_all_drops();
+        }
+    });
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_drop_instruction(
+    session: *const Session,
+    executable: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        let (Some(session), Some(executable)) = (session.as_ref(), input(executable, length))
+        else {
+            return 0;
+        };
+        session
+            .drop_instruction(executable)
+            .map_or(0, |text| copy_metadata(&text, output, capacity))
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn vc_session_close(session: *mut Session, discard: bool) -> bool {
     guard(|| {
         session

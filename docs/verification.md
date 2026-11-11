@@ -11,9 +11,9 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 35 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
-  Unicode scratch-label test, 7 core recovery, 4 C bridge, and 13 terminal
-  model/layout/recovery tests.
+- 39 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
+  Unicode scratch-label test, 7 core recovery, 3 Secret Drop transport/revocation,
+  4 C bridge, and 14 terminal model/layout/recovery/output-masking tests.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
@@ -26,6 +26,9 @@ This records local prototype evidence, not MVP release acceptance.
   rejection; and failed quit flush with manual text rescue before explicit quit.
 - Private PTY cases verify mixed/private-only recovery, background exclusion,
   explicit file copies, hidden-private quit confirmation, and forced termination.
+- An additional real PTY + helper scenario verifies Secret Drop clipboard actions,
+  exact injection, reuse, literal stdout/stderr masking, exit status, failed-copy
+  revocation, edited/revoked/wrong references, quit, and recovery exclusion.
 - PTY checks verify terminal attributes, alternate screen, and bracketed paste
   restoration on exit. All temporary processes/files are cleaned up by the harness.
 
@@ -187,6 +190,53 @@ external screen capture. There are no AI/actions/diagnostic upload routes yet;
 those future routes must enforce exclusion independently. Art's private-mode
 hands-on feedback is the next checkpoint. One verification run's single TUI sample was
 341.01 ms / 2,976 KiB RSS; existing startup variance remains unresolved.
+
+### Feedback increment: Secret Drop (2026-11-12)
+
+Added the shared memory-only local broker, explicit private-tab grants, and
+`vibechar run` environment injection. The helper is bundled with the Mac app and
+dispatches independently of TUI/recovery. Both clients provide Paste Secret for
+Agent and Copy for Agent; Mac shows access/use count with Copy Again and Stop,
+and the terminal exposes Ctrl+G/F7, F8 and F9. No model/provider integration or
+MCP setup is needed for this local workflow.
+
+Full `scripts/check.sh` passed: formatting, Clippy with warnings as errors, 39 Rust
+tests, release builds, the 12 existing PTY scenarios plus the Secret Drop scenario,
+and native bridge/window checks. The final native termination check also passes.
+
+Core tests exercise exact Unicode injection, reusable grants, wrong/expired and
+cross-instance references, safe socket permissions, oversized frames, no-op versus
+real edits, undo/redo, Stop, close, session drop, and absence from recovery JSON.
+Metadata reads do not extend expiry. Terminal tests verify streaming masking across
+read boundaries and repeated prefixes. Real PTY checks launch the release helper,
+compare the child environment internally, intentionally emit a disposable fixture
+on both streams and verify redaction plus exit code 7. Invalid, revoked, edited,
+and post-quit references fail before a marker-writing child can start. A failed
+instruction copy revokes an existing grant. Restart restores only the ordinary tab.
+
+The native smoke test runs the actual AppKit clipboard action with a unique
+pasteboard and invokes the bundled helper. It verifies exact child injection,
+masked output, exit status, use counts, Stop/termination hooks and failure before
+child execution. Closing all access also shuts down the broker and removes its socket.
+It checks real footer geometry and hit targets in light/dark at 420/880 pt.
+Only synthetic values and isolated clipboard providers/pasteboards are used;
+the user's clipboard, running app and session store are untouched.
+
+Visually inspected generated native content views at 420 pt dark and 880 pt light.
+Buttons remain visible at the narrow width, where font/encoding details hide first.
+Stricter checks exposed an existing titlebar accessory sizing issue: its fixed
+width prevented the window from reaching the requested narrow size. The spacer
+now constrains only height, and tests assert the actual content width. Earlier
+native narrow-window captures did not prove a 420 pt composed window; standalone
+header layout tests were separate. The new captures have the requested dimensions.
+These are offscreen AppKit checks, not a new on-screen user acceptance session.
+
+The Mac GUI registers lock, sleep and session-resignation revocation hooks.
+Actual OS-event delivery, Linux execution/clipboard providers and terminal
+lock/sleep behavior remain unqualified. No remote/cloud-agent transport exists.
+Output masking covers literal occurrences; arbitrary child code can transform or
+transmit a secret and already delivered values cannot be revoked. Art's hands-on
+Secret Drop feedback is the next gate.
 
 ## Initial performance observations
 

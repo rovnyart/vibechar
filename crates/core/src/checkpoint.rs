@@ -169,6 +169,7 @@ impl Checkpoint {
             buffers,
             active: self.active,
             next_scratch: self.next_scratch,
+            handoff: None,
         })
     }
 }

@@ -86,6 +86,7 @@ struct VibecharApp {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation {
     private let session: RustSession
     private let document: RustDocument
+    private let clipboard: NSPasteboard
     private var fileURL: URL? { session.fileURL }
     private var window: NSWindow!
     private let textView = PocketTextView()
@@ -96,11 +97,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private var recovery: SessionRecovery?
     private var pendingSave: DispatchWorkItem?
     private var saveGeneration: UInt64 = 0
+    private var dropTimer: Timer?
 
-    override init() {
+    init(clipboard: NSPasteboard = .general) {
         let session = RustSession()
         self.session = session
         document = RustDocument(session: session)
+        self.clipboard = clipboard
         super.init()
     }
 
@@ -119,6 +122,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(textView)
         NSApp.activate(ignoringOtherApps: true)
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(closeAllAgentAccess), name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(closeAllAgentAccess), name: name, object: nil)
+        }
         if let recoveryError {
             footer.showStatus("Recovery unavailable · Save important text with ⌘S", failed: true)
             NSApp.presentError(recoveryError)
@@ -182,6 +189,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         header.onSelect = { [weak self] in self?.switchBuffer(to: $0) }
         header.onClose = { [weak self] in self?.closeBuffer(at: $0) }
         header.onNew = { [weak self] in self?.newScratch() }
+        footer.onGive = { [weak self] in self?.copyForAgent() }
+        footer.onStop = { [weak self] in self?.closeAgentAccess() }
         content.appearanceChanged = { [weak self] in self?.applyTypography() }
         content.addSubview(header)
         content.addSubview(scroll)
@@ -288,6 +297,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         fullScreen.keyEquivalentModifierMask = [.command, .control]
         view.addItem(fullScreen)
         addMenu("View", submenu: view, to: menu)
+        let agent = NSMenu(title: "Agent")
+        let give = NSMenuItem(title: "Copy for Agent", action: #selector(copyForAgent), keyEquivalent: "c")
+        give.keyEquivalentModifierMask = [.command, .shift]
+        give.target = self
+        agent.addItem(give)
+        let paste = NSMenuItem(title: "Paste Secret for Agent", action: #selector(pasteForAgent), keyEquivalent: "v")
+        paste.keyEquivalentModifierMask = [.command, .option]
+        paste.target = self
+        agent.addItem(paste)
+        agent.addItem(.separator())
+        addItem("Close This Tab's Agent Access", action: #selector(closeAgentAccess), key: "", to: agent)
+        addItem("Close All Agent Access", action: #selector(closeAllAgentAccess), key: "", to: agent)
+        addMenu("Agent", submenu: agent, to: menu)
         NSApp.mainMenu = menu
     }
 
@@ -325,6 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             PocketTab(title: session.label($0), modifiedFile: session.isModifiedFile($0), isPrivate: session.isPrivate($0))
         }, active: session.active)
         footer.privateTab = session.isPrivate
+        refreshDropStatus()
     }
 
     @objc private func undoEdit() { applyHistory(redo: false) }
@@ -352,6 +375,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         showActiveBuffer()
     }
 
+    @objc private func copyForAgent() {
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/vibechar").path
+        guard FileManager.default.isExecutableFile(atPath: helper) else {
+            footer.operationError = "Agent helper unavailable · Rebuild the app"
+            return
+        }
+        do {
+            let instruction = try session.shareForAgent(executable: helper)
+            clipboard.clearContents()
+            guard clipboard.setString(instruction, forType: .string) else {
+                session.revokeDrop()
+                footer.operationError = "Couldn't copy instructions · Access closed"
+                return
+            }
+            footer.operationError = nil
+            refreshDropStatus()
+            if dropTimer == nil {
+                dropTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+                    MainActor.assumeIsolated {
+                        guard let self else { timer.invalidate(); return }
+                        self.refreshDropStatus()
+                    }
+                }
+            }
+        } catch {
+            session.revokeDrop()
+            footer.operationError = error.localizedDescription
+        }
+    }
+
+    @objc private func pasteForAgent() {
+        guard let text = clipboard.string(forType: .string), !text.isEmpty,
+              text.utf8.count <= 65536, !text.contains("\0") else {
+            footer.operationError = "Copy a secret first · Up to 64 KiB of text"
+            return
+        }
+        guard !text.hasPrefix("Use this local Vibechar Secret Drop") else {
+            footer.operationError = "Instructions already copied · Copy a new secret first"
+            return
+        }
+        newPrivateScratch()
+        let inserted = document.replace(NSRange(location: 0, length: 0), with: text)
+        precondition(inserted)
+        session.rememberSelection(NSRange(location: text.utf16.count, length: 0))
+        showActiveBuffer()
+        copyForAgent()
+    }
+    @objc private func closeAgentAccess() { session.revokeDrop(); footer.operationError = nil; refreshDropStatus() }
+    @objc private func closeAllAgentAccess() { session.revokeAllDrops(); footer.operationError = nil; refreshDropStatus() }
+    private func refreshDropStatus() {
+        footer.agentUses = session.dropActive ? session.dropUses : nil
+        if !session.hasDropAccess {
+            dropTimer?.invalidate()
+            dropTimer = nil
+        }
+    }
+
     @objc private func openFile() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
@@ -367,6 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func showActiveBuffer() {
+        footer.operationError = nil
         textView.string = document.text
         applyTypography()
         textView.setSelectedRange(session.selection)
@@ -415,6 +496,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(copyForAgent) { return session.isPrivate && !textView.string.isEmpty }
+        if menuItem.action == #selector(closeAgentAccess) { return session.dropActive }
+        if menuItem.action == #selector(closeAllAgentAccess) { return session.hasDropAccess }
         if menuItem.action == #selector(saveFile) {
             menuItem.title = session.isPrivate ? "Save a Copy…" : "Save"
         }
@@ -476,6 +560,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         (closingWindow || saveBeforeQuitting()) ? .terminateNow : .terminateCancel
     }
+    func applicationWillTerminate(_ notification: Notification) {
+        // AppKit terminates the process without guaranteeing Swift/Rust deinit.
+        closeAllAgentAccess()
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     private func scheduleSessionSave() {
@@ -525,9 +613,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     // Exercise the real window composition without opening a window or recovery store.
     static func interfaceSmokeTest() {
-        let app = AppDelegate()
+        let app = AppDelegate(clipboard: .withUniqueName())
         app.makeWindow(restoreFrame: false)
-        defer { app.window.delegate = nil; app.window.close() }
+        defer { app.closeAllAgentAccess(); app.clipboard.clearContents(); app.window.delegate = nil; app.window.close() }
         let sample = "{\n  \"service\": \"vibechar\",\n  \"environment\": \"development\",\n  \"api\": {\n    \"host\": \"localhost\",\n    \"port\": 8080\n  }\n}"
         precondition(app.document.replace(NSRange(location: 0, length: 0), with: sample))
         app.session.open("Ребят, небольшой апдейт по редактору.\n\nВкладки сохраняются после перезапуска. 👩‍💻")
@@ -539,11 +627,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             app.window.appearance = NSAppearance(named: appearance)
             for width in [420, 880] {
-                app.window.setContentSize(NSSize(width: width, height: 600))
+                app.window.setFrame(NSRect(origin: app.window.frame.origin, size: NSSize(width: width, height: 600)), display: false)
                 let view = app.window.contentView!
                 app.window.layoutIfNeeded()
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
                 view.superview?.layoutSubtreeIfNeeded()
+                precondition(abs(view.bounds.width - CGFloat(width)) < 1, "Window must reach the requested width")
                 app.header.needsLayout = true
                 view.layoutSubtreeIfNeeded()
                 precondition(app.textView.string == sample, "Layout/theme must not alter the document")
@@ -612,6 +701,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         app.newScratch()
         precondition(!app.session.isPrivate && app.session.hasPrivateText)
         precondition(!app.footer.status.stringValue.contains("Private"))
+        let dropFixture = "NATIVE_DROP_FIXTURE_👩‍💻"
+        app.clipboard.clearContents()
+        app.clipboard.setString(dropFixture, forType: .string)
+        app.pasteForAgent()
+        precondition(app.session.isPrivate && app.document.text == dropFixture && app.session.dropActive)
+        let instruction = app.clipboard.string(forType: .string)!
+        precondition(!instruction.contains(dropFixture))
+        var reference = instruction.components(separatedBy: "\n").first { $0.hasPrefix("vibechar://grant/") }!
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/vibechar").path
+        func useDrop(_ code: String) -> (Int32, String, String) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: helper)
+            process.arguments = ["run", reference, "--env", "DROP_TOKEN", "--", "/usr/bin/python3", "-c", code]
+            var environment = ["PATH": "/usr/bin:/bin", "EXPECTED": dropFixture]
+            if let directory = ProcessInfo.processInfo.environment["VIBECHAR_HANDOFF_DIR"] { environment["VIBECHAR_HANDOFF_DIR"] = directory }
+            process.environment = environment
+            let out = Pipe(), err = Pipe()
+            process.standardOutput = out
+            process.standardError = err
+            try! process.run()
+            let stdout = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            let stderr = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            process.waitUntilExit()
+            return (process.terminationStatus, stdout, stderr)
+        }
+        let exact = useDrop("import os; print(os.environ['DROP_TOKEN'] == os.environ['EXPECTED'])")
+        precondition(exact.0 == 0 && exact.1 == "True\n" && exact.2.isEmpty)
+        let masked = useDrop("import os,sys; print(os.environ['DROP_TOKEN']); print(os.environ['DROP_TOKEN'],file=sys.stderr); sys.exit(7)")
+        precondition(masked.0 == 7 && masked.1 == "[REDACTED]\n" && masked.2 == "[REDACTED]\n")
+        app.refreshDropStatus()
+        precondition(app.footer.status.stringValue.contains("2 uses"))
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            app.window.appearance = NSAppearance(named: appearance)
+            for width in [420, 880] {
+                app.window.setFrame(NSRect(origin: app.window.frame.origin, size: NSSize(width: width, height: 600)), display: false)
+                app.window.layoutIfNeeded()
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
+                let view = app.window.contentView!
+                view.layoutSubtreeIfNeeded()
+                precondition(abs(view.bounds.width - CGFloat(width)) < 1, "Secret Drop must fit the actual narrow window")
+                let buttons = app.footer.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden }
+                precondition(buttons.count == 2 && !buttons[0].frame.intersects(buttons[1].frame))
+                precondition(buttons.allSatisfy { app.footer.bounds.contains($0.frame) })
+                for button in buttons {
+                    let root = view.superview!
+                    let center = root.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), from: button)
+                    let hit = root.hitTest(center)
+                    if hit !== button && hit?.isDescendant(of: button) != true {
+                        FileHandle.standardError.write(Data("Agent control click intercepted (\(name), \(width)): \(button.title), frame \(button.frame), center \(center), hit \(String(describing: hit))\n".utf8))
+                        preconditionFailure("Agent controls must receive clicks")
+                    }
+                }
+                if let output {
+                    app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+                        view.cacheDisplay(in: view.bounds, to: bitmap)
+                        try! bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("secret-drop-\(name)-\(width).png"))
+                    }
+                }
+            }
+        }
+        app.closeAgentAccess()
+        precondition(!app.session.dropActive)
+        precondition(useDrop("raise Exception('CHILD_MUST_NOT_START')").0 == 1)
+        app.copyForAgent()
+        reference = app.clipboard.string(forType: .string)!.components(separatedBy: "\n").first { $0.hasPrefix("vibechar://grant/") }!
+        precondition(app.session.hasDropAccess)
+        app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+        precondition(!app.session.hasDropAccess)
+        precondition(useDrop("raise Exception('CHILD_MUST_NOT_START')").0 == 1)
+        print("Secret Drop native smoke passed: clipboard fast path, exact injection, masking, exit status, Stop/quit")
         print("Pocket window smoke test passed: light/dark, narrow/wide, native/tab click targets, text/history")
     }
 }

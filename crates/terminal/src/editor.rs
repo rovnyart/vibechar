@@ -94,6 +94,12 @@ impl Editor {
             } else {
                 1
             }),
+            KeyCode::F(7) => self.give_to_agent(),
+            KeyCode::F(8) => self.paste_for_agent(),
+            KeyCode::F(9) => {
+                self.session.revoke_all_drops();
+                self.message = "All agent access closed in this editor.".into();
+            }
             KeyCode::Tab => self.insert("    "),
             KeyCode::Left => self.cursor = self.document().previous_grapheme(self.cursor),
             KeyCode::Right => self.cursor = self.document().next_grapheme(self.cursor),
@@ -161,6 +167,7 @@ impl Editor {
         self.close_pending = false;
         match code {
             KeyCode::Char('s') => self.save(),
+            KeyCode::Char('g') => self.give_to_agent(),
             KeyCode::Char('n') => {
                 self.open("", None);
             }
@@ -193,6 +200,49 @@ impl Editor {
             self.private_quit_pending = false;
             self.message.clear();
         }
+    }
+
+    fn give_to_agent(&mut self) {
+        let result = (|| {
+            self.session.share_active()?;
+            let executable = std::env::current_exe()?;
+            let instruction = self
+                .session
+                .drop_instruction(&executable.to_string_lossy())
+                .unwrap();
+            crate::clipboard::copy(&instruction)
+        })();
+        self.message = match result {
+            Ok(()) => {
+                "Instructions copied. Paste into your local agent chat. F9 closes access.".into()
+            }
+            Err(error) => {
+                self.session.active_mut().document.revoke_drop();
+                format!("Could not prepare Secret Drop: {error}")
+            }
+        };
+    }
+    fn paste_for_agent(&mut self) {
+        let text = match crate::clipboard::read().and_then(|text| {
+            vibechar_core::handoff::validate_secret(&text)?;
+            if text.starts_with("Use this local Vibechar Secret Drop") {
+                return Err(std::io::Error::other(
+                    "Clipboard already contains instructions. Copy a new secret or use Ctrl+G.",
+                ));
+            }
+            Ok(text)
+        }) {
+            Ok(text) => text,
+            Err(error) => {
+                self.message = error.to_string();
+                return;
+            }
+        };
+        self.remember_cursor();
+        self.session.open_private();
+        self.restore_cursor();
+        self.insert(&text);
+        self.give_to_agent();
     }
 
     fn line_end(&self) -> usize {

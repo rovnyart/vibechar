@@ -8,7 +8,12 @@ A lightweight text editor you reach for dozens of times a day. It opens immediat
 handles pasted technical text comfortably, and lets you describe or demonstrate a
 transformation without turning the editing session into a conversation.
 
-The flagship demo: paste a list, edit one item into the desired shape, invoke
+The first agent workflow is **Secret Drop**: copy a token, invoke Paste Secret for
+Agent, paste the prepared instruction into a local agent chat. The agent uses it
+in a command without the editor returning plaintext to the chat. Mac and terminal
+share this operation; no agent-specific setup is required.
+
+The later transformation demo: paste a list, edit one item into the desired shape, invoke
 "Do the rest", review the affected items, accept, then save the transformation as
 a named action. Reapplying a supported structural action runs locally.
 
@@ -38,6 +43,9 @@ a prompt or a script. Recognition of arbitrary editing intent is not promised.
 - One command palette shared in meaning between both interfaces.
 - Ordinary scratch buffers recover after restart; a private buffer never enters
   recovery storage, saved actions, AI requests, logs, or diagnostic attachments.
+- Secret Drop explicitly exports one private value to a local command through a
+  temporary reference and environment injection. This does not enable model
+  rewrites or automatic collection of private buffers.
 - No automatic clipboard monitoring. Paste happens when the user invokes it.
 
 ### Optional AI
@@ -127,6 +135,21 @@ stay open, while the next behavior increments resume M2.
 - [ ] Check tab overflow, narrow windows, focus, empty/content/error states.
 - [x] Art accepts the first working interface. M6 rechecks final polish/performance.
 
+### M2b — Secret Drop: private text to local agents
+
+Art selected this as the next main feature on 2026-11-12. Follow the
+[Secret Drop contract](secret-drop.md): a clipboard fast path, explicit sharing of
+one private scratch, a reusable memory-only reference, and `vibechar run` injection
+into a child process. Implement the same operation model in Mac and terminal.
+
+- [x] Shared local broker, CLI, editor commands/status and revocation.
+- [x] Verify exact injection without disclosure, output masking, no recovery data,
+  reference isolation, expiry, edits, close/quit and failed access.
+- [x] Build a runnable Mac/terminal increment with native and real PTY checks.
+- [ ] Art's hands-on acceptance before the next feature.
+- [ ] Qualify actual OS lock/sleep notifications, Linux runtime/clipboard support,
+  and terminal lock/sleep behavior. Remote/cloud agents need a separate design.
+
 ### M3 — Fast local text tools
 
 - [ ] Incremental/visible-region highlighting, language detection, manual override.
@@ -183,7 +206,8 @@ feature only if it wins on task completion and review effort.
 - [ ] macOS Apple Silicon primary; validate TUI on macOS and Linux x86_64.
 - [ ] Measure the performance matrix below in release builds on named hardware.
 - [ ] Profile the slow paths, trim resident memory, and enforce the useful budgets.
-- [ ] Verify 0 idle network traffic and no idle polling/redraw loop.
+- [ ] Verify 0 idle network traffic and no idle polling/redraw loop when no Secret
+  Drop is open. Active access allows a 1-second status/expiry check; measure its cost.
 - [ ] Verify graceful startup/recovery when keychain, files, or terminal are unavailable.
 
 Exit: no open text-loss, destructive-save, Unicode-corruption, secret-disclosure,

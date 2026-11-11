@@ -73,6 +73,26 @@ Nonempty private tabs require close/quit confirmation, including hidden tabs.
 Explicit Save a Copy writes a file without changing the tab's private status or
 enabling recovery. Ordinary buffers are still saved locally without encryption.
 
+## Secret Drop
+
+The fast path is one explicit clipboard action: Paste Secret for Agent creates
+a private tab, opens temporary access, and copies a ready-to-send instruction.
+Use Option+Cmd+V on Mac or F8 in the terminal; clipboard contents are never watched.
+An existing private tab offers Give to Agent (Shift+Cmd+C / Ctrl+G or F7).
+
+Keep the text canvas dominant. The private footer shows access state and use count,
+with Copy Again and Stop beside it; ordinary tabs gain no extra chrome. Stop closes
+the current tab on Mac; Agent also offers Close All. Terminal F9 closes all access
+in that editor. All labels remain generic, and grant errors stay distinct from
+ordinary recovery failures. Narrow Mac windows hide font details before actions.
+
+The copied instruction contains a temporary local reference and helper invocation,
+never the value. The actual command receives an environment variable. Editing,
+closing, Stop, or quitting revokes access; 30 minutes without use expires it.
+The Mac app additionally closes access on lock/sleep/session switch. Terminal
+lock/sleep integration remains a qualification item. See the
+[Secret Drop contract](docs/secret-drop.md) for the boundary and limitations.
+
 ## Quality checks before MVP
 
 Verify empty, long-line, large-file, multilingual, light/dark, resized, error,
