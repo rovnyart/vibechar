@@ -9,6 +9,9 @@ native text input does not require keeping this window composition.
 
 ## Visual direction
 
+See [Mac interface studies](design-studies.md) for the Pocket, Paper, and Signal
+proposals and their tradeoffs. They are awaiting Art's feedback; none is accepted.
+
 - [ ] Produce two or three Mac window studies with the same realistic content.
 - [ ] Show an empty scratch, three tabs, and populated JSON/log/prose examples.
 - [ ] Establish a distinctive vibechar identity: typography, palette, spacing, icon idea.
