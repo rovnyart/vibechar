@@ -1,5 +1,8 @@
 //! Shared document storage and edit history for the native and terminal clients.
 
+pub mod checkpoint;
+pub mod session;
+
 use std::{fmt, ops::Range};
 
 use ropey::Rope;
@@ -36,6 +39,29 @@ pub struct Document {
 }
 
 impl Document {
+    pub(crate) fn checkpoint_text(&self) -> Rope {
+        self.text.clone()
+    }
+
+    pub(crate) fn restore(text: Rope, dirty: bool) -> Self {
+        let mut document = Self::new("");
+        let mut previous = '\0';
+        document.crlf = text
+            .chars()
+            .find_map(|character| {
+                if character == '\n' {
+                    return Some(previous == '\r');
+                }
+                previous = character;
+                None
+            })
+            .unwrap_or(false);
+        document.text = text;
+        document.state = u64::from(dirty);
+        document.next_state = document.state + 1;
+        document
+    }
+
     pub fn new(text: &str) -> Self {
         Self {
             text: Rope::from_str(text),

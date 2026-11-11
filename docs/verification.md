@@ -10,14 +10,16 @@ Date: 2026-11-11. This records local evidence for M1, not MVP release acceptance
 
 ## Automated checks
 
-- 15 Rust tests: 7 document/history/Unicode, 2 C bridge, 6 terminal behavior/layout.
+- 26 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 5 recovery, 3 C bridge,
+  and 8 terminal behavior/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
   emoji substitution, undo/redo, dirty tracking, and saved-state reset.
-- Five real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
+- Six real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
-  failed read-only save preserving the previous destination.
+  failed read-only save preserving the previous destination; two independently
+  saved buffers with cursor restoration and hidden-unsaved-buffer quit protection.
 - PTY checks verify terminal attributes, alternate screen, and bracketed paste
   restoration on exit. All temporary processes/files are cleaned up by the harness.
 
@@ -36,6 +38,39 @@ with native scrolling, selection, clipboard, title, and menus available.
 The user started interacting with this window during verification; it was left
 running and subsequent user edits were preserved. Native IME, VoiceOver, failure
 dialogs, light appearance, and large-file behavior have not been qualified.
+
+### Feedback increment: scratch buffers
+
+Baseline is preserved in local initial commit `5462194`. The next increment was
+tested in a separately identified QA app, leaving the user's original window alone.
+Observed: create two scratch tabs, switch by clicking, insert at the remembered
+Unicode cursor, undo independently in both tabs, warn on quit when only a hidden
+buffer is dirty, cancel the warning, close a clean buffer, warn on closing an edited
+buffer, and create a fresh empty scratch after closing the final clean buffer.
+The QA instance was then quit. No scratch recovery or autosave was added.
+
+### Feedback increment: Mac restart recovery
+
+Art's next test identified the missing restart behavior and rejected the visual
+quality. This increment adds Mac recovery; the dedicated interface work is now
+the next feedback step rather than a late cosmetic task.
+
+Native disk/bridge smoke tests verify a checkpoint round-trip, Unicode selection,
+owner-only file permissions, and a second writer being refused. Core tests also
+cover immutable background snapshots, dirty/file metadata, corrupted/invalid
+snapshots, closed tabs staying closed, and failed replacement preserving data.
+
+In an isolated real QA app, entered two tabs with Russian, JSON, and emoji, used
+Cmd+Q, relaunched, and observed both tabs and the selected tab restored. Inserting
+at the remembered cursor produced the expected position before a surrogate-pair
+emoji. Verified a completed background checkpoint, SIGKILLed only the QA process,
+and relaunched: tabs and text survived without a graceful quit. Explicitly closed
+one tab and restarted again; only the remaining tab returned. Quit the QA instance.
+The user's original app/window and its storage were not used for these tests.
+
+The 500 ms debounce leaves a small unsaved-input window on force quit; normal Cmd+Q
+flushes it. No claim is made about power-loss durability, private buffers, or undo
+history after restart. Terminal recovery is not enabled in this increment.
 
 ## Initial performance observations
 

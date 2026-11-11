@@ -21,4 +21,32 @@ bool vc_document_redo(VcDocument *document, size_t *utf16_cursor);
 bool vc_document_dirty(const VcDocument *document);
 void vc_document_mark_saved(VcDocument *document);
 
+typedef struct VcSession VcSession;
+VcSession *vc_session_new(void);
+void vc_session_free(VcSession *session);
+size_t vc_session_count(const VcSession *session);
+size_t vc_session_active(const VcSession *session);
+bool vc_session_select(VcSession *session, size_t index);
+bool vc_session_open(VcSession *session, const uint8_t *text, size_t length,
+                     const uint8_t *path, size_t path_length);
+bool vc_session_close(VcSession *session, bool discard);
+bool vc_session_has_unsaved(const VcSession *session);
+bool vc_session_buffer_dirty(const VcSession *session, size_t index);
+// Borrowed until the next session mutation; never pass this to vc_document_free.
+VcDocument *vc_session_document(VcSession *session);
+// Return required UTF-8 byte length; copy only when output is non-null and fits.
+size_t vc_session_label(const VcSession *session, size_t index, uint8_t *output, size_t capacity);
+size_t vc_session_path(const VcSession *session, uint8_t *output, size_t capacity);
+bool vc_session_set_path(VcSession *session, const uint8_t *path, size_t length);
+bool vc_session_set_selection(VcSession *session, size_t utf16_start, size_t utf16_length);
+bool vc_session_selection(const VcSession *session, size_t *utf16_start, size_t *utf16_length);
+
+// Checkpoints own immutable text snapshots and may be saved on a worker thread.
+typedef struct VcCheckpoint VcCheckpoint;
+VcCheckpoint *vc_session_checkpoint(const VcSession *session);
+void vc_checkpoint_free(VcCheckpoint *checkpoint);
+bool vc_checkpoint_save(const VcCheckpoint *checkpoint, const uint8_t *path, size_t length);
+// 1 = restored, 2 = no recovery file, 0 = failure (live session is unchanged).
+int32_t vc_session_restore(VcSession *session, const uint8_t *path, size_t length);
+
 #endif

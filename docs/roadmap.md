@@ -94,9 +94,12 @@ are measured with larger documents.
 
 ### M2 — Make it a dependable daily scratchpad
 
-- [ ] Shared buffer collection, new/switch/close, save-as, unsaved-close protection.
+- [x] Shared in-memory buffer collection, new/switch/close, and unsaved-close protection.
+- [ ] Save-as for existing file buffers and remaining filesystem protections below.
 - [ ] Atomic saves, clear policy for symlinks/permissions/external file changes.
 - [ ] Debounced recovery journal, crash recovery, retention limits, private mode.
+- [x] Mac local session checkpoints and restart restoration (first recovery increment).
+- [ ] Wire terminal recovery; qualify failure cases, retention, and private mode.
 - [ ] Selection, clipboard, word navigation, indentation, and grouped typing undo.
 - [ ] IME composition, accessibility, keyboard layout, and UTF-16/grapheme tests.
 - [ ] Decide same-machine simultaneous editing: separate sessions in MVP; no silent
@@ -105,6 +108,18 @@ are measured with larger documents.
 Exit: a week of personal use with no lost text, corrupted Unicode, silent overwrite,
 or unexpected secret persistence. Failed disk writes and forced process termination
 have meaningful integration tests. Private mode promises are audited end to end.
+
+### M2a — Early Mac interface design and implementation
+
+The current native window is an unaccepted engineering shell. Art explicitly
+rejected its visual quality. This design pass comes immediately after the session
+restoration feedback checkpoint, before the next editing/AI features.
+
+- [ ] Follow the [interface roadmap](interface-roadmap.md): visual studies, selected
+  direction, compact chrome, custom tabs, typography, light/dark, and interaction.
+- [ ] Implement one coherent Mac interface increment and stop for hands-on feedback.
+- [ ] Check tab overflow, narrow windows, focus, empty/content/error states.
+- [ ] Art accepts the working interface. M6 later rechecks final polish/performance.
 
 ### M3 — Fast local text tools
 
@@ -220,7 +235,12 @@ unrealistic, record evidence and adjust architecture or targets explicitly.
 
 ## Delivery sequence
 
-M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7.
+M0 → M1 → M2 recovery checkpoint → M2a Mac interface → remaining M2 → M3 → M4 → M5 → M6 → M7.
+
+Deliver one small runnable increment at a time, with a short test walkthrough;
+stop for Art's feedback before the next increment. The first requested feedback
+increment adds in-memory scratch buffers while the M1 performance investigation
+remains open. This does not close the M1 measurement gate or the M2 durability gate.
 
 After M1, measure before expanding. After M3, use the offline editor daily. After
 M4, evaluate rewrite UX with a small model before building inference. After M5,

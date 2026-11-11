@@ -3,6 +3,13 @@
 Vibechar is a small, sharp tool. The text is the interface's center of gravity.
 Opening a blank scratch buffer must land on a focused cursor immediately.
 
+## Immediate design priority
+
+The current window and segmented-control tab row are engineering placeholders,
+not an accepted product design. Art's first feedback explicitly rejected the visual
+quality. The Mac design pass now comes directly after recovery feedback, before
+more editing/AI features. Follow [Interface roadmap](docs/interface-roadmap.md).
+
 ## Mac
 
 - Use AppKit text input, native menus/dialogs, system focus and accessibility behavior.
@@ -34,7 +41,10 @@ Opening a blank scratch buffer must land on a focused cursor immediately.
 
 ## First-run and private text
 
-First launch is a blank buffer. Key setup appears only when an AI action is invoked.
+First launch is a blank buffer; later Mac launches restore the last local session.
+Quitting preserves open tabs; explicitly closing a tab removes it from that session.
+A quiet "Saved locally" state distinguishes recovery from exporting a file.
+Key setup appears only when an AI action is invoked.
 Private mode must have a persistent, unobtrusive label. Before private mode exists,
 the prototype must make no claim that pasted tokens are protected from persistence.
 

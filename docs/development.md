@@ -35,7 +35,10 @@ printf 'hello\n' | ./target/release/vibechar
 
 TUI controls: type normally; arrows/Home/End move; Ctrl+Home/End jump through the
 document; Ctrl+S saves (asks a filename for a scratch buffer); Ctrl+Z/Ctrl+Y undo/redo;
-Ctrl+Q quits. With unsaved changes, a second Ctrl+Q explicitly discards them. Escape
+Ctrl+N creates a scratch buffer; F6/Shift+F6 (or Ctrl+PageDown/PageUp) cycle buffers;
+Ctrl+W closes the active buffer; Ctrl+Q quits. Closing an edited buffer requires a
+second Ctrl+W to discard it. Quitting checks every buffer, including hidden ones;
+a second Ctrl+Q explicitly discards all unsaved text. Escape
 cancels the save prompt. Bracketed paste is one undo step. No mouse is required.
 
 Build and open the native development app:
@@ -54,7 +57,36 @@ environment that permits creating a controlling terminal. The integration test
 cleans up its processes and temporary files and uses no desktop terminal app.
 
 Mac controls: native text editing/selection and clipboard; Cmd+N new scratch,
-Cmd+O open UTF-8 file, Cmd+S save, Cmd+Z undo, Shift+Cmd+Z redo, Cmd+Q quit.
+Cmd+O open UTF-8 file in a new buffer, Cmd+S save, Cmd+Z undo, Shift+Cmd+Z redo,
+Cmd+W close buffer, Cmd+Q quit. Click a tab or use Option+Cmd+Left/Right to switch.
+Each buffer remembers its selection and has independent undo history. Closing the
+last buffer starts a fresh empty scratch. Quitting preserves the Mac session locally
+and waits for the final save. Explicitly closing an edited tab asks before removing
+it from the saved session.
+
+## Mac session recovery
+
+Mac captures immutable rope snapshots after a 500 ms pause, then encodes/writes on
+a serial background queue. Normal Cmd+Q and closing the window flush the latest
+state before exit. The next launch restores tab order, text, active tab, selections,
+file destinations, and modified-file flags. Undo histories start fresh after restart.
+
+The default file is `~/Library/Application Support/dev.vibechar.app/session.json`.
+It contains ordinary UTF-8 JSON text and has owner-only permissions (directory 0700,
+file 0600). It is local, unencrypted storage, not a private-buffer feature. A process
+lock prevents two app instances from overwriting the same session. Separate QA
+bundle identifiers have separate recovery folders.
+
+Atomic replacement preserves the previous checkpoint on a failed write. Corrupt or
+unreadable snapshots are left untouched; the app reports an error and disables
+automatic writes for that process. A failed quit flush offers Keep Editing rather
+than silently dropping recent text. Background recovery never overwrites an opened
+file's original destination; Cmd+S still performs that explicit save.
+
+Force quitting may lose input since the last completed background save. Wait for
+"Saved locally" to know the latest checkpoint completed. The 500 ms debounce plus
+write time is not a power-loss durability guarantee. Terminal recovery, retention,
+and private buffers remain later work.
 
 ## Layout
 
@@ -69,12 +101,15 @@ docs/              roadmap, architecture, development, verification evidence
 
 ## M1 limitations
 
-The app is an architecture prototype. Highlighting, AI, recovery/autosave, buffer
-switching, multicursors, grouped typing undo, global hotkeys, and search are later
+The app is an early prototype. Highlighting, AI, terminal recovery,
+multicursors, grouped typing undo, global hotkeys, and search are later
 milestones. TUI selection/clipboard and native IME composition qualification are
-also pending. No settings UI or long-term storage format exists yet.
+also pending. No settings UI exists; recovery uses a versioned JSON checkpoint.
 
-Both clients currently start with one buffer. Ordinary typed characters produce
+Both clients start with one buffer and allow more buffers in the same process.
+Mac buffers are restored after restart; TUI buffers currently persist only while
+their process runs. Switching restores the cursor/selection and scrolls it into
+view; exact manual scroll positions are not retained. Ordinary typed characters produce
 individual undo entries. Mac history restoration copies the document to the view;
 ordinary edits send only the changed text to Rust. TUI navigation currently scans
 the current line for grapheme boundaries: pathological single-line files need the
@@ -84,7 +119,7 @@ Saves are atomic at the file replacement level, but external-change checks,
 filesystem race handling, durability/permission edge cases, and a unified file
 service are M2 work. Do not use this prototype as the only copy of important text.
 Both interfaces reject replacing a known symlink; the TUI also rejects a read-only
-destination. Scratch text has no recovery. No network calls are made by the editor.
+destination. No network calls are made by the editor.
 
 ## Validation policy
 

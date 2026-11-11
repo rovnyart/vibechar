@@ -36,8 +36,10 @@ and a Swift Package. No runtime service, webview, or JavaScript engine is requir
 
 ## Bridge ownership
 
-Expose a minimal opaque document handle. The creator frees the handle exactly once;
-returned strings have one matching bridge free function. Validate null pointers,
+Expose opaque document and session handles. The creator frees an owned handle
+exactly once. Session documents are borrowed until the next session mutation and
+must not be freed independently; Swift resolves the active pointer for each call.
+Text and metadata use caller-owned copy-out buffers. Validate null pointers,
 UTF-8, and ranges. Handles are thread-confined. No Rust panic may unwind through C.
 On allocation failure the process may abort; normal malformed requests return an
 error status. Keep public surface small and verify with a native link/smoke test.
@@ -48,10 +50,22 @@ One process owns one session. Both clients understand the same recovery/action
 formats; live concurrent editing of the same scratch session is outside MVP.
 Opening the same file in two processes requires external-change checks before save.
 
-Scratch recovery is an explicit later feature: atomic journal/checkpoints, owner-only
-permissions, bounded retention, and a separate non-persistent private-buffer policy.
-Initially nothing is autosaved. Do not imply safe secret handling until every path
-to disk, AI, diagnostic output, and recipe persistence is covered.
+The shared Rust session owns its buffer collection, active index, scratch numbering,
+file destinations, and saved selections. Each buffer has an independent document
+history. Both clients check hidden buffers before quitting, and closing the last
+buffer creates a fresh empty one. Scroll geometry remains the responsibility of
+each interface.
+
+The engine provides versioned recovery checkpoints. Capture clones immutable ropes
+instead of serializing on the input thread. Mac debounces capture, serializes/writes
+on a background queue, and flushes that queue on quit. The client owns its Application
+Support directory and process lock. Writes use atomic replacement and owner-only
+permissions. Invalid snapshots do not replace a live session; failed restore disables
+automatic writes to preserve the original. Undo history is not persisted.
+
+Terminal wiring, retention, and private buffers remain pending. Recovery currently
+persists ordinary text without encryption. Do not imply safe secret handling until
+disk, AI, diagnostics, and recipe persistence are all covered.
 
 Save buffers through a same-directory temporary file + flush/sync + atomic replace,
 with a documented symlink/permissions policy and external-change check. Prototype

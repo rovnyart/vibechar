@@ -3,17 +3,31 @@ import Foundation
 
 @MainActor
 final class RustDocument {
-    private let handle: OpaquePointer
+    private let ownedHandle: OpaquePointer?
+    private let session: RustSession?
+    private var handle: OpaquePointer {
+        if let ownedHandle { return ownedHandle }
+        guard let session, let active = vc_session_document(session.handle) else {
+            preconditionFailure("The editing session must have an active document")
+        }
+        return active
+    }
 
     init(_ text: String = "") {
         let bytes = Array(text.utf8)
         guard let document = bytes.withUnsafeBufferPointer({ vc_document_new($0.baseAddress, $0.count) }) else {
             preconditionFailure("Unable to allocate the text document")
         }
-        handle = document
+        ownedHandle = document
+        session = nil
     }
 
-    deinit { vc_document_free(handle) }
+    init(session: RustSession) {
+        ownedHandle = nil
+        self.session = session
+    }
+
+    deinit { if let ownedHandle { vc_document_free(ownedHandle) } }
 
     var isDirty: Bool { vc_document_dirty(handle) }
 

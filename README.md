@@ -22,12 +22,16 @@ into a reusable text transformation, with a preview before anything changes.
 | [Roadmap](docs/roadmap.md) | MVP scope, milestones, dependencies, and acceptance gates |
 | [Architecture](docs/architecture.md) | Shared engine, native adapters, data ownership, and AI boundaries |
 | [Design](design.md) | Interaction and visual direction for both interfaces |
+| [Interface roadmap](docs/interface-roadmap.md) | The early Mac design pass and visual acceptance gates |
 | [Development](docs/development.md) | Toolchain, commands, tests, and current limitations |
 | [Verification](docs/verification.md) | Observed prototype behavior, measurements, and open gates |
 
 ## Current implementation
 
-The repository starts with milestone M1: a shared Rust document engine, a terminal
-editor, and a native macOS editing shell connected through a small C interface.
-This is an architecture prototype, not the MVP. See the roadmap for status and
-the development guide for runnable commands.
+The shared Rust engine drives both a terminal editor and a native macOS editing
+shell. Both support multiple scratch buffers with independent text,
+cursor/selection, undo history, file destinations, and unsaved-close protection.
+Mac saves its session locally and restores tabs after restart; terminal recovery
+is not wired up yet. Highlighting and AI are still ahead. The current Mac chrome
+is a temporary engineering shell awaiting the early interface design pass.
+See the roadmap for status and the development guide for runnable commands.

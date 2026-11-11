@@ -17,7 +17,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         Constraint::Length(1),
     ])
     .areas(frame.area());
-    let line = editor.document.line_index(editor.cursor);
+    let line = editor.document().line_index(editor.cursor);
     let column = editor.cursor_column();
     editor.top = editor.top.min(line);
     if line >= editor.top + usize::from(body.height) {
@@ -28,11 +28,13 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         editor.left = column + 1 - usize::from(body.width);
     }
 
-    let name = editor
-        .path
-        .as_ref()
-        .map_or_else(|| "Scratch".into(), |path| path.display().to_string());
-    let dirty = if editor.document.is_dirty() {
+    let name = format!(
+        "{}/{}  {}",
+        editor.session.active_index() + 1,
+        editor.session.buffers().len(),
+        editor.session.active().label()
+    );
+    let dirty = if editor.document().is_dirty() {
         " ●"
     } else {
         ""
@@ -51,10 +53,10 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     );
 
     let lines: Vec<_> = (editor.top
-        ..(editor.top + usize::from(body.height)).min(editor.document.line_count()))
+        ..(editor.top + usize::from(body.height)).min(editor.document().line_count()))
         .map(|index| {
             Line::raw(visible_line(
-                &editor.document.line(index),
+                &editor.document().line(index),
                 editor.left,
                 usize::from(body.width),
             ))
@@ -72,7 +74,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         status,
     );
     let prompt = editor.save_prompt.as_ref().map_or_else(
-        || " ^S save   ^Z undo   ^Y redo   ^Q quit".into(),
+        || " ^N new  F6 next  ^W close  ^S save  ^Z undo  ^Y redo  ^Q quit".into(),
         |value| format!(" Save as: {value}  [Enter save · Esc cancel]"),
     );
     frame.render_widget(
@@ -119,7 +121,7 @@ mod tests {
     #[test]
     fn renders_a_unicode_document_and_keeps_cursor_visible_after_resize() {
         let mut editor = Editor::new("я\n界界界界界界界界", None);
-        editor.cursor = editor.document.len_chars();
+        editor.cursor = editor.document().len_chars();
         let mut terminal = Terminal::new(TestBackend::new(16, 5)).unwrap();
         terminal.draw(|frame| draw(frame, &mut editor)).unwrap();
         assert!(editor.left > 0);

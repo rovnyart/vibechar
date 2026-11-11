@@ -173,6 +173,27 @@ def main():
             session.finish()
         assert destination.read_text() == "scratch"
 
+        with Session() as session:
+            session.send(b"first\x0esecond\x1b[17~")  # Ctrl+N, then F6 back to first
+            session.wait_for(b"1/2")
+            first = Path(directory) / "first.txt"
+            session.send(b"!\x13")
+            session.wait_for(b"Save as:")
+            session.send(str(first).encode() + b"\r")
+            session.wait_for(b"Saved")
+            assert first.read_text() == "first!", "switching lost the first buffer's cursor or text"
+            session.send(b"\x11")
+            session.wait_for(b"Unsaved")
+            assert session.process.poll() is None, "quit ignored the hidden unsaved buffer"
+            session.send(b"\x1b[17~\x13")
+            second = Path(directory) / "second.txt"
+            session.wait_for(b"Save as:")
+            session.send(str(second).encode() + b"\r")
+            session.wait_for(str(second.name).encode())
+            session.send(b"\x11")
+            session.finish()
+        assert second.read_text() == "second", "saved a different buffer's text"
+
         path.chmod(0o444)
         try:
             with Session(path) as session:
@@ -185,7 +206,7 @@ def main():
             path.chmod(0o644)
 
     print(json.dumps({
-        "real_pty_scenarios": 5,
+        "real_pty_scenarios": 6,
         "utf8_crlf_bytes": "preserved",
         "terminal_restoration": "passed",
         "first_frame_single_sample_ms": round(startup, 2),

@@ -29,7 +29,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .first()
         .is_some_and(|arg| arg == "--help" || arg == "-h")
     {
-        println!("vibechar [FILE]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+S save · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q quit\n\nPrototype: no scratch recovery, highlighting, or AI yet.");
+        println!("vibechar [FILE]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · F6/Shift+F6 switch · Ctrl+W close\nCtrl+S save · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q quit\n\nPrototype: no scratch recovery, highlighting, or AI yet.");
         return Ok(());
     }
     if args.first().is_some_and(|arg| arg == "--version") {
