@@ -1,0 +1,19 @@
+[workspace]
+members = ["crates/core", "crates/bridge", "crates/terminal"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.99"
+
+[workspace.dependencies]
+ropey = "=1.6.1"
+unicode-segmentation = "=1.12.0"
+unicode-width = "=0.2.0"
+ratatui = "=0.29.0"
+crossterm = { version = "=0.28.1", features = ["use-dev-tty"] }
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

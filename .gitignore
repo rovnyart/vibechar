@@ -1,0 +1,9 @@
+/.tooling/
+/target/
+/dist/
+.DS_Store
+**/.build/
+**/.swiftpm/
+*.xcuserstate
+__pycache__/
+*.pyc

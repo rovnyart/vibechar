@@ -1,0 +1,4 @@
+module CVibechar {
+    header "../../../crates/bridge/include/vibechar.h"
+    export *
+}

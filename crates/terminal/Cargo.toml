@@ -1,0 +1,12 @@
+[package]
+name = "vibechar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+vibechar-core = { path = "../core" }
+ratatui.workspace = true
+crossterm.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
