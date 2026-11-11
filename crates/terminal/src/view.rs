@@ -65,9 +65,10 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     frame.render_widget(Paragraph::new(lines), body);
     frame.render_widget(
         Paragraph::new(format!(
-            " {}:{}  UTF-8  · {}",
+            " {}:{}  UTF-8  · {}  {}",
             line + 1,
             column + 1,
+            editor.recovery_status,
             editor.message
         ))
         .style(Style::default().fg(Color::DarkGray)),

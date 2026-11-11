@@ -99,10 +99,11 @@ are measured with larger documents.
 - [ ] Atomic saves, clear policy for symlinks/permissions/external file changes.
 - [ ] Debounced recovery journal, crash recovery, retention limits, private mode.
 - [x] Mac local session checkpoints and restart restoration (first recovery increment).
-- [ ] Wire terminal recovery; qualify failure cases, retention, and private mode.
+- [x] Wire terminal recovery, worker saves, quit flush, restart, and process ownership.
+- [ ] Qualify remaining durability cases, retention, and private mode.
 - [ ] Selection, clipboard, word navigation, indentation, and grouped typing undo.
 - [ ] IME composition, accessibility, keyboard layout, and UTF-16/grapheme tests.
-- [ ] Decide same-machine simultaneous editing: separate sessions in MVP; no silent
+- [x] Decide same-machine simultaneous editing: separate sessions in MVP; no silent
   cross-process sharing or overwriting of another session's scratch recovery.
 
 Exit: a week of personal use with no lost text, corrupted Unicode, silent overwrite,
@@ -241,6 +242,8 @@ Deliver one small runnable increment at a time, with a short test walkthrough;
 stop for Art's feedback before the next increment. The first requested feedback
 increment adds in-memory scratch buffers while the M1 performance investigation
 remains open. This does not close the M1 measurement gate or the M2 durability gate.
+Commit each completed, verified increment locally before handing it over for
+feedback. Recovery parity in both clients is the final behavior step before M2a.
 
 After M1, measure before expanding. After M3, use the offline editor daily. After
 M4, evaluate rewrite UX with a small model before building inference. After M5,

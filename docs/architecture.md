@@ -63,7 +63,13 @@ Support directory and process lock. Writes use atomic replacement and owner-only
 permissions. Invalid snapshots do not replace a live session; failed restore disables
 automatic writes to preserve the original. Undo history is not persisted.
 
-Terminal wiring, retention, and private buffers remain pending. Recovery currently
+Terminal uses the same checkpoint API with a worker queue and an exclusive process
+lock. Its default storage is separate from the GUI session. Normal quit fences
+pending writes; a failed flush keeps the editor open unless the user explicitly
+quits without the latest changes. Startup refuses corrupt data and an already
+owned session before entering raw terminal mode. Idle input and worker queues block.
+
+Retention and private buffers remain pending. Recovery currently
 persists ordinary text without encryption. Do not imply safe secret handling until
 disk, AI, diagnostics, and recipe persistence are all covered.
 

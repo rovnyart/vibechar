@@ -10,16 +10,18 @@ Date: 2026-11-11. This records local evidence for M1, not MVP release acceptance
 
 ## Automated checks
 
-- 26 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 5 recovery, 3 C bridge,
-  and 8 terminal behavior/layout.
+- 28 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 5 core recovery,
+  3 C bridge, and 10 terminal model/layout/recovery tests.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
   emoji substitution, undo/redo, dirty tracking, and saved-state reset.
-- Six real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
+- Ten real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
-  saved buffers with cursor restoration and hidden-unsaved-buffer quit protection.
+  saved buffers with restart/cursor restoration; background checkpoint + forced
+  termination; closed tabs staying closed; corrupt recovery; concurrent writer
+  rejection; and failed quit flush with manual text rescue before explicit quit.
 - PTY checks verify terminal attributes, alternate screen, and bracketed paste
   restoration on exit. All temporary processes/files are cleaned up by the harness.
 
@@ -72,6 +74,24 @@ The 500 ms debounce leaves a small unsaved-input window on force quit; normal Cm
 flushes it. No claim is made about power-loss durability, private buffers, or undo
 history after restart. Terminal recovery is not enabled in this increment.
 
+### Feedback increment: terminal recovery parity
+
+Preserved the earlier buffer/Mac recovery work in local commit `8fab1af`, then
+connected terminal recovery to the shared checkpoint format. Real PTY tests use
+private temporary directories and do not touch either default client session.
+
+Observed two independently saved buffers returning with the saved active buffer
+and cursor. Reopening an existing file selected its recovered edits instead of
+duplicating/reloading the buffer. Piped input was retained on quit; background
+recovery left original files unchanged. A completed checkpoint survived SIGKILL,
+and an explicitly closed tab stayed closed on the next launch.
+
+Verified corrupt checkpoints and second writers are rejected before raw mode.
+Blocked a recovery destination: Ctrl+Q kept the editor open, Ctrl+S rescued the
+text to a separate file, and explicit repeated Ctrl+Q quit with terminal attributes
+restored. Core worker tests also cover retrying after a failed save and final flush
+ordering after queued writes. Linux end-to-end validation remains pending.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS
@@ -110,5 +130,6 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 
 Native startup and Mac bridge/presentation costs across representative file sizes
 still need measurement. The milestone's baseline checkbox remains open until that
-evidence is recorded. M2 durability/recovery, M3 syntax/editing tools, and M4/M5 AI
-are not implemented. The prototype should not hold the only copy of important text.
+evidence is recorded. M2 recovery is partial: retention, private buffers, and broader
+durability qualification remain open. M3 syntax/editing tools and M4/M5 AI are not
+implemented. The prototype should not hold the only copy of important text.

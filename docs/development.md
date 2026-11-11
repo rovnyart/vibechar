@@ -37,8 +37,9 @@ TUI controls: type normally; arrows/Home/End move; Ctrl+Home/End jump through th
 document; Ctrl+S saves (asks a filename for a scratch buffer); Ctrl+Z/Ctrl+Y undo/redo;
 Ctrl+N creates a scratch buffer; F6/Shift+F6 (or Ctrl+PageDown/PageUp) cycle buffers;
 Ctrl+W closes the active buffer; Ctrl+Q quits. Closing an edited buffer requires a
-second Ctrl+W to discard it. Quitting checks every buffer, including hidden ones;
-a second Ctrl+Q explicitly discards all unsaved text. Escape
+second Ctrl+W to discard it. Ctrl+Q flushes the entire local session, including
+hidden buffers, before quitting. If that flush fails, the editor stays open;
+a second Ctrl+Q allows quitting without the latest changes. Escape
 cancels the save prompt. Bracketed paste is one undo step. No mouse is required.
 
 Build and open the native development app:
@@ -85,8 +86,32 @@ file's original destination; Cmd+S still performs that explicit save.
 
 Force quitting may lose input since the last completed background save. Wait for
 "Saved locally" to know the latest checkpoint completed. The 500 ms debounce plus
-write time is not a power-loss durability guarantee. Terminal recovery, retention,
-and private buffers remain later work.
+write time is not a power-loss durability guarantee. Retention and private buffers
+remain later work.
+
+## Terminal session recovery
+
+Terminal uses the same Rust checkpoint format and a dedicated worker thread.
+After a 500 ms input pause it captures and queues a snapshot; Ctrl+Q waits for the
+latest save. An idle session blocks on terminal input, rather than polling or
+redrawing continuously. The next launch restores all buffers, text, cursor positions,
+active buffer, file destinations, and modified flags. Undo starts fresh after restart.
+
+Default storage is `~/Library/Application Support/dev.vibechar.terminal/` on macOS
+and `$XDG_STATE_HOME/vibechar/terminal/` on Linux (fallback:
+`~/.local/state/vibechar/terminal/`). The Mac GUI and terminal use separate sessions.
+Folders/files are owner-only. A second terminal instance using the same session
+exits with a clear error before changing terminal mode. A corrupt checkpoint is
+left untouched and startup fails rather than replacing it with an empty session.
+
+`vibechar FILE` selects that file's existing recovered buffer, preserving pending
+edits, or opens a new buffer beside recovered ones. Piped text opens a new scratch.
+File destinations are absolute so resuming from another working directory does not
+redirect saves. Background recovery never writes changes to the original files.
+
+Tests set `VIBECHAR_STATE_DIR` to a private temporary directory. This override can
+also isolate a separate terminal session; it does not alter the GUI's storage.
+Linux path selection is implemented; Linux runtime acceptance remains the M6 gate.
 
 ## Layout
 
@@ -101,14 +126,14 @@ docs/              roadmap, architecture, development, verification evidence
 
 ## M1 limitations
 
-The app is an early prototype. Highlighting, AI, terminal recovery,
+The app is an early prototype. Highlighting, AI,
 multicursors, grouped typing undo, global hotkeys, and search are later
 milestones. TUI selection/clipboard and native IME composition qualification are
 also pending. No settings UI exists; recovery uses a versioned JSON checkpoint.
 
 Both clients start with one buffer and allow more buffers in the same process.
-Mac buffers are restored after restart; TUI buffers currently persist only while
-their process runs. Switching restores the cursor/selection and scrolls it into
+Both clients restore their separate sessions after restart. Switching restores
+the cursor/selection and scrolls it into
 view; exact manual scroll positions are not retained. Ordinary typed characters produce
 individual undo entries. Mac history restoration copies the document to the view;
 ordinary edits send only the changed text to Rust. TUI navigation currently scans

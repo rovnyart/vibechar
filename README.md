@@ -31,7 +31,8 @@ into a reusable text transformation, with a preview before anything changes.
 The shared Rust engine drives both a terminal editor and a native macOS editing
 shell. Both support multiple scratch buffers with independent text,
 cursor/selection, undo history, file destinations, and unsaved-close protection.
-Mac saves its session locally and restores tabs after restart; terminal recovery
-is not wired up yet. Highlighting and AI are still ahead. The current Mac chrome
+Both clients save their own local sessions and restore tabs after restart. Their
+session files are separate; live synchronization is not implemented. Highlighting
+and AI are still ahead. The current Mac chrome
 is a temporary engineering shell awaiting the early interface design pass.
 See the roadmap for status and the development guide for runnable commands.

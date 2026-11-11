@@ -13,21 +13,26 @@ pub struct Editor {
     pub top: usize,
     pub left: usize,
     pub message: String,
+    pub recovery_status: &'static str,
     pub save_prompt: Option<String>,
-    discard_pending: bool,
     close_pending: bool,
 }
 
 impl Editor {
     pub fn new(text: &str, path: Option<PathBuf>) -> Self {
+        Self::from_session(Session::new(text, path))
+    }
+
+    pub fn from_session(session: Session) -> Self {
+        let cursor = session.active().selection.start;
         Self {
-            session: Session::new(text, path),
-            cursor: 0,
+            session,
+            cursor,
             top: 0,
             left: 0,
-            message: "Preview · Save your text to keep it".into(),
+            message: String::new(),
+            recovery_status: "Saving locally…",
             save_prompt: None,
-            discard_pending: false,
             close_pending: false,
         }
     }
@@ -48,7 +53,6 @@ impl Editor {
         {
             self.cursor += text.chars().count();
         }
-        self.discard_pending = false;
         self.close_pending = false;
     }
 
@@ -67,7 +71,6 @@ impl Editor {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             return self.control(key.code);
         }
-        self.discard_pending = false;
         self.close_pending = false;
         match key.code {
             KeyCode::Char(ch)
@@ -121,15 +124,8 @@ impl Editor {
 
     fn control(&mut self, code: KeyCode) -> bool {
         if code == KeyCode::Char('q') {
-            if !self.session.has_unsaved() || self.discard_pending {
-                return true;
-            }
-            self.message = "Unsaved buffers. F6 to review · Ctrl+Q again to discard all".into();
-            self.close_pending = false;
-            self.discard_pending = true;
-            return false;
+            return true;
         }
-        self.discard_pending = false;
         if code == KeyCode::Char('w') {
             if self.document().is_dirty() && !self.close_pending {
                 self.message =
@@ -146,9 +142,7 @@ impl Editor {
         match code {
             KeyCode::Char('s') => self.save(),
             KeyCode::Char('n') => {
-                self.remember_cursor();
-                self.session.open("", None);
-                self.restore_cursor();
+                self.open("", None);
             }
             KeyCode::PageDown => self.switch_buffer(1),
             KeyCode::PageUp => self.switch_buffer(-1),
@@ -207,7 +201,7 @@ impl Editor {
         self.cursor = self.document().line_start(target) + offset;
     }
 
-    fn remember_cursor(&mut self) {
+    pub fn remember_cursor(&mut self) {
         self.session.active_mut().selection = self.cursor..self.cursor;
     }
 
@@ -215,7 +209,20 @@ impl Editor {
         self.cursor = self.session.active().selection.start;
         self.top = 0;
         self.left = 0;
-        self.message = "Preview · Save your text to keep it".into();
+        self.message.clear();
+    }
+
+    pub fn open(&mut self, text: &str, path: Option<PathBuf>) {
+        self.remember_cursor();
+        self.session.open(text, path);
+        self.restore_cursor();
+    }
+
+    pub fn select_buffer(&mut self, index: usize) {
+        self.remember_cursor();
+        if self.session.select(index) {
+            self.restore_cursor();
+        }
     }
 
     fn switch_buffer(&mut self, direction: isize) {
@@ -253,7 +260,13 @@ impl Editor {
                 return;
             };
             if !value.is_empty() {
-                let target = PathBuf::from(value);
+                let target = match std::path::absolute(value) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        self.message = format!("Save failed: {error}");
+                        return;
+                    }
+                };
                 if target.exists() {
                     self.message = "Choose a new filename; replacing an existing file needs a later save-as dialog".into();
                     return;
@@ -329,19 +342,13 @@ mod tests {
     }
 
     #[test]
-    fn quit_requires_explicit_discard_after_editing() {
-        let mut editor = Editor::new("", None);
-        editor.insert("keep me");
-        let quit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        assert!(!editor.handle(quit));
-        assert!(editor.handle(quit));
-    }
-
-    #[test]
-    fn piped_text_is_unsaved_until_written_to_a_file() {
-        let mut editor = Editor::new("piped input", None);
-        assert!(editor.document().is_dirty());
-        assert!(!editor.handle(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)));
+    fn restored_session_places_new_input_at_the_saved_cursor() {
+        let mut session = Session::new("first", None);
+        session.active_mut().selection = 2..2;
+        let mut editor = Editor::from_session(session);
+        editor.insert("!");
+        assert_eq!(editor.document().text(), "fi!rst");
+        assert_eq!(editor.cursor, 3);
     }
 
     #[test]
@@ -362,13 +369,12 @@ mod tests {
     }
 
     #[test]
-    fn close_and_quit_protect_dirty_buffers_including_hidden_ones() {
+    fn closing_a_buffer_preserves_edited_text_until_confirmed() {
         let mut editor = Editor::new("keep", None);
         let close = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
         editor.handle(close);
         assert_eq!(editor.document().text(), "keep");
         editor.handle(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL));
-        assert!(!editor.handle(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)));
         editor.handle(close);
         assert_eq!(editor.document().text(), "keep");
         editor.handle(close);

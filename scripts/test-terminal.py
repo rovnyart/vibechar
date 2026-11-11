@@ -20,7 +20,9 @@ BINARY = ROOT / "target/release/vibechar"
 
 
 class Session:
-    def __init__(self, *arguments, piped=None):
+    def __init__(self, *arguments, piped=None, state=None, expect_ready=True):
+        self.temporary_state = tempfile.TemporaryDirectory(prefix="vibechar-state-") if state is None else None
+        self.state = Path(self.temporary_state.name) if self.temporary_state else Path(state)
         self.master, self.slave = pty.openpty()
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 100, 0, 0))
         self.original = termios.tcgetattr(self.slave)
@@ -38,17 +40,18 @@ class Session:
             stderr=self.slave,
             pass_fds=(self.slave,),
             preexec_fn=controlling_terminal,
-            env={**os.environ, "TERM": "xterm-256color"},
+            env={**os.environ, "TERM": "xterm-256color", "VIBECHAR_STATE_DIR": str(self.state)},
         )
         if piped is not None:
             self.process.stdin.write(piped)
             self.process.stdin.close()
-        try:
-            self.wait_for(b"vibechar")
-            self.wait_for(b"\x1b[?25h")
-        except BaseException:
-            self.close()
-            raise
+        if expect_ready:
+            try:
+                self.wait_for(b"vibechar")
+                self.wait_for(b"\x1b[?25h")
+            except BaseException:
+                self.close()
+                raise
         self.first_frame_ms = (time.perf_counter() - self.started) * 1000
 
     def receive(self, timeout=0.1):
@@ -108,6 +111,37 @@ class Session:
     def send(self, data):
         os.write(self.master, data)
 
+    def wait_until(self, condition, timeout=5):
+        deadline = time.monotonic() + timeout
+        while not condition():
+            self.receive(0.05)
+            assert self.process.poll() is None, bytes(self.output)
+            assert time.monotonic() < deadline, "timed out waiting for persisted state"
+
+    def checkpoint(self):
+        try:
+            return json.loads((self.state / "session.json").read_text())
+        except FileNotFoundError:
+            return None
+
+    def file_matches(self, path, content):
+        try:
+            return path.read_bytes() == content
+        except FileNotFoundError:
+            return False
+
+    def failed_start(self, message):
+        deadline = time.monotonic() + 5
+        while self.process.poll() is None:
+            self.receive()
+            assert time.monotonic() < deadline, bytes(self.output)
+        assert self.process.returncode == 1
+        while self.receive(0):
+            pass
+        assert message in self.output, bytes(self.output)
+        assert termios.tcgetattr(self.master) == self.original
+        assert b"\x1b[?1049h" not in self.output, "failed startup entered raw terminal"
+
     def finish(self):
         deadline = time.monotonic() + 5
         while self.process.poll() is None and time.monotonic() < deadline:
@@ -123,9 +157,11 @@ class Session:
     def close(self):
         if self.process.poll() is None:
             self.process.kill()
-            self.process.wait()
+            self.process.wait(timeout=5)
         os.close(self.master)
         os.close(self.slave)
+        if self.temporary_state:
+            self.temporary_state.cleanup()
 
     def __enter__(self):
         return self
@@ -137,78 +173,143 @@ class Session:
 def main():
     expected = "Привет 👩‍💻\r\nline\r\n".encode()
     with tempfile.TemporaryDirectory(prefix="vibechar-test-") as directory:
-        path = Path(directory) / "sample.txt"
+        directory = Path(directory)
+        path = directory / "sample.txt"
         with Session(path) as session:
             startup = session.first_frame_ms
             session.send(b"\x1b[200~" + expected + b"\x1b[201~")
             session.wait_for("Привет".encode())
-            session.send(b"\x1a\x19\x13")  # undo, redo, save
-            session.wait_for(b"Saved")
+            session.send(b"\x1a\x19\x13")  # undo, redo, save file
+            session.wait_until(lambda: session.file_matches(path, expected))
             rss = int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(session.process.pid)]))
             session.send(b"\x11")
             session.finish()
-        assert path.read_bytes() == expected, "paste/undo/redo/save changed UTF-8 or CRLF"
+        assert path.read_bytes() == expected
 
         with Session(path) as session:
             session.send(b"!\x11")
-            session.wait_for(b"Unsaved")
-            assert session.process.poll() is None, "unsaved text was discarded"
-            session.send(b"\x1a\x11")  # undo to saved state, quit
             session.finish()
-        assert path.read_bytes() == expected
+            assert session.checkpoint()["buffers"][0]["text"] == "!" + expected.decode()
+        assert path.read_bytes() == expected, "recovery overwrote the original file"
 
         with Session(piped=expected) as session:
             session.send(b"\x11")
-            session.wait_for(b"Unsaved")
-            session.send(b"\x11")
             session.finish()
+            assert session.checkpoint()["buffers"][0]["text"] == expected.decode()
 
         with Session() as session:
             session.send(b"scratch\x13")
             session.wait_for(b"Save as:")
-            destination = Path(directory) / "scratch.txt"
+            destination = directory / "scratch.txt"
             session.send(str(destination).encode() + b"\r")
-            session.wait_for(b"Saved")
+            session.wait_until(lambda: session.file_matches(destination, b"scratch"))
             session.send(b"\x11")
             session.finish()
         assert destination.read_text() == "scratch"
 
-        with Session() as session:
-            session.send(b"first\x0esecond\x1b[17~")  # Ctrl+N, then F6 back to first
+        state = directory / "two-buffers"
+        with Session(state=state) as session:
+            session.send(b"first\x0esecond\x1b[17~")
             session.wait_for(b"1/2")
-            first = Path(directory) / "first.txt"
+            first = directory / "first.txt"
             session.send(b"!\x13")
             session.wait_for(b"Save as:")
             session.send(str(first).encode() + b"\r")
-            session.wait_for(b"Saved")
-            assert first.read_text() == "first!", "switching lost the first buffer's cursor or text"
-            session.send(b"\x11")
-            session.wait_for(b"Unsaved")
-            assert session.process.poll() is None, "quit ignored the hidden unsaved buffer"
+            session.wait_until(lambda: session.file_matches(first, b"first!"))
             session.send(b"\x1b[17~\x13")
-            second = Path(directory) / "second.txt"
+            second = directory / "second.txt"
             session.wait_for(b"Save as:")
             session.send(str(second).encode() + b"\r")
-            session.wait_for(str(second.name).encode())
+            session.wait_until(lambda: session.file_matches(second, b"second"))
+            session.send(b"\x1b[D\x11")  # cursor before d, flush and quit
+            session.finish()
+        with Session(state=state) as session:
+            session.wait_for(b"2/2")
+            session.send(b"?")
+            session.wait_for(b"secon?d")
+            session.send(b"\x1b[17~")
+            session.wait_for(b"first!")
             session.send(b"\x11")
             session.finish()
-        assert second.read_text() == "second", "saved a different buffer's text"
+            assert session.checkpoint()["buffers"][1]["text"] == "secon?d"
+        assert first.read_text() == "first!" and second.read_text() == "second"
+        # Opening the same file again selects its recovered buffer, preserving edits.
+        with Session(second, state=state) as session:
+            session.wait_for(b"2/2")
+            session.wait_for(b"secon?d")
+            session.send(b"\x11")
+            session.finish()
 
         path.chmod(0o444)
         try:
             with Session(path) as session:
                 session.send(b"!\x13")
                 session.wait_for(b"Save failed")
-                assert path.read_bytes() == expected, "failed save changed destination"
-                session.send(b"\x11\x11")
+                assert path.read_bytes() == expected
+                session.send(b"\x11")
                 session.finish()
+                assert session.checkpoint()["buffers"][0]["text"].startswith("!")
         finally:
             path.chmod(0o644)
 
+        background = directory / "background"
+        with Session(state=background) as session:
+            session.send(b"\x1b[200~" + expected + b"\x1b[201~\x0erecover me")
+            session.wait_until(lambda: (data := session.checkpoint()) is not None
+                               and len(data["buffers"]) == 2
+                               and data["buffers"][1]["text"] == "recover me")
+            assert (background / "session.json").stat().st_mode & 0o777 == 0o600
+            session.process.kill()
+            session.process.wait()
+        with Session(state=background) as session:
+            session.wait_for(b"2/2")
+            session.wait_for(b"recover me")
+            session.send(b"\x17")
+            session.wait_for(b"Unsaved text")
+            session.send(b"\x17\x11")  # discard the tab, save the remaining session
+            session.finish()
+        with Session(state=background) as session:
+            session.wait_for(b"1/1")
+            session.wait_for("Привет".encode())
+            session.send(b"\x11")
+            session.finish()
+
+        corrupt = directory / "corrupt"
+        corrupt.mkdir(mode=0o700)
+        (corrupt / "session.json").write_bytes(b"{broken")
+        with Session(state=corrupt, expect_ready=False) as session:
+            session.failed_start(b"invalid or unsupported recovery snapshot")
+        assert (corrupt / "session.json").read_bytes() == b"{broken"
+
+        locked = directory / "locked"
+        with Session(state=locked) as first_session:
+            with Session(state=locked, expect_ready=False) as second_session:
+                second_session.failed_start(b"another terminal editor is already using this session")
+            first_session.send(b"still here\x11")
+            first_session.finish()
+
+        blocked = directory / "failed-save"
+        with Session(state=blocked) as session:
+            checkpoint = blocked / "session.json"
+            checkpoint.mkdir()
+            (checkpoint / "sentinel").write_text("keep")
+            session.send(b"keep me\x11")
+            session.wait_for(b"Ctrl+Q again quits")
+            assert session.process.poll() is None, "failed flush silently quit"
+            destination = directory / "rescued.txt"
+            session.send(b"\x13")
+            session.wait_for(b"Save as:")
+            session.send(str(destination).encode() + b"\r")
+            session.wait_until(lambda: session.file_matches(destination, b"keep me"))
+            session.send(b"\x11\x11")
+            session.finish()
+        assert (checkpoint / "sentinel").read_text() == "keep"
+
     print(json.dumps({
-        "real_pty_scenarios": 6,
+        "real_pty_scenarios": 10,
         "utf8_crlf_bytes": "preserved",
         "terminal_restoration": "passed",
+        "session_restart_and_force_stop_recovery": "passed",
         "first_frame_single_sample_ms": round(startup, 2),
         "tui_single_sample_rss_kib": rss,
     }, indent=2))
