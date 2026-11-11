@@ -1,6 +1,7 @@
 use std::{ops::Range, path::PathBuf};
 
 use crate::Document;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Buffer {
     pub document: Document,
@@ -15,7 +16,30 @@ impl Buffer {
             .as_ref()
             .and_then(|path| path.file_name())
             .map_or_else(
-                || format!("Scratch {}", self.scratch_number),
+                || {
+                    // Never scan/copy a large scratch just to draw its tab.
+                    let prefix: String =
+                        self.document.checkpoint_text().chars().take(256).collect();
+                    let first_line = prefix.lines().map(str::trim).find(|line| {
+                        line.chars()
+                            .any(|c| !c.is_whitespace() && !"{}[],;:".contains(c))
+                    });
+                    first_line.map_or_else(
+                        || format!("Scratch {}", self.scratch_number),
+                        |line| {
+                            let clean: String = line.chars().filter(|c| !c.is_control()).collect();
+                            let mut title: String = clean.graphemes(true).take(32).collect();
+                            if clean.graphemes(true).count() > 32 {
+                                title.push('…');
+                            }
+                            if title.is_empty() {
+                                format!("Scratch {}", self.scratch_number)
+                            } else {
+                                title
+                            }
+                        },
+                    )
+                },
                 |name| name.to_string_lossy().into_owned(),
             )
     }
@@ -98,5 +122,26 @@ impl Session {
             self.active = self.active.min(self.buffers.len() - 1);
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::*;
+
+    #[test]
+    fn scratch_labels_are_bounded_unicode_previews_and_files_keep_their_names() {
+        let mut session = Session::new("", None);
+        assert_eq!(session.active().label(), "Scratch 1");
+        session.open("\r\n  Привет 👩‍💻  \r\nsecond line", None);
+        assert_eq!(session.active().label(), "Привет 👩‍💻");
+        session.active_mut().document.replace(0..0, "{\n").unwrap();
+        assert_eq!(session.active().label(), "Привет 👩‍💻");
+        session.open(&"👩‍💻".repeat(40), None);
+        assert_eq!(session.active().label(), format!("{}…", "👩‍💻".repeat(32)));
+        session.open(&format!("{}hidden title", "\n".repeat(256)), None);
+        assert_eq!(session.active().label(), "Scratch 4");
+        session.open("different content", Some(PathBuf::from("/tmp/actual.json")));
+        assert_eq!(session.active().label(), "actual.json");
     }
 }

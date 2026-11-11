@@ -32,6 +32,7 @@ bool vc_session_open(VcSession *session, const uint8_t *text, size_t length,
 bool vc_session_close(VcSession *session, bool discard);
 bool vc_session_has_unsaved(const VcSession *session);
 bool vc_session_buffer_dirty(const VcSession *session, size_t index);
+bool vc_session_buffer_is_file(const VcSession *session, size_t index);
 // Borrowed until the next session mutation; never pass this to vc_document_free.
 VcDocument *vc_session_document(VcSession *session);
 // Return required UTF-8 byte length; copy only when output is non-null and fits.

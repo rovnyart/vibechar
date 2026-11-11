@@ -65,6 +65,34 @@ last buffer starts a fresh empty scratch. Quitting preserves the Mac session loc
 and waits for the final save. Explicitly closing an edited tab asks before removing
 it from the saved session.
 
+The Mac interface follows Pocket: traffic lights, compact tabs, new-tab button,
+and `V_` share a 54 pt header. When tabs overflow, the chevron opens all tabs; the
+active tab stays visible. Long labels truncate with full names available in native
+tooltips and the menu. Scratch names use a bounded preview of the first meaningful
+line (also shared with the terminal); file tabs keep their filenames. The file
+modification dot is independent from the footer's local session-save status.
+
+View provides text zoom (Zoom In/Out and Cmd+0 reset), an appearance submenu
+(Follow System/Light/Dark), and full screen. Appearance and the normal window frame
+persist locally. The canvas uses native AppKit input and an opaque light/dark
+surface. Syntax colors, AI actions, line numbers, and line/column indicators remain
+later work; the design studies showed illustrative future interactions.
+
+The build's native smoke test checks tab geometry at 420–1600 pt, active-tab
+visibility with 14 tabs, per-tab close targets, and the actual window composition
+in both appearances. It checks that the system titlebar does not clip its buttons
+or intercept clicks on tab controls, and typography does not alter document text
+or history. To render the actual content view offscreen with synthetic text:
+
+```sh
+VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/pocket-ui" \
+  dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-test
+```
+
+These images exclude the system titlebar/traffic-light layer. They supplement
+on-screen application checks; they do not qualify native full-screen transitions,
+VoiceOver, or IME composition.
+
 ## Mac session recovery
 
 Mac captures immutable rope snapshots after a 500 ms pause, then encodes/writes on
@@ -129,7 +157,7 @@ docs/              roadmap, architecture, development, verification evidence
 The app is an early prototype. Highlighting, AI,
 multicursors, grouped typing undo, global hotkeys, and search are later
 milestones. TUI selection/clipboard and native IME composition qualification are
-also pending. No settings UI exists; recovery uses a versioned JSON checkpoint.
+also pending. No dedicated settings window exists; recovery uses a versioned JSON checkpoint.
 
 Both clients start with one buffer and allow more buffers in the same process.
 Both clients restore their separate sessions after restart. Switching restores

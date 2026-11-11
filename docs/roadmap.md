@@ -112,14 +112,14 @@ have meaningful integration tests. Private mode promises are audited end to end.
 
 ### M2a — Early Mac interface design and implementation
 
-The current native window is an unaccepted engineering shell. Art explicitly
-rejected its visual quality. This design pass comes immediately after the session
-restoration feedback checkpoint, before the next editing/AI features.
+The rejected engineering shell has been replaced by the first native Pocket
+increment. Art's hands-on acceptance remains open. This design pass comes before
+the next editing/AI features.
 
 - [x] Compare three visual studies; Art selects Pocket and the `V_` brand mark.
 - [ ] Follow the [interface roadmap](interface-roadmap.md): visual studies, selected
   direction, compact chrome, custom tabs, typography, light/dark, and interaction.
-- [ ] Implement one coherent Mac interface increment and stop for hands-on feedback.
+- [x] Implement one coherent Mac interface increment; stop for hands-on feedback.
 - [ ] Check tab overflow, narrow windows, focus, empty/content/error states.
 - [ ] Art accepts the working interface. M6 later rechecks final polish/performance.
 

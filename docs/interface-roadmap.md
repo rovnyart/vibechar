@@ -11,48 +11,49 @@ native text input does not require keeping this window composition.
 
 Art selected **Pocket** and the **`V_`** mark on 2026-11-11. Follow the accepted
 [design direction](../design.md); [Mac interface studies](design-studies.md)
-preserves the comparison. The working Mac interface still awaits implementation
-and hands-on acceptance.
+preserves the comparison. The first native increment is implemented and awaiting
+hands-on acceptance.
 
 - [x] Produce two or three Mac window studies with the same realistic content.
 - [x] Show an empty scratch, three tabs, and populated JSON/log/prose examples.
 - [x] Art selects Pocket and the uppercase `V_` mark.
 - [ ] Establish a distinctive vibechar identity: typography, palette, spacing, icon idea.
-- [ ] Implement Pocket in the next increment and stop for hands-on feedback.
+- [x] Implement the first Pocket increment; hands-on feedback is now the checkpoint.
 
 Studies must show a lightweight text editor. The editing canvas dominates the
 window; no dashboard, card grid, or permanent AI chat panel is required.
 
 ## Window and tabs
 
-- [ ] Compact title/tab composition, balanced traffic-light placement and margins.
-- [ ] Purpose-built tabs with clear active state, close affordance, and new-tab button.
-- [ ] Useful scratch labels from content, with stable fallbacks.
-- [ ] Legible long names, 10+ tabs, overflow, resize, and keyboard switching.
-- [ ] Modified-file indicator distinct from local session-save state.
-- [ ] Remove oversized grey bands and permanent instructional/debug text.
-- [ ] Keep native menus, focus behavior, and familiar Mac shortcuts.
+- [x] Compact title/tab composition, balanced traffic-light placement and margins.
+- [x] Purpose-built tabs with clear active state, close affordance, and new-tab button.
+- [x] Useful scratch labels from content, with stable fallbacks.
+- [x] Legible long names, 10+ tabs, overflow, resize, and keyboard switching.
+- [x] Modified-file indicator distinct from local session-save state.
+- [x] Remove oversized grey bands and permanent instructional/debug text.
+- [x] Keep native menus, focus behavior, and familiar Mac shortcuts.
 
 ## Canvas and typography
 
-- [ ] Deliberate font size, line height, text insets, selection color, and cursor.
+- [x] Deliberate font size, line height, text insets, selection color, and cursor.
 - [ ] Check Russian/English prose, JSON, code, emoji, and long lines side by side.
-- [ ] Predictable font zoom; quiet line/column indicators.
-- [ ] Opaque text canvas; use native materials only where they improve chrome.
+- [x] Text zoom through View; display the current size quietly in the footer.
+- [ ] Quiet line/column indicators.
+- [x] Opaque text canvas; use native materials only where they improve chrome.
 - [ ] Preserve native selection, IME, clipboard, and accessibility.
 
 ## Color and identity
 
-- [ ] Design light and dark appearances together with consistent contrast/hierarchy.
+- [x] Design and render light/dark appearances together; View can override the system.
 - [x] Choose warm orange with warm light / graphite dark neutrals for Pocket.
-- [ ] Avoid generic all-grey controls, excessive borders, and decorative gradients.
+- [x] Avoid generic all-grey controls, excessive borders, and decorative gradients.
 - [ ] Refine the approved `V_` mark, vibechar wordmark, and app icon.
 
 ## Interaction and states
 
-- [ ] Empty state invites immediate typing with minimal useful hints.
-- [ ] Quiet local saving; visible failures with a concrete recovery action.
-- [ ] Clear tab create/switch/close feedback without moving the editing target.
+- [x] Empty state invites immediate typing with minimal useful hints.
+- [x] Quiet local saving; persistent failures explain saving a copy with Cmd+S.
+- [x] Clear tab create/switch/close feedback without moving the editing target.
 - [ ] Designed hover/focus/pressed states and keyboard-only navigation.
 - [ ] Any motion is short, interruptible, and respects reduced motion.
 - [ ] Search, command palette, and future previews share this visual language.

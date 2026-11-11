@@ -33,7 +33,11 @@ final class RustSession {
 
     func label(_ index: Int) -> String {
         let name = metadata { vc_session_label(handle, index, $0, $1) }
-        return vc_session_buffer_dirty(handle, index) ? "\(name) •" : name
+        return name
+    }
+
+    func isModifiedFile(_ index: Int) -> Bool {
+        vc_session_buffer_is_file(handle, index) && vc_session_buffer_dirty(handle, index)
     }
 
     func select(_ index: Int) { precondition(vc_session_select(handle, index)) }

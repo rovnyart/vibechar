@@ -10,10 +10,10 @@ Art selected **Pocket** as the Mac visual direction on 2026-11-11 and approved
 the product remains vibechar. See [Mac interface studies](docs/design-studies.md)
 for the original comparison and tradeoffs.
 
-The current window and segmented-control tab row are engineering placeholders,
-not an accepted product design. Art's first feedback explicitly rejected the visual
-quality. The Mac design pass now comes directly after recovery feedback, before
-more editing/AI features. Follow [Interface roadmap](docs/interface-roadmap.md).
+The first native Pocket increment replaces the rejected segmented-control shell.
+Art's hands-on acceptance of the working interface is pending. Continue the early
+design pass before more editing/AI features; follow the
+[Interface roadmap](docs/interface-roadmap.md).
 
 ## Mac
 

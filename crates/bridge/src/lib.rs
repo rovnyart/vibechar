@@ -224,6 +224,16 @@ pub unsafe extern "C" fn vc_session_buffer_dirty(session: *const Session, index:
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn vc_session_buffer_is_file(session: *const Session, index: usize) -> bool {
+    guard(|| {
+        session
+            .as_ref()
+            .and_then(|session| session.buffers().get(index))
+            .is_some_and(|buffer| buffer.path.is_some())
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn vc_session_document(session: *mut Session) -> *mut VcDocument {
     guard(|| {
         session.as_mut().map_or(ptr::null_mut(), |session| {
@@ -433,6 +443,9 @@ mod tests {
     fn session_bridge_preserves_utf16_selection_and_rejects_unconfirmed_close() {
         unsafe {
             let session = vc_session_new();
+            assert!(!vc_session_buffer_is_file(session, 0));
+            assert!(!vc_session_buffer_is_file(ptr::null(), 0));
+            assert!(!vc_session_buffer_is_file(session, usize::MAX));
             let text = "я🦀";
             assert!(vc_document_replace(
                 vc_session_document(session),
@@ -454,6 +467,9 @@ mod tests {
             assert!(vc_session_close(session, true));
             assert_eq!(vc_session_count(session), 1);
             assert!(!vc_session_has_unsaved(session));
+            let path = "/tmp/bridge-file.txt";
+            assert!(vc_session_set_path(session, path.as_ptr(), path.len()));
+            assert!(vc_session_buffer_is_file(session, 0));
             vc_session_free(session);
         }
     }

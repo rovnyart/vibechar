@@ -33,7 +33,7 @@ shell. Both support multiple scratch buffers with independent text,
 cursor/selection, undo history, file destinations, and unsaved-close protection.
 Both clients save their own local sessions and restore tabs after restart. Their
 session files are separate; live synchronization is not implemented. Highlighting
-and AI are still ahead. The current Mac chrome is a temporary engineering shell.
-Pocket is the approved visual direction, with the `V_` brand mark; its native
-implementation and hands-on acceptance are next.
+and AI are still ahead. The first native Pocket interface is implemented: compact
+tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
+and quiet session status. Art's hands-on acceptance is the next checkpoint.
 See the roadmap for status and the development guide for runnable commands.

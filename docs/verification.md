@@ -1,6 +1,7 @@
 # Prototype verification
 
-Date: 2026-11-11. This records local evidence for M1, not MVP release acceptance.
+Started: 2026-11-11. Latest increment: 2026-11-12.
+This records local prototype evidence, not MVP release acceptance.
 
 ## Environment
 
@@ -10,8 +11,9 @@ Date: 2026-11-11. This records local evidence for M1, not MVP release acceptance
 
 ## Automated checks
 
-- 28 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 5 core recovery,
-  3 C bridge, and 10 terminal model/layout/recovery tests.
+- 29 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
+  Unicode scratch-label test, 5 core recovery, 3 C bridge, and 10 terminal
+  model/layout/recovery tests.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
@@ -91,6 +93,51 @@ Blocked a recovery destination: Ctrl+Q kept the editor open, Ctrl+S rescued the
 text to a separate file, and explicit repeated Ctrl+Q quit with terminal attributes
 restored. Core worker tests also cover retrying after a failed save and final flush
 ordering after queued writes. Linux end-to-end validation remains pending.
+
+### Feedback increment: native Pocket interface (2026-11-12)
+
+Replaced the stock segmented-control shell with the approved Pocket direction:
+a 54 pt title/tab row, native traffic-light buttons, per-tab close/new controls,
+active-tab-preserving overflow menu, warm orange `V_` mark, light/dark canvas,
+selection/cursor styling, text zoom, empty hints, and a quiet session footer.
+Scratch labels use at most 256 source scalars and 32 displayed graphemes; files
+keep their names. A file modification marker is separate from recovery state.
+
+Full `scripts/check.sh` passed with 29 Rust tests, formatting/Clippy, release builds,
+10 real PTY scenarios, the bridge/recovery smoke tests, and native chrome geometry
+tests across 420/560/880/1600 pt with up to 14 tabs. Native window tests exercise
+the actual composition in light/dark at 420/880 pt, verify typography preserves
+text/history, and distinguish scratch recovery from file modification state.
+Mouse hit tests cover the three real system window buttons and every visible
+header control. Native titlebar space is reserved through an AppKit accessory;
+the system button group retains its own geometry and aligns to the tab row.
+The offscreen tests allow the native window/appearance layout to settle before
+checking coordinates and visible button bounds.
+
+In the isolated on-screen `dev.vibechar.pocket-qa` app, observed the dark interface,
+three restored synthetic buffers, switching by click/keyboard, Russian/ZWJ emoji
+insertion and undo, immediate focus in an empty scratch, 14-tab overflow, selecting
+a hidden buffer, closing an inactive clean tab without changing the active text,
+and cancelling an inactive dirty tab's close confirmation. The graceful quit
+checkpoint contained 13 tabs and the expected active Unicode text. A subsequent
+launch showed recovered buffers; user interaction resumed during this QA session.
+The user's normal app session was never used or replaced for these checks.
+
+Rendered and visually inspected real AppKit content views in light at 880 pt and
+dark at 420 pt. Captures are generated under ignored `dist/pocket-ui/`; these do
+not include system window controls. The live dark-window screenshots also showed
+the system's capture/sharing indicator over the traffic-light region.
+
+An initial PTY run stalled while waiting for a deliberately SIGKILLed test process
+to exit and was interrupted. An isolated signed-copy rerun and then the unchanged
+standard full check passed. No test terminal processes remain. The latest full
+check's single TUI startup sample was 759.28 ms / 2,960 KiB RSS; startup variance
+remains unresolved and no speed improvement is claimed for this UI increment.
+
+Native full-screen transitions, VoiceOver, IME composition, keyboard focus-ring
+qualification, and interactive save-failure presentation still need acceptance.
+App icon work, syntax highlighting, AI, line numbers, and position indicators are
+not part of this increment. Art's hands-on visual acceptance is pending.
 
 ## Initial performance observations
 
