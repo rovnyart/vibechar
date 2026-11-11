@@ -52,9 +52,13 @@ Opening the same file in two processes requires external-change checks before sa
 
 The shared Rust session owns its buffer collection, active index, scratch numbering,
 file destinations, and saved selections. Each buffer has an independent document
-history. Both clients check hidden buffers before quitting, and closing the last
-buffer creates a fresh empty one. Scroll geometry remains the responsibility of
-each interface.
+history. Both clients check hidden buffers before quitting. The engine maintains
+at least one buffer, creating an empty fallback after the last closes. The TUI
+displays that fallback; the Mac UI closes its window and exits instead. A Mac
+last-tab close flushes an empty checkpoint before dropping the live document,
+so cancelling after a failed flush keeps the text intact. Whole-window close and
+Cmd+Q preserve ordinary tabs; explicit tab close removes them from recovery.
+Scroll geometry remains the responsibility of each interface.
 
 The engine provides versioned recovery checkpoints. Capture filters out private
 buffers before cloning immutable ropes, paths, or selections. The stored active

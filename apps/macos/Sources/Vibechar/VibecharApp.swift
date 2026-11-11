@@ -34,6 +34,7 @@ struct VibecharApp {
             recoverySmokeTest()
             pocketInterfaceSmokeTest()
             AppDelegate.interfaceSmokeTest()
+            AppDelegate.closeSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -255,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         file.addItem(privateScratch)
         addItem("Open…", action: #selector(openFile), key: "o", to: file)
         addItem("Save", action: #selector(saveFile), key: "s", to: file)
-        addItem("Close Scratch", action: #selector(closeScratch), key: "w", to: file)
+        addItem("Close Tab", action: #selector(closeScratch), key: "w", to: file)
         addMenu("File", submenu: file, to: menu)
         let buffers = NSMenu(title: "Buffers")
         let previous = NSMenuItem(title: "Previous Buffer", action: #selector(previousBuffer), keyEquivalent: "\u{f702}")
@@ -469,9 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func closeScratch() {
-        guard confirmDiscard() else { return }
-        guard session.close(discard: true) else { return }
-        showActiveBuffer()
+        closeBuffer(at: session.active)
     }
 
     private func closeBuffer(at index: Int) {
@@ -479,7 +478,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         let previous = session.active
         switchBuffer(to: index)
         guard confirmDiscard() else { switchBuffer(to: previous); return }
+        let lastTab = session.count == 1
+        // Persist the removal before discarding the live document. A failed flush
+        // can then keep the original text open if the user cancels closing.
+        if lastTab && !flushBeforeExit(RustSession().checkpoint(), closingLastTab: true) { return }
         guard session.close(discard: true) else { return }
+        if lastTab {
+            closingWindow = true
+            textView.delegate = nil
+            closeAllAgentAccess()
+            window.performClose(nil)
+            return
+        }
         let next = index == previous ? session.active : previous - (index < previous ? 1 : 0)
         session.select(next)
         showActiveBuffer()
@@ -555,6 +565,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if closingWindow { return true }
         closingWindow = saveBeforeQuitting()
         return closingWindow
     }
@@ -568,7 +579,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     private func scheduleSessionSave() {
-        guard recovery != nil else { return }
+        guard !closingWindow, recovery != nil else { return }
         saveGeneration &+= 1
         let generation = saveGeneration
         pendingSave?.cancel()
@@ -595,21 +606,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             alert.addButton(withTitle: "Quit and Discard Private Tabs")
             guard alert.runModal() == .alertSecondButtonReturn else { return false }
         }
+        session.rememberSelection(textView.selectedRange())
+        return flushBeforeExit(session.checkpoint())
+    }
+
+    private func flushBeforeExit(_ checkpoint: RustCheckpoint, closingLastTab: Bool = false) -> Bool {
         pendingSave?.cancel()
         saveGeneration &+= 1
-        session.rememberSelection(textView.selectedRange())
-        if let recovery, recovery.flush(session.checkpoint()) { return true }
+        if let recovery, recovery.flush(checkpoint) { return true }
         footer.showStatus("Couldn't save tabs · Use ⌘S to keep your text", failed: true)
         let alert = NSAlert()
-        alert.messageText = "Your latest tabs could not be saved."
-        alert.informativeText = "Keep editing and save important text with ⌘S. Quitting now may lose changes since the last successful local save."
+        alert.messageText = closingLastTab ? "The closed-tab state could not be saved." : "Your latest tabs could not be saved."
+        alert.informativeText = closingLastTab
+            ? "Keep Editing preserves this tab. Closing anyway may restore an earlier session when you reopen vibechar."
+            : "Keep editing and save important text with ⌘S. Quitting now may lose changes since the last successful local save."
         alert.addButton(withTitle: "Keep Editing")
-        alert.addButton(withTitle: "Quit Without Saving")
+        alert.addButton(withTitle: closingLastTab ? "Close Anyway" : "Quit Without Saving")
         return alert.runModal() == .alertSecondButtonReturn
     }
 
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "vibechar", .applicationVersion: "0.1.0 · Preview"])
+    }
+
+    static func closeSmokeTest() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-close-\(UUID().uuidString)", isDirectory: true)
+        defer { try! FileManager.default.removeItem(at: root) }
+        for action in ["shortcut", "tab-button", "private-empty", "multiple-tabs", "window-button"] {
+            let app = AppDelegate(clipboard: .withUniqueName())
+            app.recovery = try! SessionRecovery(directory: root.appendingPathComponent(action, isDirectory: true))
+            app.makeWindow(restoreFrame: false)
+            defer {
+                app.pendingSave?.cancel()
+                app.saveGeneration &+= 1
+                app.window.delegate = nil
+                app.window.close()
+                app.recovery = nil
+                app.clipboard.clearContents()
+            }
+            var closed = false
+            let observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: app.window, queue: .main) { _ in
+                MainActor.assumeIsolated { closed = true }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+            if action == "private-empty" {
+                app.session.openPrivate()
+                app.session.select(0)
+                precondition(app.session.close(discard: true))
+            } else if action == "tab-button" {
+                let file = root.appendingPathComponent("saved.txt")
+                try! "saved fixture".write(to: file, atomically: true, encoding: .utf8)
+                precondition(app.document.replace(NSRange(location: 0, length: 0), with: "saved fixture"))
+                app.session.completeSave(to: file)
+            } else if action == "window-button" {
+                precondition(app.document.replace(NSRange(location: 0, length: 0), with: "RECOVER_ON_WINDOW_CLOSE"))
+            } else if action == "multiple-tabs" {
+                app.session.open()
+            }
+            app.showActiveBuffer()
+            precondition(app.recovery!.flush(app.session.checkpoint()))
+            if action == "multiple-tabs" {
+                app.closeScratch()
+                precondition(!closed && !app.closingWindow && app.session.count == 1)
+            }
+            if action == "tab-button" {
+                app.header.layoutSubtreeIfNeeded()
+                let close = app.header.subviews.flatMap(\.subviews).compactMap { $0 as? NSButton }.first { $0.toolTip?.hasPrefix("Close saved.txt") == true }!
+                close.performClick(nil)
+            } else if action == "window-button" {
+                app.window.performClose(nil)
+            } else {
+                app.closeScratch()
+            }
+            precondition(closed && app.closingWindow, "Closing the last tab must close its actual window")
+            precondition(app.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+            precondition(app.applicationShouldTerminate(NSApp) == .terminateNow)
+            let restored = RustSession()
+            precondition(try! restored.restore(from: app.recovery!.fileURL))
+            precondition(restored.count == 1 && !restored.isPrivate)
+            precondition(RustDocument(session: restored).text == (action == "window-button" ? "RECOVER_ON_WINDOW_CLOSE" : ""))
+        }
+        print("Last-tab close native smoke passed: Cmd+W, tab close button, private empty, multiple tabs, quit recovery")
     }
 
     // Exercise the real window composition without opening a window or recovery store.

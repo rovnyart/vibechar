@@ -103,6 +103,8 @@ are measured with larger documents.
 ### M2 — Make it a dependable daily scratchpad
 
 - [x] Shared in-memory buffer collection, new/switch/close, and unsaved-close protection.
+- [x] Mac final-tab close exits through the window lifecycle; explicit closure is
+  persisted without spawning another visible scratch. TUI keeps its empty fallback.
 - [ ] Save-as for existing file buffers and remaining filesystem protections below.
 - [ ] Atomic saves, clear policy for symlinks/permissions/external file changes.
 - [ ] Debounced recovery journal, crash recovery, retention limits, private mode.

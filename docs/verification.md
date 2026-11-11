@@ -18,6 +18,9 @@ This records local prototype evidence, not MVP release acceptance.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
   emoji substitution, undo/redo, dirty tracking, and saved-state reset.
+- Native last-tab close checks: Cmd+W action, the real tab close button, empty
+  private tab, multiple-tab behavior, close notifications/termination decision,
+  removed-tab recovery versus whole-window recovery.
 - Twelve real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -272,6 +275,31 @@ directly rather than interacting with the panel.
 
 Full `scripts/check.sh` passed with 41 Rust tests, formatting/Clippy, release builds,
 12 existing PTY scenarios, the Secret Drop PTY scenario and native smoke checks.
+
+### Feedback increment: closing the final Mac tab (2026-11-12)
+
+Art reported that closing the final tab created another scratch instead of allowing
+the app to close. Cmd+W and the tab's × now share one close operation. For the final
+tab, existing discard checks run, an empty recovery checkpoint is flushed before
+the live document is dropped, and the actual window closes. The app's existing
+last-window policy then allows termination. No empty replacement is displayed.
+Whole-window close and Cmd+Q retain ordinary recovery; explicit final-tab closure
+removes that tab from it. The TUI keeps its existing empty-buffer fallback.
+
+A failed final-tab recovery flush offers Keep Editing, which preserves the original
+document, or Close Anyway, which warns that an earlier session could return.
+Successful closure skips a second quit confirmation/flush, stops agent access,
+and prevents pending view events from queuing recovery of the discarded text.
+
+The release AppKit smoke passed with isolated windows, pasteboards and recovery
+directories. It observes actual window-close notifications for the Cmd+W action,
+the real tab close button, an empty private tab, and a multi-tab session reduced
+to its last tab. It checks `.terminateNow`, the last-window termination policy,
+and that restart contains one empty scratch after explicit final-tab closure.
+A separate red-window-close case retains the ordinary text for restart. Existing
+Pocket, private-save and Secret Drop native smoke checks also pass. No running
+user window, clipboard or recovery store was used. Interactive discard/error
+dialogs and the complete on-screen quit workflow remain for hands-on acceptance.
 
 ## Initial performance observations
 

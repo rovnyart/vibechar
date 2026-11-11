@@ -64,11 +64,16 @@ cleans up its processes and temporary files and uses no desktop terminal app.
 Mac controls: native text editing/selection and clipboard; Cmd+N new scratch,
 Shift+Cmd+N new private scratch, Cmd+O open UTF-8 file in a new buffer,
 Cmd+S save (ends private mode after success), Cmd+Z undo, Shift+Cmd+Z redo,
-Cmd+W close buffer, Cmd+Q quit. Click a tab or use Option+Cmd+Left/Right to switch.
-Each buffer remembers its selection and has independent undo history. Closing the
-last buffer starts a fresh empty scratch. Quitting preserves ordinary Mac tabs locally
+Cmd+W closes a tab; closing the last tab by Cmd+W or its × closes the window and
+exits the app after the existing discard checks. Explicitly closed tabs are removed
+from recovery; closing the final tab restarts into an empty scratch. The terminal
+keeps its empty-scratch fallback when its final buffer closes; Ctrl+Q exits it.
+Click a tab or use Option+Cmd+Left/Right to switch.
+Each buffer remembers its selection and has independent undo history. Cmd+Q or
+the red window button preserves ordinary Mac tabs locally
 and waits for the final save. Explicitly closing an edited tab asks before removing
-it from the saved session.
+it from the saved session. If persisting the last tab's removal fails, Keep Editing
+leaves the original tab intact; Close Anyway can leave an older session on disk.
 
 The Mac interface follows Pocket: traffic lights, compact tabs, new-tab button,
 and `V_` share a 54 pt header. When tabs overflow, the chevron opens all tabs; the

@@ -63,6 +63,9 @@ while progressing through the remaining M2 behavior work.
 
 First launch is a blank buffer; later launches restore the last ordinary local session.
 Quitting preserves open tabs; explicitly closing a tab removes it from that session.
+On Mac, closing the last tab by its × or Cmd+W closes the window and exits, instead
+of creating another visible scratch. Discard checks still apply. The red window
+button and Cmd+Q preserve ordinary tabs for the next launch.
 A quiet "Saved locally" state distinguishes recovery from exporting a file.
 Key setup appears only when an AI action is invoked.
 Private scratches are created explicitly with Shift+Cmd+N on Mac or Ctrl+P in the
