@@ -15,6 +15,11 @@ final class RustSession {
     var count: Int { vc_session_count(handle) }
     var active: Int { vc_session_active(handle) }
     var hasUnsaved: Bool { vc_session_has_unsaved(handle) }
+    var hasPrivateText: Bool { vc_session_has_private_text(handle) }
+    var needsCloseConfirmation: Bool { vc_session_needs_close_confirmation(handle) }
+    var isPrivate: Bool { isPrivate(active) }
+    func isPrivate(_ index: Int) -> Bool { vc_session_buffer_private(handle, index) }
+    func openPrivate() { precondition(vc_session_open_private(handle)) }
     var fileURL: URL? {
         let path = metadata { vc_session_path(handle, $0, $1) }
         return path.isEmpty ? nil : URL(fileURLWithPath: path)

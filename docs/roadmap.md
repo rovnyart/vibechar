@@ -100,7 +100,11 @@ are measured with larger documents.
 - [ ] Debounced recovery journal, crash recovery, retention limits, private mode.
 - [x] Mac local session checkpoints and restart restoration (first recovery increment).
 - [x] Wire terminal recovery, worker saves, quit flush, restart, and process ownership.
-- [ ] Qualify remaining durability cases, retention, and private mode.
+- [x] Private scratches in both clients: recovery exclusion, generic titles,
+  persistent mode labels, explicit file copies, and close/quit confirmation.
+- [ ] Art's hands-on acceptance of private mode.
+- [ ] Qualify remaining durability cases and retention; audit private mode again
+  when actions, diagnostics, and AI are introduced.
 - [ ] Selection, clipboard, word navigation, indentation, and grouped typing undo.
 - [ ] IME composition, accessibility, keyboard layout, and UTF-16/grapheme tests.
 - [x] Decide same-machine simultaneous editing: separate sessions in MVP; no silent
@@ -113,15 +117,15 @@ have meaningful integration tests. Private mode promises are audited end to end.
 ### M2a — Early Mac interface design and implementation
 
 The rejected engineering shell has been replaced by the first native Pocket
-increment. Art's hands-on acceptance remains open. This design pass comes before
-the next editing/AI features.
+increment. Art accepted it on 2026-11-12. Remaining visual qualification and polish
+stay open, while the next behavior increments resume M2.
 
 - [x] Compare three visual studies; Art selects Pocket and the `V_` brand mark.
 - [ ] Follow the [interface roadmap](interface-roadmap.md): visual studies, selected
   direction, compact chrome, custom tabs, typography, light/dark, and interaction.
 - [x] Implement one coherent Mac interface increment; stop for hands-on feedback.
 - [ ] Check tab overflow, narrow windows, focus, empty/content/error states.
-- [ ] Art accepts the working interface. M6 later rechecks final polish/performance.
+- [x] Art accepts the first working interface. M6 rechecks final polish/performance.
 
 ### M3 — Fast local text tools
 

@@ -16,6 +16,7 @@ pub struct Editor {
     pub recovery_status: &'static str,
     pub save_prompt: Option<String>,
     close_pending: bool,
+    private_quit_pending: bool,
 }
 
 impl Editor {
@@ -34,10 +35,12 @@ impl Editor {
             recovery_status: "Saving locally…",
             save_prompt: None,
             close_pending: false,
+            private_quit_pending: false,
         }
     }
 
     pub fn insert(&mut self, text: &str) {
+        self.cancel_private_quit();
         if let Some(prompt) = &mut self.save_prompt {
             if !text.contains(['\n', '\r', '\0']) {
                 prompt.push_str(text);
@@ -63,6 +66,11 @@ impl Editor {
     pub fn handle(&mut self, key: KeyEvent) -> bool {
         if key.kind == KeyEventKind::Release {
             return false;
+        }
+        let quitting =
+            key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if !quitting {
+            self.cancel_private_quit();
         }
         if self.save_prompt.is_some() {
             self.prompt_key(key);
@@ -124,12 +132,24 @@ impl Editor {
 
     fn control(&mut self, code: KeyCode) -> bool {
         if code == KeyCode::Char('q') {
+            self.close_pending = false;
+            if self.session.has_private_text() && !self.private_quit_pending {
+                self.message =
+                    "Private tabs will be lost. Ctrl+Q again to discard · any other key cancels"
+                        .into();
+                self.private_quit_pending = true;
+                return false;
+            }
             return true;
         }
         if code == KeyCode::Char('w') {
-            if self.document().is_dirty() && !self.close_pending {
-                self.message =
-                    "Unsaved text. Ctrl+S to save · Ctrl+W again to discard this buffer".into();
+            if self.session.active().needs_close_confirmation() && !self.close_pending {
+                self.message = if self.session.active().is_private() {
+                    "Private text is not recovered. Ctrl+W again to discard · Ctrl+S saves a file"
+                } else {
+                    "Unsaved text. Ctrl+S to save · Ctrl+W again to discard this buffer"
+                }
+                .into();
                 self.close_pending = true;
                 return false;
             }
@@ -143,6 +163,11 @@ impl Editor {
             KeyCode::Char('s') => self.save(),
             KeyCode::Char('n') => {
                 self.open("", None);
+            }
+            KeyCode::Char('p') => {
+                self.remember_cursor();
+                self.session.open_private();
+                self.restore_cursor();
             }
             KeyCode::PageDown => self.switch_buffer(1),
             KeyCode::PageUp => self.switch_buffer(-1),
@@ -161,6 +186,13 @@ impl Editor {
             _ => {}
         }
         false
+    }
+
+    fn cancel_private_quit(&mut self) {
+        if self.private_quit_pending {
+            self.private_quit_pending = false;
+            self.message.clear();
+        }
     }
 
     fn line_end(&self) -> usize {
@@ -235,6 +267,10 @@ impl Editor {
     }
 
     fn save(&mut self) {
+        if self.session.active().is_private() {
+            self.save_prompt = Some(String::new());
+            return;
+        }
         let Some(path) = self.session.active().path.clone() else {
             self.save_prompt = Some(String::new());
             return;
@@ -269,6 +305,15 @@ impl Editor {
                 };
                 if target.exists() {
                     self.message = "Choose a new filename; replacing an existing file needs a later save-as dialog".into();
+                    return;
+                }
+                if self.session.active().is_private() {
+                    self.message = match files::save(&target, self.document()) {
+                        Ok(()) => {
+                            "Saved file on disk. This private tab still won't be recovered.".into()
+                        }
+                        Err(error) => format!("Save failed: {error}"),
+                    };
                     return;
                 }
                 self.session.active_mut().path = Some(target);
@@ -382,5 +427,39 @@ mod tests {
         editor.handle(close);
         assert_eq!(editor.document().text(), "");
         assert_eq!(editor.session.buffers().len(), 1);
+    }
+
+    #[test]
+    fn hidden_private_text_requires_fresh_quit_confirmation_even_after_saving_a_copy() {
+        let mut editor = Editor::new("public", None);
+        let control = |ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL);
+        editor.handle(control('p'));
+        assert!(editor.session.active().is_private());
+        editor.insert("PRIVATE_EDITOR_FIXTURE");
+        editor.session.active_mut().document.mark_saved();
+        editor.handle(control('w'));
+        assert!(editor.session.active().is_private());
+        editor.handle(key(KeyCode::F(6))); // Private remains open behind a public tab.
+        assert!(!editor.session.active().is_private());
+        assert!(!editor.handle(control('q')));
+        editor.handle(key(KeyCode::Left));
+        assert!(!editor.handle(control('q')));
+        editor.insert("!"); // Paste also cancels the quit confirmation.
+        assert!(!editor.handle(control('q')));
+        assert!(editor.handle(control('q')));
+    }
+
+    #[test]
+    fn a_quit_request_cancels_the_previous_private_close_confirmation() {
+        let mut editor = Editor::new("", None);
+        let control = |ch| KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL);
+        editor.handle(control('p'));
+        editor.insert("PRIVATE_CLOSE_FIXTURE");
+        editor.handle(control('w'));
+        assert!(!editor.handle(control('q')));
+        editor.handle(control('w'));
+        assert!(editor.session.active().is_private());
+        editor.handle(control('w'));
+        assert!(!editor.session.has_private_text());
     }
 }

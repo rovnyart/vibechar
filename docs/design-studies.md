@@ -4,9 +4,8 @@ Decision, 2026-11-11: Art selected **Pocket** and approved **`V_`** as the brand
 [Design direction](../design.md) records the accepted baseline. Paper and Signal
 remain archived alternatives, not active implementation directions.
 
-The first native Pocket increment is implemented and awaiting Art's hands-on
-feedback. Acceptance of the direction is separate from acceptance of the working
-interface.
+Art accepted the first native Pocket increment on 2026-11-12. The remaining visual
+qualification and app-icon work are tracked in the interface roadmap.
 
 ## Product feeling
 
@@ -76,8 +75,9 @@ distracting during long editing sessions. Test the interaction before adopting i
 ## Next checkpoint
 
 The first Pocket increment covers window composition, tabs, typography, palette,
-the `V_` mark, and quiet status. Stop for Art's hands-on feedback before continuing.
-The study's transformations remain future work.
+the `V_` mark, and quiet status; Art's hands-on feedback accepted it. Continue through
+the remaining M2 steps, with a feedback checkpoint for each. The study's
+transformations remain future work.
 
 Judge the result in the real app with empty, JSON, log, Russian/English prose,
 many-tab, long-name, narrow-window, and light/dark states. A study or successful

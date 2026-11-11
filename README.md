@@ -31,9 +31,13 @@ into a reusable text transformation, with a preview before anything changes.
 The shared Rust engine drives both a terminal editor and a native macOS editing
 shell. Both support multiple scratch buffers with independent text,
 cursor/selection, undo history, file destinations, and unsaved-close protection.
-Both clients save their own local sessions and restore tabs after restart. Their
+Both clients save their own local sessions and restore ordinary tabs after restart. Their
 session files are separate; live synchronization is not implemented. Highlighting
 and AI are still ahead. The first native Pocket interface is implemented: compact
 tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
-and quiet session status. Art's hands-on acceptance is the next checkpoint.
+and quiet session status. Art accepted the first Pocket increment.
+Private scratches are now available in both clients: Shift+Cmd+N on Mac or Ctrl+P
+in the terminal. They are excluded from recovery and have generic titles. Closing
+or quitting with private text asks before discarding it; explicitly saving a copy
+creates a normal file on disk. Private-mode hands-on feedback is the next checkpoint.
 See the roadmap for status and the development guide for runnable commands.

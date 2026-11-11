@@ -110,6 +110,7 @@ private final class PocketButton: NSButton {
 struct PocketTab: Equatable {
     let title: String
     let modifiedFile: Bool
+    var isPrivate = false
 }
 
 private final class PocketTabView: NSView {
@@ -146,11 +147,13 @@ private final class PocketTabView: NSView {
         indexLabel.stringValue = String(format: "%02d", index + 1)
         indexLabel.textColor = active ? PocketPalette.accent : PocketPalette.secondary
         select.title = tab.title + (tab.modifiedFile ? " •" : "")
+        select.image = tab.isPrivate ? NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Private") : nil
+        select.imagePosition = tab.isPrivate ? .imageLeading : .noImage
         select.contentTintColor = active ? PocketPalette.ink : PocketPalette.secondary
         select.setAccessibilityLabel(tab.title)
         select.setAccessibilityValue(active ? "Selected" : "")
-        select.setAccessibilityHelp(tab.modifiedFile ? "Modified file. Save with Command-S." : "Switch to this text.")
-        select.toolTip = tab.title + (tab.modifiedFile ? " — Modified file" : "")
+        select.setAccessibilityHelp(tab.isPrivate ? "Private tab. Excluded from session recovery." : tab.modifiedFile ? "Modified file. Save with Command-S." : "Switch to this text.")
+        select.toolTip = tab.title + (tab.isPrivate ? " — Not recovered after quitting" : tab.modifiedFile ? " — Modified file" : "")
         close.setAccessibilityLabel("Close \(tab.title)")
         close.toolTip = "Close \(tab.title) · ⌘W when active"
         needsLayout = true
@@ -289,7 +292,7 @@ final class PocketHeader: NSView {
     @objc private func showAllTabs() {
         let menu = NSMenu(title: "All tabs")
         for (index, tab) in models.enumerated() {
-            let item = NSMenuItem(title: "\(index + 1)   \(tab.title)\(tab.modifiedFile ? " •" : "")", action: #selector(selectFromMenu(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: "\(index + 1)   \(tab.title)\(tab.isPrivate ? " — Private" : "")\(tab.modifiedFile ? " •" : "")", action: #selector(selectFromMenu(_:)), keyEquivalent: "")
             item.target = self
             item.tag = index
             item.state = index == active ? .on : .off
@@ -303,7 +306,9 @@ final class PocketHeader: NSView {
 final class PocketFooter: NSView {
     let status = NSTextField(labelWithString: "Saved locally")
     let detail = NSTextField(labelWithString: "15 pt  ·  UTF-8")
-    var failed = false { didSet { status.textColor = failed ? PocketPalette.accent : PocketPalette.secondary } }
+    private(set) var failed = false
+    private var recoveryMessage = "Saved locally"
+    var privateTab = false { didSet { renderStatus() } }
     override var isFlipped: Bool { true }
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -316,13 +321,20 @@ final class PocketFooter: NSView {
         status.setAccessibilityLabel("Session recovery")
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.alignment = .right
-        status.toolTip = "Open tabs are saved locally, separately from your files. ⌘S saves a file."
+        status.toolTip = "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func showStatus(_ message: String, failed: Bool = false) {
-        status.stringValue = message
+        recoveryMessage = message
         self.failed = failed
-        status.toolTip = failed ? message : "Open tabs are saved locally, separately from your files. ⌘S saves a file."
+        renderStatus()
+    }
+    private func renderStatus() {
+        status.stringValue = privateTab ? (failed ? "Private · \(recoveryMessage)" : "Private · not recovered") : recoveryMessage
+        status.textColor = failed ? PocketPalette.accent : PocketPalette.secondary
+        status.toolTip = privateTab
+            ? "This tab is excluded from recovery. Files you explicitly save remain on disk.\(failed ? " Other tabs: " + recoveryMessage : "")"
+            : failed ? recoveryMessage : "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
     }
     override func layout() {
         super.layout()

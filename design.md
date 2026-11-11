@@ -11,9 +11,9 @@ the product remains vibechar. See [Mac interface studies](docs/design-studies.md
 for the original comparison and tradeoffs.
 
 The first native Pocket increment replaces the rejected segmented-control shell.
-Art's hands-on acceptance of the working interface is pending. Continue the early
-design pass before more editing/AI features; follow the
-[Interface roadmap](docs/interface-roadmap.md).
+Art accepted the first working Pocket interface on 2026-11-12. Continue qualifying
+the remaining states and polish in the [Interface roadmap](docs/interface-roadmap.md)
+while progressing through the remaining M2 behavior work.
 
 ## Mac
 
@@ -61,12 +61,17 @@ design pass before more editing/AI features; follow the
 
 ## First-run and private text
 
-First launch is a blank buffer; later Mac launches restore the last local session.
+First launch is a blank buffer; later launches restore the last ordinary local session.
 Quitting preserves open tabs; explicitly closing a tab removes it from that session.
 A quiet "Saved locally" state distinguishes recovery from exporting a file.
 Key setup appears only when an AI action is invoked.
-Private mode must have a persistent, unobtrusive label. Before private mode exists,
-the prototype must make no claim that pasted tokens are protected from persistence.
+Private scratches are created explicitly with Shift+Cmd+N on Mac or Ctrl+P in the
+terminal. Use a generic title, a lock on Mac, and a persistent "not recovered" label.
+The shared checkpoint excludes their text, paths, and selections before worker
+serialization. Private mode cannot be applied to an existing ordinary buffer.
+Nonempty private tabs require close/quit confirmation, including hidden tabs.
+Explicit Save a Copy writes a file without changing the tab's private status or
+enabling recovery. Ordinary buffers are still saved locally without encryption.
 
 ## Quality checks before MVP
 

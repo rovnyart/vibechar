@@ -11,19 +11,21 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 29 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
-  Unicode scratch-label test, 5 core recovery, 3 C bridge, and 10 terminal
+- 35 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
+  Unicode scratch-label test, 7 core recovery, 4 C bridge, and 13 terminal
   model/layout/recovery tests.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
   emoji substitution, undo/redo, dirty tracking, and saved-state reset.
-- Ten real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
+- Twelve real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
   saved buffers with restart/cursor restoration; background checkpoint + forced
   termination; closed tabs staying closed; corrupt recovery; concurrent writer
   rejection; and failed quit flush with manual text rescue before explicit quit.
+- Private PTY cases verify mixed/private-only recovery, background exclusion,
+  explicit file copies, hidden-private quit confirmation, and forced termination.
 - PTY checks verify terminal attributes, alternate screen, and bracketed paste
   restoration on exit. All temporary processes/files are cleaned up by the harness.
 
@@ -137,7 +139,54 @@ remains unresolved and no speed improvement is claimed for this UI increment.
 Native full-screen transitions, VoiceOver, IME composition, keyboard focus-ring
 qualification, and interactive save-failure presentation still need acceptance.
 App icon work, syntax highlighting, AI, line numbers, and position indicators are
-not part of this increment. Art's hands-on visual acceptance is pending.
+not part of this increment. Art accepted the first working Pocket interface on
+2026-11-12, before the private-scratch increment.
+
+### Feedback increment: private scratches (2026-11-12)
+
+The shared session owns private flags. Checkpoint capture filters those buffers
+before cloning any text/path/selection; active indices are remapped and a
+private-only session saves an empty ordinary fallback. Existing version-1
+checkpoints remain compatible. No conversion of an ordinary buffer is offered.
+The Mac window disables AppKit state and snapshot restoration at construction;
+custom recovery and geometry-only window preferences remain enabled.
+
+Full checks passed: 35 Rust tests, formatting/Clippy, release builds, 12 real PTY
+scenarios, and Swift-to-Rust/native window smoke tests. New core tests inspect raw
+encoded bytes and restored state, including a private buffer with a path and a
+clean dirty flag. Private text still requires close/quit confirmation. TUI tests
+cover cancellation by navigation/paste, close/quit confirmation isolation, and a
+visible mode label after ordinary recovery completes. The native smoke checks
+generic titles, persistent private
+status, and a real filtered checkpoint round trip.
+
+In the isolated `dev.vibechar.private-qa` Mac app, created private text with
+Shift+Cmd+N and observed the lock, generic tab/window title, and "Private · not
+recovered" status. Inspected actual background recovery files: only the ordinary
+fixture remained. Saved an explicit file through the native panel, which explains
+disk persistence, and compared its UTF-8 bytes exactly. The tab stayed private.
+Cmd+W asked before discarding, Keep Editing preserved it, and Cmd+Q also asked
+while the private tab was hidden. Cancelled quit and observed both tabs intact.
+Confirmed quit, reopened, and observed only the original ordinary tab restored.
+The explicit copy still existed; the private fixture was absent from recovery.
+
+Only synthetic text was used. The QA process, bundle, recovery folder, preferences,
+and explicit test copy were removed afterward. The user's normal app/session were
+not used or modified. The PTY crash case verifies that a private-only session
+returns empty after forced termination; a Mac force-quit was not separately
+repeated for this increment.
+
+An intermediate PTY run stalled in a blocking wait after SIGKILL and was
+interrupted. The harness now drains output during bounded force-stop waits and
+closes PTY descriptors in a finally block. The subsequent standard full check
+passed, including both forced-stop cases. No QA or test-terminal processes remain.
+
+Explicit exports persist by design. The feature does not erase earlier ordinary
+snapshots or promise protection from OS swap/crash data, clipboard history, or
+external screen capture. There are no AI/actions/diagnostic upload routes yet;
+those future routes must enforce exclusion independently. Art's private-mode
+hands-on feedback is the next checkpoint. One verification run's single TUI sample was
+341.01 ms / 2,976 KiB RSS; existing startup variance remains unresolved.
 
 ## Initial performance observations
 
@@ -177,6 +226,7 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 
 Native startup and Mac bridge/presentation costs across representative file sizes
 still need measurement. The milestone's baseline checkbox remains open until that
-evidence is recorded. M2 recovery is partial: retention, private buffers, and broader
-durability qualification remain open. M3 syntax/editing tools and M4/M5 AI are not
+evidence is recorded. M2 recovery is partial: private mode is implemented with
+hands-on feedback pending; retention and broader durability qualification remain
+open. M3 syntax/editing tools and M4/M5 AI are not
 implemented. The prototype should not hold the only copy of important text.

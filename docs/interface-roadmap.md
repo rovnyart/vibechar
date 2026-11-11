@@ -11,8 +11,8 @@ native text input does not require keeping this window composition.
 
 Art selected **Pocket** and the **`V_`** mark on 2026-11-11. Follow the accepted
 [design direction](../design.md); [Mac interface studies](design-studies.md)
-preserves the comparison. The first native increment is implemented and awaiting
-hands-on acceptance.
+preserves the comparison. Art accepted the first native increment on 2026-11-12.
+Remaining qualification and app-icon work stay open for later polish.
 
 - [x] Produce two or three Mac window studies with the same realistic content.
 - [x] Show an empty scratch, three tabs, and populated JSON/log/prose examples.
@@ -65,6 +65,6 @@ save-error, light/dark, and narrow-window states. Test keyboard use, VoiceOver,
 Unicode/IME input, scrolling, and focus restoration. Check actual application
 screenshots, not only mockups.
 
-Deliver one coherent visual increment for Art to try. Art's acceptance of the
-working interface is the exit gate. Native widgets compiling or one acceptable
-screenshot does not satisfy it. The current engineering shell has not passed.
+Art accepted the first working Pocket increment on 2026-11-12. This completes its
+hands-on feedback checkpoint; the remaining unchecked qualification items are
+still required before release. M6 rechecks the final interface and performance.

@@ -35,10 +35,13 @@ printf 'hello\n' | ./target/release/vibechar
 
 TUI controls: type normally; arrows/Home/End move; Ctrl+Home/End jump through the
 document; Ctrl+S saves (asks a filename for a scratch buffer); Ctrl+Z/Ctrl+Y undo/redo;
-Ctrl+N creates a scratch buffer; F6/Shift+F6 (or Ctrl+PageDown/PageUp) cycle buffers;
+Ctrl+N creates a scratch buffer; Ctrl+P creates a private scratch;
+F6/Shift+F6 (or Ctrl+PageDown/PageUp) cycle buffers;
 Ctrl+W closes the active buffer; Ctrl+Q quits. Closing an edited buffer requires a
-second Ctrl+W to discard it. Ctrl+Q flushes the entire local session, including
-hidden buffers, before quitting. If that flush fails, the editor stays open;
+second Ctrl+W to discard it. Ctrl+Q flushes ordinary tabs, including hidden ones,
+before quitting. When any private tab has text, the first Ctrl+Q asks and the second
+consecutive Ctrl+Q discards private tabs and quits; any other key or paste cancels
+that confirmation. If the ordinary-tab flush fails, the editor stays open;
 a second Ctrl+Q allows quitting without the latest changes. Escape
 cancels the save prompt. Bracketed paste is one undo step. No mouse is required.
 
@@ -58,10 +61,11 @@ environment that permits creating a controlling terminal. The integration test
 cleans up its processes and temporary files and uses no desktop terminal app.
 
 Mac controls: native text editing/selection and clipboard; Cmd+N new scratch,
-Cmd+O open UTF-8 file in a new buffer, Cmd+S save, Cmd+Z undo, Shift+Cmd+Z redo,
+Shift+Cmd+N new private scratch, Cmd+O open UTF-8 file in a new buffer,
+Cmd+S save (Save a Copy for private text), Cmd+Z undo, Shift+Cmd+Z redo,
 Cmd+W close buffer, Cmd+Q quit. Click a tab or use Option+Cmd+Left/Right to switch.
 Each buffer remembers its selection and has independent undo history. Closing the
-last buffer starts a fresh empty scratch. Quitting preserves the Mac session locally
+last buffer starts a fresh empty scratch. Quitting preserves ordinary Mac tabs locally
 and waits for the final save. Explicitly closing an edited tab asks before removing
 it from the saved session.
 
@@ -93,16 +97,37 @@ These images exclude the system titlebar/traffic-light layer. They supplement
 on-screen application checks; they do not qualify native full-screen transitions,
 VoiceOver, or IME composition.
 
+## Private scratches
+
+Use File → New Private Scratch / Shift+Cmd+N on Mac, or Ctrl+P in the terminal.
+Private tabs have generic numbered titles, a persistent "not recovered" state,
+and a lock icon on Mac. The shared engine excludes their text, path, and selection
+from checkpoint capture, including background saves, final flush, and error paths.
+They do not return after normal quit or forced termination. Ordinary tabs keep
+their own state; a private-only session restarts as one empty ordinary scratch.
+
+Nonempty private tabs require confirmation on close and on quit, even when hidden.
+Cmd+S / Ctrl+S explicitly saves a copy to a chosen file. The save UI states that
+this writes to disk; the copy remains after quitting. The tab stays private and
+does not retain that file destination. A later copy asks for a destination again.
+
+Existing ordinary tabs cannot be converted to private: their earlier snapshots
+may already exist. This is recovery exclusion, not encrypted or securely wiped
+memory. It does not erase clipboard contents, explicit exports, or OS-managed
+swap/crash data. No AI/action/diagnostic service exists yet; each future service
+must enforce private-buffer exclusion before collecting content.
+
 ## Mac session recovery
 
 Mac captures immutable rope snapshots after a 500 ms pause, then encodes/writes on
 a serial background queue. Normal Cmd+Q and closing the window flush the latest
-state before exit. The next launch restores tab order, text, active tab, selections,
+state before exit. The next launch restores ordinary tab order, text, active tab, selections,
 file destinations, and modified-file flags. Undo histories start fresh after restart.
 
 The default file is `~/Library/Application Support/dev.vibechar.app/session.json`.
 It contains ordinary UTF-8 JSON text and has owner-only permissions (directory 0700,
-file 0600). It is local, unencrypted storage, not a private-buffer feature. A process
+file 0600). Ordinary recovery is local, unencrypted storage. Private tabs are
+excluded before serialization. A process
 lock prevents two app instances from overwriting the same session. Separate QA
 bundle identifiers have separate recovery folders.
 
@@ -114,15 +139,15 @@ file's original destination; Cmd+S still performs that explicit save.
 
 Force quitting may lose input since the last completed background save. Wait for
 "Saved locally" to know the latest checkpoint completed. The 500 ms debounce plus
-write time is not a power-loss durability guarantee. Retention and private buffers
-remain later work.
+write time is not a power-loss durability guarantee. Retention and broader
+durability qualification remain later work.
 
 ## Terminal session recovery
 
 Terminal uses the same Rust checkpoint format and a dedicated worker thread.
 After a 500 ms input pause it captures and queues a snapshot; Ctrl+Q waits for the
 latest save. An idle session blocks on terminal input, rather than polling or
-redrawing continuously. The next launch restores all buffers, text, cursor positions,
+redrawing continuously. The next launch restores ordinary buffers, text, cursor positions,
 active buffer, file destinations, and modified flags. Undo starts fresh after restart.
 
 Default storage is `~/Library/Application Support/dev.vibechar.terminal/` on macOS

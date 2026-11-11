@@ -200,6 +200,41 @@ pub unsafe extern "C" fn vc_session_open(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn vc_session_open_private(session: *mut Session) -> bool {
+    guard(|| {
+        let Some(session) = session.as_mut() else {
+            return false;
+        };
+        session.open_private();
+        true
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_buffer_private(session: *const Session, index: usize) -> bool {
+    guard(|| {
+        session
+            .as_ref()
+            .and_then(|session| session.buffers().get(index))
+            .is_some_and(|buffer| buffer.is_private())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_has_private_text(session: *const Session) -> bool {
+    guard(|| session.as_ref().is_some_and(Session::has_private_text))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_needs_close_confirmation(session: *const Session) -> bool {
+    guard(|| {
+        session
+            .as_ref()
+            .is_some_and(|session| session.active().needs_close_confirmation())
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn vc_session_close(session: *mut Session, discard: bool) -> bool {
     guard(|| {
         session
@@ -403,6 +438,36 @@ pub unsafe extern "C" fn vc_session_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_bridge_exposes_mode_and_protects_a_saved_private_tab_from_close() {
+        unsafe {
+            assert!(!vc_session_open_private(ptr::null_mut()));
+            assert!(!vc_session_buffer_private(ptr::null(), 0));
+            assert!(!vc_session_has_private_text(ptr::null()));
+            assert!(!vc_session_needs_close_confirmation(ptr::null()));
+            let session = vc_session_new();
+            assert!(vc_session_open_private(session));
+            assert!(vc_session_buffer_private(session, 1));
+            assert!(!vc_session_buffer_private(session, 99));
+            assert!(!vc_session_has_private_text(session));
+            let text = "PRIVATE_BRIDGE_FIXTURE";
+            assert!(vc_document_replace(
+                vc_session_document(session),
+                0,
+                0,
+                text.as_ptr(),
+                text.len()
+            ));
+            vc_document_mark_saved(vc_session_document(session));
+            assert!(vc_session_has_private_text(session));
+            assert!(vc_session_needs_close_confirmation(session));
+            assert!(!vc_session_close(session, false));
+            assert!(vc_session_close(session, true));
+            assert!(!vc_session_has_private_text(session));
+            vc_session_free(session);
+        }
+    }
 
     #[test]
     fn native_round_trip_preserves_nul_unicode_and_history() {

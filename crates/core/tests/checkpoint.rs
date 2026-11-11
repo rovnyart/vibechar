@@ -7,6 +7,84 @@ use vibechar_core::{checkpoint::Checkpoint, session::Session};
 
 static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn private_text_and_paths_never_enter_checkpoints_and_active_indices_are_remapped() {
+    let directory = TemporaryDirectory::new();
+    let mut session = Session::new("public first", None);
+    session.open_private();
+    session
+        .active_mut()
+        .document
+        .replace(0..0, "PRIVATE_FIXTURE_👩‍💻")
+        .unwrap();
+    session.active_mut().path = Some(PathBuf::from("/private-fixture/path-that-must-not-persist"));
+    session.active_mut().document.mark_saved();
+    assert!(!session.active().label().contains("FIXTURE"));
+    assert!(session.active().needs_close_confirmation());
+    assert!(session.has_private_text());
+    session.open("public last", None);
+    session.active_mut().selection = 3..3;
+    let snapshot = Checkpoint::capture(&session);
+    let encoded = serde_json::to_string(&snapshot).unwrap();
+    assert!(!encoded.contains("PRIVATE_FIXTURE"));
+    assert!(!encoded.contains("path-that-must-not-persist"));
+    snapshot.save(&directory.file()).unwrap();
+    let restored = Checkpoint::load(&directory.file()).unwrap().unwrap();
+    assert_eq!(restored.buffers().len(), 2);
+    assert_eq!(restored.active_index(), 1);
+    assert_eq!(restored.active().document.text(), "public last");
+    assert_eq!(restored.active().selection, 3..3);
+    assert!(!restored.has_private_text());
+    assert!(restored.buffers().iter().all(|buffer| !buffer.is_private()));
+    session.select(1); // Private active: restart falls back to the preceding public tab.
+    Checkpoint::capture(&session)
+        .save(&directory.file())
+        .unwrap();
+    let restored = Checkpoint::load(&directory.file()).unwrap().unwrap();
+    assert_eq!(restored.active().document.text(), "public first");
+    assert!(!session.close_active(false));
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
+}
+
+#[test]
+fn a_private_only_session_recovers_as_a_fresh_empty_public_scratch() {
+    let directory = TemporaryDirectory::new();
+    let mut session = Session::new("", None);
+    session.open_private();
+    session
+        .active_mut()
+        .document
+        .replace(0..0, "PRIVATE_ONLY_FIXTURE")
+        .unwrap();
+    session.select(0);
+    assert!(session.close_active(false));
+    assert!(session.active().is_private());
+    let snapshot = Checkpoint::capture(&session);
+    assert!(!serde_json::to_string(&snapshot)
+        .unwrap()
+        .contains("PRIVATE_ONLY_FIXTURE"));
+    snapshot.save(&directory.file()).unwrap();
+    let restored = Checkpoint::load(&directory.file()).unwrap().unwrap();
+    assert_eq!(restored.buffers().len(), 1);
+    assert!(restored.active().document.text().is_empty());
+    assert!(!restored.active().is_private());
+    // The private tab may also precede every retained public tab.
+    session.open("retained", None);
+    session.select(0);
+    Checkpoint::capture(&session)
+        .save(&directory.file())
+        .unwrap();
+    assert_eq!(
+        Checkpoint::load(&directory.file())
+            .unwrap()
+            .unwrap()
+            .active()
+            .document
+            .text(),
+        "retained"
+    );
+}
+
 struct TemporaryDirectory(PathBuf);
 impl TemporaryDirectory {
     fn new() -> Self {

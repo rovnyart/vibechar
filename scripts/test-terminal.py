@@ -155,13 +155,23 @@ class Session:
         assert b"\x1b[?1049l" in self.output, "alternate screen was not left"
 
     def close(self):
-        if self.process.poll() is None:
-            self.process.kill()
-            self.process.wait(timeout=5)
-        os.close(self.master)
-        os.close(self.slave)
-        if self.temporary_state:
-            self.temporary_state.cleanup()
+        try:
+            if self.process.poll() is None:
+                self.force_stop()
+        finally:
+            os.close(self.master)
+            os.close(self.slave)
+            if self.temporary_state:
+                self.temporary_state.cleanup()
+
+    def force_stop(self):
+        self.process.kill()
+        # Drain PTY output while waiting, just as for graceful exits. A wait()
+        # without draining can stall process teardown on macOS.
+        deadline = time.monotonic() + 5
+        while self.process.poll() is None and time.monotonic() < deadline:
+            self.receive(0.05)
+        self.process.wait(timeout=0.5)
 
     def __enter__(self):
         return self
@@ -259,8 +269,7 @@ def main():
                                and len(data["buffers"]) == 2
                                and data["buffers"][1]["text"] == "recover me")
             assert (background / "session.json").stat().st_mode & 0o777 == 0o600
-            session.process.kill()
-            session.process.wait()
+            session.force_stop()
         with Session(state=background) as session:
             session.wait_for(b"2/2")
             session.wait_for(b"recover me")
@@ -271,6 +280,53 @@ def main():
         with Session(state=background) as session:
             session.wait_for(b"1/1")
             session.wait_for("Привет".encode())
+            session.send(b"\x11")
+            session.finish()
+
+        private_state = directory / "private-mixed"
+        private_text = "PRIVATE_PTY_FIXTURE_👩‍💻".encode()
+        with Session(state=private_state) as session:
+            session.send(b"public survives\x10\x1b[200~" + private_text + b"\x1b[201~")
+            session.wait_for(b"PRIVATE")
+            session.wait_until(lambda: (data := session.checkpoint()) is not None
+                               and len(data["buffers"]) == 1
+                               and data["buffers"][0]["text"] == "public survives")
+            for file in private_state.rglob("*"):
+                if file.is_file():
+                    assert private_text not in file.read_bytes(), "private text entered recovery"
+            session.send(b"\x13")
+            session.wait_for(b"Save private copy as:")
+            private_copy = directory / "explicit-private-copy.txt"
+            session.send(str(private_copy).encode() + b"\r")
+            session.wait_until(lambda: session.file_matches(private_copy, private_text))
+            session.send(b"\x17")
+            session.wait_for(b"Private text is not recovered")
+            assert session.process.poll() is None
+            session.send(b"\x1b[17~\x11")  # Hide private text, then request quit.
+            session.wait_for(b"Private tabs will be lost")
+            assert session.process.poll() is None, "hidden private tab was silently discarded"
+            session.send(b"\x11")
+            session.finish()
+            assert len(session.checkpoint()["buffers"]) == 1
+            assert private_text not in (private_state / "session.json").read_bytes()
+            assert str(private_copy).encode() not in (private_state / "session.json").read_bytes()
+        with Session(state=private_state) as session:
+            session.wait_for(b"1/1")
+            session.wait_for(b"public survives")
+            session.send(b"\x11")
+            session.finish()
+        assert private_copy.read_bytes() == private_text, "explicitly saved file must remain"
+
+        private_only = directory / "private-only"
+        with Session(state=private_only) as session:
+            session.send(b"\x10PRIVATE_CRASH_FIXTURE\x1b[17~\x17")
+            session.wait_until(lambda: (data := session.checkpoint()) is not None
+                               and len(data["buffers"]) == 1 and data["buffers"][0]["text"] == "")
+            assert b"PRIVATE_CRASH_FIXTURE" not in (private_only / "session.json").read_bytes()
+            session.force_stop()
+        with Session(state=private_only) as session:
+            session.wait_for(b"1/1")
+            assert not session.checkpoint()["buffers"][0]["text"]
             session.send(b"\x11")
             session.finish()
 
@@ -306,10 +362,11 @@ def main():
         assert (checkpoint / "sentinel").read_text() == "keep"
 
     print(json.dumps({
-        "real_pty_scenarios": 10,
+        "real_pty_scenarios": 12,
         "utf8_crlf_bytes": "preserved",
         "terminal_restoration": "passed",
         "session_restart_and_force_stop_recovery": "passed",
+        "private_background_copy_quit_and_crash_exclusion": "passed",
         "first_frame_single_sample_ms": round(startup, 2),
         "tui_single_sample_rss_kib": rss,
     }, indent=2))

@@ -56,7 +56,20 @@ history. Both clients check hidden buffers before quitting, and closing the last
 buffer creates a fresh empty one. Scroll geometry remains the responsibility of
 each interface.
 
-The engine provides versioned recovery checkpoints. Capture clones immutable ropes
+The engine provides versioned recovery checkpoints. Capture filters out private
+buffers before cloning immutable ropes, paths, or selections. The stored active
+index is remapped to the retained ordinary tabs. If the active tab is private,
+restart selects the preceding ordinary tab (or the first if none precedes it).
+A private-only session checkpoints a fresh empty ordinary scratch. The format
+remains version 1 and all restored buffers are ordinary.
+
+The Mac window disables AppKit window-state preservation and snapshot restoration
+at construction. The filtered Rust checkpoint is the sole document recovery path;
+window-frame preferences still store only geometry. See Apple's
+[window preservation](https://developer.apple.com/documentation/appkit/nswindow/isrestorable)
+and [snapshot restoration](https://developer.apple.com/documentation/appkit/nswindow/disablesnapshotrestoration()) APIs.
+
+Capture clones immutable ropes
 instead of serializing on the input thread. Mac debounces capture, serializes/writes
 on a background queue, and flushes that queue on quit. The client owns its Application
 Support directory and process lock. Writes use atomic replacement and owner-only
@@ -69,9 +82,18 @@ pending writes; a failed flush keeps the editor open unless the user explicitly
 quits without the latest changes. Startup refuses corrupt data and an already
 owned session before entering raw terminal mode. Idle input and worker queues block.
 
-Retention and private buffers remain pending. Recovery currently
-persists ordinary text without encryption. Do not imply safe secret handling until
-disk, AI, diagnostics, and recipe persistence are all covered.
+Private scratches are chosen at creation; ordinary buffers cannot be converted
+after earlier checkpoints may have persisted them. Labels are generic even if a
+private document has a path. Closing a nonempty private tab requires confirmation,
+regardless of its dirty flag; quitting checks hidden private text too. The frontends
+allow an explicit file copy without attaching that path to the private tab or
+enabling its recovery. Private document text/history remain in process memory.
+
+Retention remains pending. Recovery persists ordinary text without encryption.
+This feature excludes private buffers from app-owned recovery; it does not erase
+earlier ordinary snapshots, clipboard contents, explicit exports, or OS-managed
+swap/crash data. Future AI, recipes, and diagnostics must reject private buffers
+before collecting text. Those services do not exist in the current offline app.
 
 Save buffers through a same-directory temporary file + flush/sync + atomic replace,
 with a documented symlink/permissions policy and external-change check. Prototype

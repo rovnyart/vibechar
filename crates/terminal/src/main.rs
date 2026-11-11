@@ -35,7 +35,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .first()
         .is_some_and(|arg| arg == "--help" || arg == "-h")
     {
-        println!("vibechar [FILE]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · F6/Shift+F6 switch · Ctrl+W close\nCtrl+S save file · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\n\nTabs are saved locally and restored on restart. Highlighting and AI are still in development.");
+        println!("vibechar [FILE]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+S save file · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\n\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Explicitly saved files remain on disk. Highlighting and AI are still in development.");
         return Ok(());
     }
     if args.first().is_some_and(|arg| arg == "--version") {

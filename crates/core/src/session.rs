@@ -8,10 +8,14 @@ pub struct Buffer {
     pub path: Option<PathBuf>,
     pub selection: Range<usize>,
     pub(crate) scratch_number: usize,
+    pub(crate) private: bool,
 }
 
 impl Buffer {
     pub fn label(&self) -> String {
+        if self.private {
+            return format!("Private {}", self.scratch_number);
+        }
         self.path
             .as_ref()
             .and_then(|path| path.file_name())
@@ -42,6 +46,14 @@ impl Buffer {
                 },
                 |name| name.to_string_lossy().into_owned(),
             )
+    }
+
+    pub fn is_private(&self) -> bool {
+        self.private
+    }
+
+    pub fn needs_close_confirmation(&self) -> bool {
+        self.document.is_dirty() || (self.private && self.document.len_chars() > 0)
     }
 }
 
@@ -79,6 +91,19 @@ impl Session {
         self.buffers.iter().any(|buffer| buffer.document.is_dirty())
     }
 
+    pub fn has_private_text(&self) -> bool {
+        self.buffers
+            .iter()
+            .any(|buffer| buffer.private && buffer.document.len_chars() > 0)
+    }
+
+    /// Privacy is chosen before any text is inserted. Existing scratches cannot
+    /// be converted: an earlier checkpoint may already contain their text.
+    pub fn open_private(&mut self) {
+        self.open("", None);
+        self.active_mut().private = true;
+    }
+
     pub fn select(&mut self, index: usize) -> bool {
         if index >= self.buffers.len() {
             return false;
@@ -106,13 +131,14 @@ impl Session {
             path,
             selection: 0..0,
             scratch_number,
+            private: false,
         });
         self.active = self.buffers.len() - 1;
     }
 
     /// Refuse to discard an edited buffer unless the caller has confirmed it.
     pub fn close_active(&mut self, discard: bool) -> bool {
-        if self.active().document.is_dirty() && !discard {
+        if self.active().needs_close_confirmation() && !discard {
             return false;
         }
         self.buffers.remove(self.active);

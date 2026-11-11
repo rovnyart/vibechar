@@ -52,14 +52,31 @@ impl<'de> Deserialize<'de> for StoredText {
 
 impl Checkpoint {
     pub fn capture(session: &Session) -> Self {
+        let public: Vec<_> = session
+            .buffers
+            .iter()
+            .enumerate()
+            .filter(|(_, buffer)| !buffer.is_private())
+            .collect();
+        if public.is_empty() {
+            return Self::capture(&Session::new("", None));
+        }
+        let active = public
+            .iter()
+            .position(|(index, _)| *index == session.active)
+            .unwrap_or_else(|| {
+                public
+                    .iter()
+                    .rposition(|(index, _)| *index < session.active)
+                    .unwrap_or(0)
+            });
         Self {
             version: 1,
-            active: session.active,
+            active,
             next_scratch: session.next_scratch,
-            buffers: session
-                .buffers
-                .iter()
-                .map(|buffer| {
+            buffers: public
+                .into_iter()
+                .map(|(_, buffer)| {
                     let start = buffer.selection.start.min(buffer.document.len_chars());
                     let end = buffer
                         .selection
@@ -144,6 +161,7 @@ impl Checkpoint {
                     path: buffer.path,
                     selection: buffer.selection,
                     scratch_number: buffer.scratch_number,
+                    private: false,
                 })
             })
             .collect::<io::Result<Vec<_>>>()?;

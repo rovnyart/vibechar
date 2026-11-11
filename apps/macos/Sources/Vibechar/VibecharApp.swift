@@ -55,7 +55,12 @@ struct VibecharApp {
             precondition(text.replace(NSRange(location: 0, length: 0), with: "Привет 👩‍💻\r\n"))
             original.rememberSelection(NSRange(location: 7, length: 5))
             original.open("second", url: URL(fileURLWithPath: "/tmp/recovery-original.txt"))
+            original.openPrivate()
+            precondition(text.replace(NSRange(location: 0, length: 0), with: "PRIVATE_NATIVE_FIXTURE"))
+            original.select(1)
             precondition(store!.flush(original.checkpoint()))
+            let savedBytes = try Data(contentsOf: store!.fileURL)
+            precondition(!String(decoding: savedBytes, as: UTF8.self).contains("PRIVATE_NATIVE_FIXTURE"))
             var locked = false
             do { _ = try SessionRecovery(directory: directory) }
             catch RecoveryError.alreadyOpen { locked = true }
@@ -125,6 +130,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
         window.delegate = self
+        // Rust checkpoints are the only document recovery path, including private filtering.
+        window.isRestorable = false
+        window.disableSnapshotRestoration()
         window.minSize = NSSize(width: 420, height: 280)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -232,6 +240,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         addMenu("vibechar", submenu: appMenu, to: menu)
         let file = NSMenu(title: "File")
         addItem("New Scratch", action: #selector(newScratch), key: "n", to: file)
+        let privateScratch = NSMenuItem(title: "New Private Scratch", action: #selector(newPrivateScratch), keyEquivalent: "n")
+        privateScratch.keyEquivalentModifierMask = [.command, .shift]
+        privateScratch.target = self
+        file.addItem(privateScratch)
         addItem("Open…", action: #selector(openFile), key: "o", to: file)
         addItem("Save", action: #selector(saveFile), key: "s", to: file)
         addItem("Close Scratch", action: #selector(closeScratch), key: "w", to: file)
@@ -310,8 +322,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         window.title = "\(session.label(session.active)) — vibechar"
         window.isDocumentEdited = session.isModifiedFile(session.active)
         header.update(tabs: (0..<session.count).map {
-            PocketTab(title: session.label($0), modifiedFile: session.isModifiedFile($0))
+            PocketTab(title: session.label($0), modifiedFile: session.isModifiedFile($0), isPrivate: session.isPrivate($0))
         }, active: session.active)
+        footer.privateTab = session.isPrivate
     }
 
     @objc private func undoEdit() { applyHistory(redo: false) }
@@ -330,6 +343,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     @objc private func newScratch() {
         session.rememberSelection(textView.selectedRange())
         session.open()
+        showActiveBuffer()
+    }
+
+    @objc private func newPrivateScratch() {
+        session.rememberSelection(textView.selectedRange())
+        session.openPrivate()
         showActiveBuffer()
     }
 
@@ -396,6 +415,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(saveFile) {
+            menuItem.title = session.isPrivate ? "Save a Copy…" : "Save"
+        }
         if menuItem.action == #selector(changeAppearance(_:)) {
             let choice = UserDefaults.standard.string(forKey: "PocketAppearance") ?? "system"
             menuItem.state = ["system", "light", "dark"][menuItem.tag] == choice ? .on : .off
@@ -404,10 +426,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func saveFile() {
-        var destination = fileURL
+        let privateCopy = session.isPrivate
+        var destination = privateCopy ? nil : fileURL
         if destination == nil {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = "Untitled.txt"
+            if privateCopy {
+                panel.title = "Save Private Text"
+                panel.message = "This tab is not recovered. Saving a copy creates a file on disk."
+                panel.nameFieldStringValue = "Private.txt"
+            }
             guard panel.runModal() == .OK else { return }
             destination = panel.url
         }
@@ -420,18 +448,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         } catch { NSApp.presentError(error); return }
         do {
             try document.text.write(to: destination, atomically: true, encoding: .utf8)
-            document.markSaved()
-            session.setFileURL(destination)
+            if !privateCopy {
+                document.markSaved()
+                session.setFileURL(destination)
+            }
             refreshTitle()
             scheduleSessionSave()
         } catch { NSApp.presentError(error) }
     }
 
     private func confirmDiscard() -> Bool {
-        guard document.isDirty else { return true }
+        guard session.needsCloseConfirmation else { return true }
         let alert = NSAlert()
-        alert.messageText = "Close this scratch?"
-        alert.informativeText = "Closing removes this tab from your saved session. Save it as a file if you want to keep a separate copy."
+        alert.messageText = session.isPrivate ? "Discard this private tab?" : "Close this scratch?"
+        alert.informativeText = session.isPrivate
+            ? "This text is not saved for recovery. Files you explicitly saved remain on disk."
+            : "Closing removes this tab from your saved session. Save it as a file if you want to keep a separate copy."
         alert.addButton(withTitle: "Keep Editing")
         alert.addButton(withTitle: "Discard")
         return alert.runModal() == .alertSecondButtonReturn
@@ -466,6 +498,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func saveBeforeQuitting() -> Bool {
+        if session.hasPrivateText {
+            let alert = NSAlert()
+            alert.messageText = "Quit and discard private tabs?"
+            alert.informativeText = "Private tabs won't return when you reopen vibechar. Ordinary tabs will be saved. Files you explicitly saved remain on disk."
+            alert.addButton(withTitle: "Keep Editing")
+            alert.addButton(withTitle: "Quit and Discard Private Tabs")
+            guard alert.runModal() == .alertSecondButtonReturn else { return false }
+        }
         pendingSave?.cancel()
         saveGeneration &+= 1
         session.rememberSelection(textView.selectedRange())
@@ -560,6 +600,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         app.document.markSaved()
         app.refreshTitle()
         precondition(!app.window.isDocumentEdited)
+        app.newPrivateScratch()
+        let privateFixture = "PRIVATE_INTERFACE_FIXTURE"
+        precondition(app.document.replace(NSRange(location: 0, length: 0), with: privateFixture))
+        app.showActiveBuffer()
+        precondition(app.session.isPrivate && app.session.hasPrivateText)
+        precondition(app.footer.status.stringValue == "Private · not recovered")
+        precondition(!app.window.title.contains(privateFixture))
+        app.footer.showStatus("Saved locally")
+        precondition(app.footer.status.stringValue == "Private · not recovered")
+        app.newScratch()
+        precondition(!app.session.isPrivate && app.session.hasPrivateText)
+        precondition(!app.footer.status.stringValue.contains("Private"))
         print("Pocket window smoke test passed: light/dark, narrow/wide, native/tab click targets, text/history")
     }
 }

@@ -63,20 +63,39 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), body);
+    let recovery = if editor.session.active().is_private() {
+        format!(
+            "PRIVATE · not recovered · Other tabs: {}",
+            editor.recovery_status
+        )
+    } else {
+        editor.recovery_status.to_owned()
+    };
     frame.render_widget(
         Paragraph::new(format!(
-            " {}:{}  UTF-8  · {}  {}",
+            " {}  · {}:{}  UTF-8",
+            recovery,
             line + 1,
-            column + 1,
-            editor.recovery_status,
-            editor.message
+            column + 1
         ))
         .style(Style::default().fg(Color::DarkGray)),
         status,
     );
     let prompt = editor.save_prompt.as_ref().map_or_else(
-        || " ^N new  F6 next  ^W close  ^S save  ^Z undo  ^Y redo  ^Q quit".into(),
-        |value| format!(" Save as: {value}  [Enter save · Esc cancel]"),
+        || {
+            if editor.message.is_empty() {
+                " ^N new  ^P private  F6 next  ^W close  ^S save  ^Z undo  ^Y redo  ^Q quit".into()
+            } else {
+                format!(" {}", editor.message)
+            }
+        },
+        |value| {
+            if editor.session.active().is_private() {
+                format!(" Save private copy as: {value}  [Enter writes to disk · Esc cancels]")
+            } else {
+                format!(" Save as: {value}  [Enter save · Esc cancel]")
+            }
+        },
     );
     frame.render_widget(
         Paragraph::new(prompt).style(Style::default().fg(Color::Rgb(245, 158, 66))),
@@ -138,5 +157,23 @@ mod tests {
     fn clipping_a_wide_grapheme_never_draws_half_a_character() {
         assert_eq!(visible_line("a界b", 2, 2), " b");
         assert_eq!(visible_line("\tx", 1, 4), "   x");
+    }
+
+    #[test]
+    fn private_mode_is_visible_without_using_text_as_a_tab_title() {
+        let mut editor = Editor::new("", None);
+        editor.session.open_private();
+        editor.insert("PRIVATE_VIEW_FIXTURE");
+        editor.recovery_status = "Saved locally";
+        let mut terminal = Terminal::new(TestBackend::new(100, 5)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut editor)).unwrap();
+        let row = |y| {
+            (0..100)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect::<String>()
+        };
+        assert!(row(0).contains("Private"));
+        assert!(!row(0).contains("PRIVATE_VIEW_FIXTURE"));
+        assert!(row(3).contains("PRIVATE · not recovered · Other tabs: Saved locally"));
     }
 }

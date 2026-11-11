@@ -29,6 +29,10 @@ size_t vc_session_active(const VcSession *session);
 bool vc_session_select(VcSession *session, size_t index);
 bool vc_session_open(VcSession *session, const uint8_t *text, size_t length,
                      const uint8_t *path, size_t path_length);
+bool vc_session_open_private(VcSession *session);
+bool vc_session_buffer_private(const VcSession *session, size_t index);
+bool vc_session_has_private_text(const VcSession *session);
+bool vc_session_needs_close_confirmation(const VcSession *session);
 bool vc_session_close(VcSession *session, bool discard);
 bool vc_session_has_unsaved(const VcSession *session);
 bool vc_session_buffer_dirty(const VcSession *session, size_t index);
