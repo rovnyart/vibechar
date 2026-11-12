@@ -12,6 +12,8 @@ use crate::files;
 
 #[path = "find.rs"]
 pub(crate) mod find;
+#[path = "multi.rs"]
+mod multi;
 #[path = "selection.rs"]
 mod selection;
 #[path = "tools.rs"]
@@ -32,6 +34,7 @@ pub struct Editor {
     pub light_syntax: bool,
     pub find: Option<find::Find>,
     pub tools: Option<tools::Palette>,
+    pub multi: vibechar_core::multi::Multi,
     viewport: Rect,
     reveal_cursor: bool,
     language_choice: usize,
@@ -62,6 +65,7 @@ impl Editor {
             light_syntax: std::env::var("VIBECHAR_COLOR_SCHEME").is_ok_and(|s| s == "light"),
             find: None,
             tools: None,
+            multi: vibechar_core::multi::Multi::default(),
             viewport: Rect::default(),
             reveal_cursor: true,
             language_choice: 0,
@@ -101,6 +105,10 @@ impl Editor {
             return;
         }
         if text.is_empty() {
+            return;
+        }
+        if self.multi.active(self.document()) {
+            self.multi_edit(text, kind);
             return;
         }
         let range = self.selection();
@@ -147,6 +155,20 @@ impl Editor {
         if !quitting {
             self.cancel_private_quit();
         }
+        self.pump_multi();
+        if self.multi.has_queued_input()
+            && (key.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(
+                    key.code,
+                    KeyCode::Char(
+                        'q' | 'n' | 'p' | 'w' | 's' | 'z' | 'y' | 'f' | 'r' | 'k' | 'g' | 'a'
+                    )
+                )
+                || matches!(key.code, KeyCode::F(2 | 4 | 6 | 7 | 8)))
+        {
+            self.message = "Finishing matching · try that command again shortly".into();
+            return false;
+        }
         if self.handle_tools_key(key) {
             return false;
         }
@@ -165,6 +187,9 @@ impl Editor {
         }
         if self.save_prompt.is_some() {
             self.prompt_key(key);
+            return false;
+        }
+        if self.handle_multi_key(key) {
             return false;
         }
         self.reveal_cursor = true;
@@ -196,6 +221,7 @@ impl Editor {
             KeyCode::Enter => self.insert(self.document().newline()),
             KeyCode::F(4) => self.save_as(),
             KeyCode::F(2) => {
+                self.multi.clear();
                 self.language_prompt = Some(String::new());
                 self.language_choice = 0;
                 self.message.clear();
@@ -324,6 +350,7 @@ impl Editor {
         self.close_pending = false;
         match code {
             KeyCode::Char('a') => {
+                self.multi.clear();
                 self.anchor = Some(0);
                 self.cursor = self.document().len_chars();
             }
@@ -342,12 +369,14 @@ impl Editor {
             KeyCode::PageDown => self.switch_buffer(1),
             KeyCode::PageUp => self.switch_buffer(-1),
             KeyCode::Char('z') => {
+                self.multi.clear();
                 if let Some(cursor) = self.session.active_mut().document.undo() {
                     self.cursor = cursor;
                     self.anchor = None;
                 }
             }
             KeyCode::Char('y') => {
+                self.multi.clear();
                 if let Some(cursor) = self.session.active_mut().document.redo() {
                     self.cursor = cursor;
                     self.anchor = None;
@@ -525,6 +554,7 @@ impl Editor {
     }
 
     fn restore_cursor(&mut self) {
+        self.multi.clear();
         self.find = None;
         self.tools = None;
         self.restore_selection();

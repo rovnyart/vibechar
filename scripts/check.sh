@@ -10,6 +10,7 @@ python3 scripts/test-terminal.py
 python3 scripts/test-selection.py
 python3 scripts/test-find.py
 python3 scripts/test-tools.py
+python3 scripts/test-multi.py
 python3 scripts/test-handoff.py
 if [[ "$(uname -s)" == "Darwin" ]]; then
   bash scripts/build-mac.sh

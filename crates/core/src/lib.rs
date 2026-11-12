@@ -2,6 +2,7 @@
 
 pub mod checkpoint;
 pub mod handoff;
+pub mod multi;
 pub mod search;
 pub mod session;
 pub mod syntax;
@@ -61,6 +62,7 @@ struct HistoryEntry {
     changes: Vec<Change>,
     kind: EditKind,
     bytes: usize,
+    batches: Option<usize>,
 }
 
 const TYPING_PAUSE: Duration = Duration::from_secs(1);
@@ -154,6 +156,15 @@ impl Document {
 
     /// Apply sorted, nonoverlapping edits atomically as a single history entry.
     pub fn replace_many(&mut self, edits: &[TextEdit]) -> Result<bool, InvalidPosition> {
+        self.replace_many_input(edits, EditKind::Isolated, false)
+    }
+
+    pub(crate) fn replace_many_input(
+        &mut self,
+        edits: &[TextEdit],
+        kind: EditKind,
+        continuation: bool,
+    ) -> Result<bool, InvalidPosition> {
         let mut previous: Option<&Range<usize>> = None;
         let mut changes = Vec::new();
         let mut bytes = 0;
@@ -184,7 +195,26 @@ impl Document {
         if changes.is_empty() {
             return Ok(false);
         }
-        self.break_undo_group();
+        let now = Instant::now();
+        let groupable = kind != EditKind::Isolated
+            && bytes <= MAX_GROUP_BYTES
+            && changes.iter().all(|c| {
+                !c.removed.contains([
+                    '\r', '\n', '\u{b}', '\u{c}', '\u{85}', '\u{2028}', '\u{2029}',
+                ]) && !c.inserted.contains([
+                    '\r', '\n', '\u{b}', '\u{c}', '\u{85}', '\u{2028}', '\u{2029}',
+                ])
+            });
+        let merge = groupable
+            && continuation
+            && self
+                .last_edit
+                .is_some_and(|last| now.saturating_duration_since(last) < TYPING_PAUSE)
+            && self.undo.last().is_some_and(|entry| {
+                entry.kind == kind
+                    && entry.batches.is_some_and(|steps| steps < MAX_GROUP_EDITS)
+                    && entry.bytes + bytes <= MAX_GROUP_BYTES
+            });
         self.revoke_drop();
         changes.reverse();
         for change in &mut changes {
@@ -197,11 +227,20 @@ impl Document {
             self.next_state += 1;
         }
         self.revision += 1;
-        self.undo.push(HistoryEntry {
-            changes,
-            kind: EditKind::Isolated,
-            bytes,
-        });
+        if merge {
+            let entry = self.undo.last_mut().unwrap();
+            entry.changes.extend(changes);
+            entry.bytes += bytes;
+            *entry.batches.as_mut().unwrap() += 1;
+        } else {
+            self.undo.push(HistoryEntry {
+                changes,
+                kind: if groupable { kind } else { EditKind::Isolated },
+                bytes,
+                batches: Some(1),
+            });
+        }
+        self.last_edit = groupable.then_some(now);
         self.redo.clear();
         Ok(true)
     }
@@ -243,6 +282,7 @@ impl Document {
             && self.undo.last().is_some_and(|entry| {
                 let last = entry.changes.last().unwrap();
                 entry.kind == kind
+                    && entry.batches.is_none()
                     && entry.changes.len() < MAX_GROUP_EDITS
                     && entry.bytes + bytes <= MAX_GROUP_BYTES
                     && match kind {
@@ -276,6 +316,7 @@ impl Document {
                 changes: vec![change],
                 kind: if groupable { kind } else { EditKind::Isolated },
                 bytes,
+                batches: None,
             });
         }
         self.last_edit = groupable.then_some(now);
@@ -296,7 +337,7 @@ impl Document {
         self.state = first.before;
         self.revision += 1;
         let cursor = first.start
-            + if entry.kind == EditKind::DeleteForward {
+            + if entry.kind == EditKind::DeleteForward && entry.batches.is_none() {
                 entry
                     .changes
                     .iter()

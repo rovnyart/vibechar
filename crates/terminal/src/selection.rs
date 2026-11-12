@@ -134,6 +134,27 @@ impl Editor {
         true
     }
     pub(super) fn copy_selection(&mut self, cut: bool) {
+        if self.multi.active(self.document()) {
+            match self.multi.copy_text(self.document()) {
+                Ok(Some(text)) => match crate::clipboard::copy(&text) {
+                    Ok(()) => {
+                        if cut {
+                            self.multi_edit("", EditKind::Isolated);
+                        }
+                        self.message = if cut {
+                            "Selections cut"
+                        } else {
+                            "Selections copied"
+                        }
+                        .into();
+                    }
+                    Err(_) => self.message = "Clipboard unavailable · selections kept".into(),
+                },
+                Ok(None) => self.message = "Select text before copying".into(),
+                Err(error) => self.message = error,
+            }
+            return;
+        }
         let range = self.selection();
         if range.is_empty() {
             self.message = "Select text first · Shift+arrows or drag".into();
@@ -213,6 +234,12 @@ impl Editor {
                 self.reveal_cursor = false;
             }
             MouseEventKind::Down(MouseButton::Left) => {
+                self.pump_multi();
+                if self.multi.has_queued_input() {
+                    self.message = "Finishing matching · click again shortly".into();
+                    return;
+                }
+                self.multi.clear();
                 self.cancel_private_quit();
                 self.close_pending = false;
                 self.session.active_mut().document.break_undo_group();

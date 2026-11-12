@@ -69,6 +69,13 @@ final class PocketTextView: NSTextView {
     var isPerformingEdit: Bool { editDepth > 0 }
     var onBreakUndoGroup: (() -> Void)?
     var onEscape: (() -> Bool)?
+    var onMultiInsert: ((String,UInt32)->Bool)?
+    var onMultiClipboard: ((Int)->Bool)?
+    var onMultiMove: ((UInt32,Bool)->Bool)?
+    var onMultiCancel: (()->Bool)?
+    var onMultiReady: (()->Bool)?
+    var onMultiCanCopy: (()->Bool)?
+    var secondaryCarets:[NSRange]=[] {didSet {needsDisplay=true}}
     override func cancelOperation(_ sender: Any?) {
         if onEscape?() != true { super.cancelOperation(sender) }
     }
@@ -85,38 +92,84 @@ final class PocketTextView: NSTextView {
         return operation()
     }
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        let text=(insertString as? String) ?? (insertString as? NSAttributedString)?.string
+        if replacementRange.location==NSNotFound, !hasMarkedText(), let text, onMultiInsert?(text,1)==true {return}
+        if onMultiReady?()==false {NSSound.beep();return}
         performEdit(.typing) { super.insertText(insertString, replacementRange: replacementRange) }
     }
     override func deleteBackward(_ sender: Any?) {
+        if onMultiInsert?("",2)==true {return}
         performEdit(selectedRange().length == 0 ? .backspace : .isolated) { super.deleteBackward(sender) }
     }
     override func deleteForward(_ sender: Any?) {
+        if onMultiInsert?("",3)==true {return}
         performEdit(selectedRange().length == 0 ? .deleteForward : .isolated) { super.deleteForward(sender) }
     }
     override func paste(_ sender: Any?) {
+        if onMultiClipboard?(2)==true {return}
         performEdit(.isolated) { super.paste(sender) }
     }
     override func pasteAsPlainText(_ sender: Any?) {
+        if onMultiClipboard?(2)==true {return}
         performEdit(.isolated) { super.pasteAsPlainText(sender) }
     }
     override func pasteAsRichText(_ sender: Any?) {
+        if onMultiClipboard?(2)==true {return}
         performEdit(.isolated) { super.pasteAsRichText(sender) }
     }
     override func readSelection(from pboard: NSPasteboard) -> Bool {
-        performEdit(.isolated) { super.readSelection(from: pboard) }
+        if let text=pboard.string(forType:.string), onMultiInsert?(text,0)==true {return true}
+        return performEdit(.isolated) { super.readSelection(from: pboard) }
     }
     override func cut(_ sender: Any?) {
+        if onMultiClipboard?(1)==true {return}
         performEdit(.isolated) { super.cut(sender) }
     }
     override func insertNewline(_ sender: Any?) {
+        if onMultiInsert?("",4)==true {return}
         performEdit(.isolated) { super.insertNewline(sender) }
     }
     override func insertTab(_ sender: Any?) {
+        if onMultiInsert?("\t",0)==true {return}
         performEdit(.isolated) { super.insertTab(sender) }
+    }
+
+    override func copy(_ sender:Any?) {
+        if onMultiClipboard?(0)==true {return}
+        super.copy(sender)
+    }
+    override func validateUserInterfaceItem(_ item:NSValidatedUserInterfaceItem)->Bool {
+        if (item.action == #selector(copy(_:)) || item.action == #selector(cut(_:))) && onMultiCanCopy?()==true {return true}
+        return super.validateUserInterfaceItem(item)
+    }
+    override func mouseDown(with event:NSEvent) {if onMultiCancel?()==false {NSSound.beep();return};super.mouseDown(with:event)}
+    override func selectAll(_ sender:Any?) {if onMultiCancel?()==false {NSSound.beep();return};super.selectAll(sender)}
+    override func setMarkedText(_ string:Any,selectedRange:NSRange,replacementRange:NSRange) {
+        if onMultiCancel?()==false {NSSound.beep();return};super.setMarkedText(string,selectedRange:selectedRange,replacementRange:replacementRange)
+    }
+    override func doCommand(by selector:Selector) {
+        let name=NSStringFromSelector(selector)
+        let commands:[String:UInt32]=["moveLeft:":0,"moveRight:":1,"moveUp:":2,"moveDown:":3,"moveToBeginningOfLine:":4,"moveToLeftEndOfLine:":4,"moveToEndOfLine:":5,"moveToRightEndOfLine:":5,"moveToBeginningOfDocument:":6,"moveToEndOfDocument:":7]
+        let extending=name.contains("AndModifySelection")
+        let base=name.replacingOccurrences(of:"AndModifySelection",with:"")
+        if let direction=commands[base],onMultiMove?(direction,extending)==true {return}
+        if !["insertNewline:","insertTab:","deleteBackward:","deleteForward:","cancelOperation:"].contains(name) && onMultiReady?()==false {NSSound.beep();return}
+        super.doCommand(by:selector)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        if let window, let layout=layoutManager,let container=textContainer,!secondaryCarets.isEmpty {
+            let glyphs=layout.glyphRange(forBoundingRect:visibleRect,in:container)
+            let visible=layout.characterRange(forGlyphRange:glyphs,actualGlyphRange:nil)
+            PocketPalette.accent.setFill()
+            for caret in secondaryCarets where caret.location>=visible.location && caret.location<=NSMaxRange(visible) && caret.location<=(string as NSString).length {
+                var rect=convert(window.convertFromScreen(firstRect(forCharacterRange:caret,actualRange:nil)),from:nil)
+                rect.size.width=1.5
+                rect=rect.intersection(visibleRect).intersection(dirtyRect)
+                if !rect.isEmpty {rect.fill()}
+            }
+        }
         guard string.isEmpty, !hasMarkedText() else { return }
         let x = textContainerInset.width + (textContainer?.lineFragmentPadding ?? 0)
         ("A little room for anything." as NSString).draw(at: NSPoint(x: x, y: 65), withAttributes: [
@@ -370,6 +423,7 @@ final class PocketFooter: NSView {
     var onGive: (() -> Void)?
     var onStop: (() -> Void)?
     var operationError: String? { didSet { renderStatus() } }
+    var multiStatus:String? {didSet {renderStatus()}}
     var agentUses: UInt64? { didSet { renderStatus(); needsLayout = true } }
     private(set) var failed = false
     private var recoveryMessage = "Saved locally"
@@ -427,11 +481,13 @@ final class PocketFooter: NSView {
         give.title = agentUses == nil ? "Give to Agent" : "Copy Again"
         needsLayout = true
         if let operationError { status.stringValue = privateTab ? "\(mode) · \(operationError)" : operationError }
+        if let multiStatus {status.stringValue += " · \(multiStatus)"}
         status.textColor = failed || operationError != nil ? PocketPalette.accent : PocketPalette.secondary
         status.toolTip = privateTab
             ? "This tab is excluded from recovery. Saving a file ends private mode and closes its agent access.\(agentUses == nil ? "" : " Agent access is open; Stop closes future requests. Edits revoke access; 30 minutes without use expires it.")\(failed ? " Other tabs: " + recoveryMessage : "")"
             : failed ? recoveryMessage : "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
         if let operationError { status.toolTip = "\(status.toolTip ?? "") \(operationError)" }
+        if let multiStatus {status.toolTip = "\(status.toolTip ?? "") \(multiStatus)"}
     }
     override func layout() {
         super.layout()

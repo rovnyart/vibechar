@@ -90,6 +90,13 @@ Commands run locally on a Rust worker, including in private tabs. JSON retains
 number precision, key order, duplicate keys and string escapes. See the
 [tool semantics and limits](docs/development.md#local-text-tools).
 
+Multiple selections work in both clients: **Cmd+D / Ctrl+D** selects the word at
+the caret, then adds the next occurrence. **Cmd+Shift+L / Ctrl+L** selects all;
+when Find is open it uses the current literal/regex results. Type, delete, paste
+and move/extend all carets together; input runs share Undo. Escape keeps a single
+primary selection. Selection changes checkpoint quietly. See the
+[multicursor controls and limits](docs/development.md#multiple-selections).
+
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar
 creates a private tab and replaces the clipboard with an instruction for your

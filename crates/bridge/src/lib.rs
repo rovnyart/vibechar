@@ -12,6 +12,225 @@ pub type VcDocument = Document;
 pub struct VcSyntaxFrame(std::sync::Arc<vibechar_core::syntax::Frame>);
 pub struct VcSearch(vibechar_core::search::Engine);
 pub struct VcSearchFrame(std::sync::Arc<vibechar_core::search::Frame>);
+pub struct VcMulti(vibechar_core::multi::Multi);
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_adopt(
+    multi: *mut VcMulti,
+    document: *mut VcDocument,
+    id: u64,
+    revision: u64,
+    starts: *const usize,
+    lengths: *const usize,
+    count: usize,
+    primary: usize,
+) -> bool {
+    guard(|| {
+        let (Some(multi), Some(doc)) = (multi.as_mut(), document.as_mut()) else {
+            return false;
+        };
+        if count == 0
+            || count > vibechar_core::multi::MAX_SELECTIONS
+            || starts.is_null()
+            || lengths.is_null()
+        {
+            multi
+                .0
+                .report_error("Select between 1 and 1,000 matches".into());
+            return false;
+        }
+        if doc.id() != id || doc.revision() != revision {
+            multi
+                .0
+                .report_error("Find results are stale · search again".into());
+            return false;
+        }
+        let mut ranges = Vec::with_capacity(count);
+        for (&start, &length) in slice::from_raw_parts(starts, count)
+            .iter()
+            .zip(slice::from_raw_parts(lengths, count))
+        {
+            let Some(end) = start.checked_add(length) else {
+                return false;
+            };
+            let (Ok(start), Ok(end)) = (doc.char_from_utf16(start), doc.char_from_utf16(end))
+            else {
+                return false;
+            };
+            ranges.push(start..end);
+        }
+        doc.break_undo_group();
+        match multi.0.adopt(doc, &ranges, primary) {
+            Ok(()) => true,
+            Err(error) => {
+                multi.0.report_error(error);
+                false
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn vc_multi_new() -> *mut VcMulti {
+    guard(|| Box::into_raw(Box::new(VcMulti(vibechar_core::multi::Multi::default()))))
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_free(multi: *mut VcMulti) {
+    if !multi.is_null() {
+        guard(|| drop(Box::from_raw(multi)));
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_clear(multi: *mut VcMulti) {
+    guard(|| {
+        if let Some(multi) = multi.as_mut() {
+            multi.0.clear();
+        }
+    });
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_request(
+    multi: *mut VcMulti,
+    document: *mut VcDocument,
+    start: usize,
+    length: usize,
+    all: bool,
+) -> bool {
+    guard(|| {
+        let (Some(multi), Some(doc)) = (multi.as_mut(), document.as_mut()) else {
+            return false;
+        };
+        let Some(end) = start.checked_add(length) else {
+            return false;
+        };
+        let (Ok(start), Ok(end)) = (doc.char_from_utf16(start), doc.char_from_utf16(end)) else {
+            return false;
+        };
+        doc.break_undo_group();
+        match multi.0.request(doc, start..end, all) {
+            Ok(()) => true,
+            Err(error) => {
+                multi.0.report_error(error);
+                false
+            }
+        }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_poll(multi: *mut VcMulti, document: *mut VcDocument) -> bool {
+    guard(|| {
+        let (Some(multi), Some(doc)) = (multi.as_mut(), document.as_mut()) else {
+            return false;
+        };
+        multi.0.pump(doc)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_state(
+    multi: *const VcMulti,
+    document: *const VcDocument,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        let (Some(multi), Some(doc)) = (multi.as_ref(), document.as_ref()) else {
+            return 0;
+        };
+        let active = multi.0.active(doc);
+        let selections = if active {
+            multi.0.selections().iter().map(|selection| {
+            let range=selection.range();
+            let start=doc.utf16_from_char(range.start).unwrap();
+            serde_json::json!({"start":start,"length":doc.utf16_from_char(range.end).unwrap()-start,"anchor":doc.utf16_from_char(selection.anchor).unwrap(),"head":doc.utf16_from_char(selection.head).unwrap()})
+        }).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let json=serde_json::json!({"serial":multi.0.serial(),"selections":selections,"primary":multi.0.primary_index(),"busy":multi.0.busy(),"queued":multi.0.has_queued_input(),"message":multi.0.message}).to_string();
+        copy_metadata(&json, output, capacity)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_edit(
+    multi: *mut VcMulti,
+    document: *mut VcDocument,
+    text: *const u8,
+    length: usize,
+    kind: u32,
+) -> i32 {
+    guard(|| {
+        let (Some(multi), Some(doc)) = (multi.as_mut(), document.as_mut()) else {
+            return 0;
+        };
+        if length > vibechar_core::multi::MAX_BATCH_BYTES {
+            multi
+                .0
+                .report_error("Multicursor edit exceeds 8 MiB".into());
+            return 0;
+        }
+        let Some(text) = input(text, length) else {
+            return 0;
+        };
+        let newline = kind == 4;
+        let kind = match kind {
+            0 | 4 => vibechar_core::EditKind::Isolated,
+            1 => vibechar_core::EditKind::Typing,
+            2 => vibechar_core::EditKind::Backspace,
+            3 => vibechar_core::EditKind::DeleteForward,
+            _ => return 0,
+        };
+        let text = if newline { doc.newline() } else { text };
+        match multi.0.edit(doc, text, kind) {
+            Ok(true) => 1,
+            Ok(false) => 2,
+            Err(error) => {
+                multi.0.report_error(error);
+                0
+            }
+        }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_move(
+    multi: *mut VcMulti,
+    document: *mut VcDocument,
+    direction: u32,
+    extend: bool,
+) -> bool {
+    guard(|| {
+        let (Some(multi), Some(doc)) = (multi.as_mut(), document.as_mut()) else {
+            return false;
+        };
+        doc.break_undo_group();
+        match multi.0.navigate(doc, direction, extend) {
+            Ok(()) => true,
+            Err(error) => {
+                multi.0.report_error(error);
+                false
+            }
+        }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_multi_copy(
+    multi: *mut VcMulti,
+    document: *const VcDocument,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        let (Some(multi), Some(doc)) = (multi.as_mut(), document.as_ref()) else {
+            return 0;
+        };
+        match multi.0.copy_text(doc) {
+            Ok(text) => copy_metadata(text.as_deref().unwrap_or(""), output, capacity),
+            Err(error) => {
+                multi.0.report_error(error);
+                0
+            }
+        }
+    })
+}
 
 pub struct VcTool {
     job: Option<vibechar_core::tools::Job>,
@@ -182,6 +401,8 @@ pub unsafe extern "C" fn vc_search_submit(
                 replacement: (flags & 4 != 0).then(|| replacement.into()),
                 regex: flags & 1 != 0,
                 case_sensitive: flags & 2 != 0,
+                whole_graphemes: false,
+                whole_words: false,
             },
         );
         true
@@ -908,6 +1129,94 @@ pub unsafe extern "C" fn vc_session_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multiple_selection_bridge_checks_utf16_staleness_and_one_batch_history() {
+        unsafe {
+            assert!(!vc_multi_request(
+                ptr::null_mut(),
+                ptr::null_mut(),
+                0,
+                0,
+                false
+            ));
+            assert!(!vc_multi_poll(ptr::null_mut(), ptr::null_mut()));
+            vc_multi_free(ptr::null_mut());
+            vc_multi_clear(ptr::null_mut());
+            let source = "👩‍💻 я я\r\n";
+            let doc = vc_document_new(source.as_ptr(), source.len());
+            let multi = vc_multi_new();
+            assert!(!vc_multi_request(multi, doc, 1, 1, true));
+            assert!(!vc_multi_request(multi, doc, usize::MAX, 2, true));
+            assert!(vc_multi_request(multi, doc, 6, 1, true));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            loop {
+                vc_multi_poll(multi, doc);
+                if !(*multi).0.busy() {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            fn state(multi: *const VcMulti, doc: *const VcDocument) -> serde_json::Value {
+                unsafe {
+                    let mut bytes = vec![0; vc_multi_state(multi, doc, ptr::null_mut(), 0)];
+                    vc_multi_state(multi, doc, bytes.as_mut_ptr(), bytes.len());
+                    serde_json::from_slice(&bytes).unwrap()
+                }
+            }
+            let initial = state(multi, doc);
+            assert_eq!(initial["selections"].as_array().unwrap().len(), 2);
+            assert_eq!(initial["selections"][1]["start"], 8);
+            assert_eq!(vc_multi_edit(multi, doc, b"AB".as_ptr(), 2, 0), 1);
+            assert_eq!((*doc).text(), "👩‍💻 AB AB\r\n");
+            let current = state(multi, doc);
+            assert_eq!(current["selections"][0]["head"], 8);
+            assert_eq!(current["selections"][1]["head"], 11);
+            let mut cursor = 0;
+            assert!(vc_document_undo(doc, &mut cursor));
+            assert_eq!((*doc).text(), source);
+            assert!(!vc_document_dirty(doc));
+            assert_eq!(vc_multi_edit(multi, doc, b"!".as_ptr(), 1, 1), 0);
+            let starts = [6, 8];
+            let lengths = [1, 1];
+            assert!(!vc_multi_adopt(
+                multi,
+                doc,
+                (*doc).id() + 1,
+                (*doc).revision(),
+                starts.as_ptr(),
+                lengths.as_ptr(),
+                2,
+                0
+            ));
+            assert!(!vc_multi_adopt(
+                multi,
+                doc,
+                (*doc).id(),
+                (*doc).revision() - 1,
+                starts.as_ptr(),
+                lengths.as_ptr(),
+                2,
+                0
+            ));
+            assert!(vc_multi_adopt(
+                multi,
+                doc,
+                (*doc).id(),
+                (*doc).revision(),
+                starts.as_ptr(),
+                lengths.as_ptr(),
+                2,
+                1
+            ));
+            assert!(vc_multi_move(multi, doc, 1, false));
+            assert_eq!(vc_multi_edit(multi, doc, ptr::null(), 0, 4), 1);
+            assert_eq!((*doc).text(), "👩‍💻 я\r\n я\r\n\r\n");
+            vc_multi_free(multi);
+            vc_document_free(doc);
+        }
+    }
 
     #[test]
     fn json_tool_formats_only_the_selected_object_and_rejects_a_missing_quote() {

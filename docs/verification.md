@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 88 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 101 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -23,7 +23,7 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Thirty-two real PTY scenarios across the baseline, selection, find and local-tool suites,
+- Thirty-eight real PTY scenarios across the baseline, selection, find, tools and multicursor suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -669,6 +669,61 @@ UTF-8 without partial/lossy edits. Case mappings use Rust's Unicode defaults,
 without locale-specific settings. No dependency or network call was added.
 M3 multicursor and complete large-document mode remain open; M4/M5 AI follows M3.
 
+## Shared multiple selections — 2026-11-12
+
+The complete `scripts/check.sh` passed: formatting, Clippy with warnings as errors,
+101 Rust tests, release builds, 38 PTY scenarios plus Secret Drop and native smoke.
+A subsequent native menu-validation follow-up additionally checks Copy when the
+primary Find hit is zero-width but other selections contain text.
+
+The increment adds 12 core tests and one C bridge regression, bringing Rust
+coverage to 101 tests. Shared cases exercise word-at-caret versus literal fragments,
+case sensitivity, next/all/wrap, Unicode grapheme boundaries, anchored navigation,
+wide glyphs/tabs/CRLF, collisions, ordered copy, isolated paste, grouped typing/
+deletion, save/pause boundaries, valid Undo/Redo carets, stale/limited rejection,
+Find adoption with different-length and zero-width ranges, and Secret Drop
+preservation on metadata/no-op versus revocation on real edits. The bridge checks
+UTF-16, null/overflow/split-surrogate inputs, identity/revision and CRLF insertion.
+
+Six real release PTY scenarios in `scripts/test-multi.py` bring the combined suite
+to 38 (plus the independent Secret Drop helper scenario). They cover next/all,
+case-sensitive editing, grouped Undo/Redo, fake-provider copy/cut/paste failures,
+multiline Unicode paste, grapheme deletion/Shift movement, Escape, queued regex
+and zero-width Find hits, tab resets and private recovery exclusion. No real
+clipboard or user recovery state is used by the automated suites.
+
+Native smoke drives the actual PocketTextView hooks and Rust bridge: quiet
+selection/recovery, typing/deletion groups, unique-pasteboard copy/cut/paste,
+graphemes, navigation, regex adoption, Undo/Redo, Escape, tab/private state and IME
+fallback to the primary. Marked text preserves core/view agreement and leaves
+other selections untouched; ordinary composition history granularity remains an
+IME qualification item. Real view exports are under ignored
+`dist/multi-ui/multi-{selections,carets}-{light,dark}-{420,880}.png`.
+
+An isolated `dev.vibechar.multi-check` app verified Cmd+D (1 then 2 selections),
+Cmd+Shift+L (3 whole-word matches, leaving `category` untouched), physical keyboard
+typing under the active Russian layout into all targets, one Cmd+Z back to source,
+Redo, regex Find adoption with an emoji range, full multiline paste into four
+targets and one Undo, Escape, new/closed tabs and restart without a stale set.
+Secondary highlights/carets and quiet selection status were inspected live.
+
+Live rapid-key testing exposed a race: All → Right → two Backspaces could edit only
+the seed before the matching frame was adopted. The shared bounded input queue
+now replays navigation/edits after the full frame; matching failures cannot replay
+text on only the seed. Added core, real PTY and native regressions. The exact live
+sequence then changed all three targets and one Undo restored them; immediate
+three-character typing after All also passed. Save/close/tab/mode changes first
+pump or reject while queued input remains, preventing silent loss. The QA app was
+quit and its bundle, registration, recovery/preferences and crashed synthetic
+smoke-fixture directories were removed.
+
+Limits are documented in development: 4 MiB matching source, 1 KiB literal seed,
+1,000 selections, 8 MiB edit payload and a 512-action / 8 MiB pending-input queue.
+Sets are transient and only the primary enters ordinary recovery. Arbitrary
+mouse-added carets, rectangles, per-selection paste distribution, visual-wrap
+vertical navigation, broad IME qualification and cross-emulator/Linux checks
+remain outside this increment. Complete large-document mode and M4/M5 AI remain open.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS
@@ -708,7 +763,7 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 Native startup and Mac bridge/presentation costs across representative file sizes
 still need measurement. The milestone's baseline checkbox remains open until that
 evidence is recorded. M2 recovery is partial: retention and broader durability
-qualification remain open. M3 smart syntax, find/replace and nine local tools with
-a shared command palette are implemented; multicursor
-editing and complete large-document mode remain open. M4/M5 AI is not
+qualification remain open. M3 smart syntax, find/replace, nine local tools and
+basic shared multicursor editing are implemented; complete large-document mode
+remains open. M4/M5 AI is not
 implemented. The prototype should not hold the only copy of important text.

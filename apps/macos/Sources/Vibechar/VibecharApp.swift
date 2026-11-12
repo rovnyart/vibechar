@@ -41,6 +41,7 @@ struct VibecharApp {
             AppDelegate.quietSelectionSmokeTest()
             AppDelegate.findSmokeTest()
             AppDelegate.toolsSmokeTest()
+            AppDelegate.multiSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -101,6 +102,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private let footer = PocketFooter()
     private let findBar = FindBar()
     private var toolPalette: ToolPalette?
+    private lazy var multiController:MultiController = {
+        let controller=MultiController(document:document,textView:textView,clipboard:clipboard)
+        controller.didEdit={ [weak self] in
+            guard let self else {return}
+            self.applyTypography();self.refreshTitle();self.scheduleSessionSave();self.scheduleSyntax()
+        }
+        controller.didUpdate={ [weak self] state in
+            guard let self else {return}
+            self.footer.operationError=state.message
+            let count=state.selections.count
+            let noun=state.selections.allSatisfy {$0.length==0} ? (count==1 ? "caret" : "carets") : (count==1 ? "selection" : "selections")
+            self.footer.multiStatus=state.busy ? "Finding matches…" : state.active ? "\(count) \(noun) · Esc to leave" : nil
+            self.scheduleSessionSave(quiet:true)
+        }
+        return controller
+    }()
     private lazy var findController: FindController = {
         let controller = FindController(bar: findBar,document: document,textView: textView)
         controller.didReplace = { [weak self] selection in
@@ -110,6 +127,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             self.textView.scrollRangeToVisible(selection)
             self.window.makeFirstResponder(self.textView)
             self.refreshTitle(); self.scheduleSessionSave(); self.scheduleSyntax()
+        }
+        controller.didSelectAll={ [weak self] frame,primary in
+            guard let self else {return}
+            self.multiController.adopt(frame:frame,primary:primary)
+            if self.multiController.active {self.findController.close();self.multiController.paint()}
         }
         return controller
     }()
@@ -250,8 +272,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         refreshTitle()
         _ = findController
+        _ = multiController
         textView.onEscape = { [weak self] in
-            guard let self, self.findController.visible else { return false }
+            guard let self else {return false}
+            if self.multiController.active {self.multiController.cancel();return true}
+            guard self.findController.visible else { return false }
             self.findController.close(); return true
         }
     }
@@ -326,6 +351,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(.separator())
+        addItem("Add Next Occurrence",action:#selector(addNextOccurrence),key:"d",to:edit)
+        let allOccurrences=NSMenuItem(title:"Select All Occurrences",action:#selector(selectAllOccurrences),keyEquivalent:"l")
+        allOccurrences.keyEquivalentModifierMask=[.command,.shift];allOccurrences.target=self;edit.addItem(allOccurrences)
         addItem("Text Tools…",action:#selector(openTools),key:"k",to:edit)
         addItem("Find…",action:#selector(openFind),key:"f",to:edit)
         let replace = NSMenuItem(title:"Find and Replace…",action:#selector(openReplace),keyEquivalent:"f")
@@ -393,6 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func textDidChange(_ notification: Notification) {
+        multiController.sourceChanged()
         toolPalette?.close(); toolPalette=nil
         textView.needsDisplay = true
         refreshTitle()
@@ -402,7 +431,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
-        if !textView.isPerformingEdit {
+        multiController.selectionChanged()
+        if !textView.isPerformingEdit && !multiController.syncing {
             document.breakUndoGroup()
             scheduleSessionSave(quiet: true)
         }
@@ -438,10 +468,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         if !busy { syntaxTimer?.invalidate(); syntaxTimer = nil }
         return busy
     }
-    @objc private func syntaxViewportChanged() { paintSyntax(); findController.paint() }
-    @objc private func openFind() { toolPalette?.close(); toolPalette=nil; findController.open(replacing:false) }
-    @objc private func openReplace() { toolPalette?.close(); toolPalette=nil; findController.open(replacing:true) }
+    @objc private func syntaxViewportChanged() { paintSyntax(); findController.paint();multiController.paint() }
+    @objc private func addNextOccurrence() {openOccurrences(all:false)}
+    @objc private func selectAllOccurrences() {openOccurrences(all:true)}
+    private func openOccurrences(all:Bool) {
+        toolPalette?.close();toolPalette=nil;languagePopover?.performClose(nil);languagePopover=nil
+        if all && findController.visible {findController.selectAllForEditing();return}
+        if findController.visible {findController.close()}
+        window.makeFirstResponder(textView);multiController.request(all:all)
+    }
+    private func multipleInputReady()->Bool {
+        if multiController.ready() {return true}
+        footer.operationError="Finishing matching · try that command again shortly";return false
+    }
+    @objc private func openFind() {guard multipleInputReady() else {return}; multiController.cancel();toolPalette?.close(); toolPalette=nil; findController.open(replacing:false) }
+    @objc private func openReplace() {guard multipleInputReady() else {return}; multiController.cancel();toolPalette?.close(); toolPalette=nil; findController.open(replacing:true) }
     @objc private func openTools() {
+        guard multipleInputReady() else {return}
+        multiController.cancel()
         toolPalette?.close(); toolPalette=nil
         languagePopover?.performClose(nil); languagePopover=nil
         if findController.visible { findController.close() }
@@ -486,6 +530,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         }
     }
     @objc private func showLanguagePicker() {
+        guard multipleInputReady() else {return}
+        multiController.cancel()
         toolPalette?.close(); toolPalette=nil
         document.breakUndoGroup()
         languagePopover?.performClose(nil)
@@ -527,6 +573,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func applyHistory(redo: Bool) {
+        guard multipleInputReady() else {return}
+        multiController.cancel()
         guard let cursor = document.history(redo: redo) else { return }
         textView.string = document.text
         applyTypography()
@@ -539,18 +587,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func newScratch() {
+        guard multipleInputReady() else {return}
         session.rememberSelection(textView.selectedRange())
         session.open()
         showActiveBuffer()
     }
 
     @objc private func newPrivateScratch() {
+        guard multipleInputReady() else {return}
         session.rememberSelection(textView.selectedRange())
         session.openPrivate()
         showActiveBuffer()
     }
 
     @objc private func copyForAgent() {
+        guard multipleInputReady() else {return}
         let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/vibechar").path
         guard FileManager.default.isExecutableFile(atPath: helper) else {
             footer.operationError = "Agent helper unavailable · Rebuild the app"
@@ -581,6 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func pasteForAgent() {
+        guard multipleInputReady() else {return}
         guard let text = clipboard.string(forType: .string), !text.isEmpty,
               text.utf8.count <= 65536, !text.contains("\0") else {
             footer.operationError = "Copy a secret first · Up to 64 KiB of text"
@@ -608,6 +660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func openFile() {
+        guard multipleInputReady() else {return}
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -622,6 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func showActiveBuffer() {
+        multiController.cancel()
         toolPalette?.close(); toolPalette=nil
         if findController.visible { findController.close() }
         footer.operationError = nil
@@ -641,6 +695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     @objc private func nextBuffer() { switchBuffer(to: (session.active + 1) % session.count) }
 
     private func switchBuffer(to index: Int) {
+        guard multipleInputReady() else {return}
         guard index >= 0, index < session.count else { return }
         if index == session.active { document.breakUndoGroup(); window.makeFirstResponder(textView); return }
         session.rememberSelection(textView.selectedRange())
@@ -653,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func closeBuffer(at index: Int) {
+        guard multipleInputReady() else {return}
         guard index >= 0, index < session.count else { return }
         let previous = session.active
         switchBuffer(to: index)
@@ -710,6 +766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func performSave(alwaysChooseDestination: Bool,
                              chooseDestination: @MainActor (NSSavePanel) -> URL? = { $0.runModal() == .OK ? $0.url : nil }) throws {
+        guard multipleInputReady() else {throw NSError(domain:"Vibechar",code:1,userInfo:[NSLocalizedDescriptionKey:"Finishing occurrence matching. Save again when it completes."])}
         toolPalette?.close(); toolPalette=nil
         document.breakUndoGroup()
         let wasPrivate = session.isPrivate
@@ -769,6 +826,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         closeAllAgentAccess()
         syntaxWork?.cancel(); syntaxTimer?.invalidate()
         findController.close()
+        multiController.cancel()
         toolPalette?.close(); toolPalette=nil
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -797,6 +855,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func saveBeforeQuitting() -> Bool {
+        guard multipleInputReady() else {return false}
         if session.hasPrivateText {
             let alert = NSAlert()
             alert.messageText = "Quit and discard private tabs?"
@@ -894,6 +953,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.saveGeneration == privateGeneration)
         precondition(!String(decoding: try! Data(contentsOf: file), as: UTF8.self).contains("PRIVATE_SELECTION_FIXTURE"))
         print("Quiet Mac selection smoke passed: caret/selection, no-op, pending text deadline, restart, failure/recovery, private exclusion")
+    }
+
+    static func multiSmokeTest() {
+        let app=AppDelegate(clipboard:.withUniqueName())
+        app.makeWindow(restoreFrame:false)
+        let temporary=FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-multi-\(UUID().uuidString)")
+        defer {
+            app.multiController.cancel();app.findController.close();app.pendingSave?.cancel();app.pendingSave=nil
+            if let recovery=app.recovery {_=recovery.flush(app.session.checkpoint())};app.recovery=nil
+            app.syntaxWork?.cancel();app.syntaxTimer?.invalidate();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()
+            try? FileManager.default.removeItem(at:temporary)
+        }
+        let source="cat 👩‍💻\r\ncat CAT cat"
+        precondition(app.document.replace(NSRange(location:0,length:0),with:source));app.document.markSaved();app.showActiveBuffer();app.makeMenus()
+        app.recovery=try! SessionRecovery(directory:temporary)
+        precondition(app.recovery!.flush(app.session.checkpoint()))
+        app.footer.showStatus("Saved locally")
+        func wait() {
+            let deadline=Date(timeIntervalSinceNow:4)
+            while app.multiController.state.busy {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.multiController.poll();precondition(Date()<deadline)}
+        }
+        func selectAll(_ range:NSRange=NSRange(location:0,length:3)) {
+            app.multiController.cancel();app.textView.setSelectedRange(range);app.selectAllOccurrences();wait()
+        }
+        app.addNextOccurrence();app.selectAllOccurrences()
+        app.textView.doCommand(by:#selector(NSResponder.moveRight(_:)));app.textView.deleteBackward(nil);app.textView.deleteBackward(nil);wait()
+        precondition(app.document.text=="c 👩‍💻\r\nc CAT c");app.undoEdit();precondition(app.document.text==source && !app.document.isDirty)
+        let saveDeadline=Date(timeIntervalSinceNow:4)
+        while app.pendingSave != nil || app.footer.status.stringValue.hasPrefix("Saving locally") {
+            RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));precondition(Date()<saveDeadline)
+        }
+        let revision=app.document.revision
+        app.textView.setSelectedRange(NSRange(location:0,length:0))
+        app.addNextOccurrence();precondition(app.multiController.state.selections.count==1 && app.textView.selectedRange()==NSRange(location:0,length:3))
+        app.addNextOccurrence();wait();precondition(app.multiController.state.selections.count==2)
+        app.selectAllOccurrences();wait();precondition(app.multiController.state.selections.count==3)
+        precondition(app.document.revision==revision && !app.document.isDirty && app.footer.status.stringValue.hasPrefix("Saved locally"))
+        let output=ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map {URL(fileURLWithPath:$0,isDirectory:true)}
+        func snapshots(_ state:String) {
+            guard let output else {return}
+            try! FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
+            for (name,appearance) in [("light",NSAppearance.Name.aqua),("dark",.darkAqua)] {
+                app.window.appearance=NSAppearance(named:appearance)
+                for width in [420,880] {
+                    app.window.setContentSize(NSSize(width:width,height:600));app.window.contentView!.layoutSubtreeIfNeeded();app.multiController.paint()
+                    app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        let view=app.window.contentView!,bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds)!
+                        view.cacheDisplay(in:view.bounds,to:bitmap)
+                        try! bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("multi-\(state)-\(name)-\(width).png"))
+                    }
+                }
+            }
+        }
+        snapshots("selections")
+        for text in ["d","o","g"] {app.textView.insertText(text,replacementRange:NSRange(location:NSNotFound,length:0))}
+        precondition(app.document.text=="dog 👩‍💻\r\ndog CAT dog" && app.textView.string==app.document.text)
+        precondition(app.textView.secondaryCarets.count==2);snapshots("carets")
+        app.undoEdit();precondition(app.document.text==source && !app.document.isDirty && !app.multiController.active)
+        app.redoEdit();precondition(app.document.text=="dog 👩‍💻\r\ndog CAT dog");app.undoEdit()
+        selectAll();app.textView.copy(nil);precondition(app.clipboard.string(forType:.string)=="cat\ncat\ncat")
+        app.textView.cut(nil);precondition(app.document.text==" 👩‍💻\r\n CAT ");app.undoEdit();precondition(app.document.text==source)
+        selectAll();app.clipboard.clearContents();precondition(app.clipboard.setString("a\r\nb",forType:.string));app.textView.paste(nil)
+        precondition(app.document.text==source.replacingOccurrences(of:"cat",with:"a\r\nb"));app.undoEdit();precondition(app.document.text==source)
+        selectAll();app.textView.doCommand(by:#selector(NSResponder.moveRight(_:)));app.textView.deleteBackward(nil);app.textView.deleteBackward(nil)
+        precondition(app.document.text=="c 👩‍💻\r\nc CAT c");app.undoEdit();precondition(app.document.text==source && !app.document.isDirty)
+        selectAll(NSRange(location:4,length:5));app.textView.doCommand(by:#selector(NSResponder.moveRight(_:)));app.textView.deleteBackward(nil)
+        precondition(app.document.text=="cat \r\ncat CAT cat");app.undoEdit();precondition(app.document.text==source)
+        app.openFind();app.findBar.find.stringValue="cat|👩‍💻";app.findBar.regex.state = .on
+        app.findController.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification));app.selectAllOccurrences()
+        let deadline=Date(timeIntervalSinceNow:4)
+        while app.findController.visible {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.findController.poll();precondition(Date()<deadline)}
+        precondition(app.multiController.state.selections.count==5) // Default Find is case-insensitive: CAT is included.
+        app.textView.insertText("X",replacementRange:NSRange(location:NSNotFound,length:0));precondition(app.document.text=="X X\r\nX X X")
+        app.undoEdit();precondition(app.document.text==source)
+        app.textView.setSelectedRange(NSRange(location:(source as NSString).range(of:"\r\n").location,length:0));app.openFind()
+        app.findBar.find.stringValue="cat|$";app.findBar.regex.state = .on
+        app.findController.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification));app.selectAllOccurrences()
+        let copyDeadline=Date(timeIntervalSinceNow:4)
+        while app.findController.visible {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.findController.poll();precondition(Date()<copyDeadline)}
+        precondition(app.multiController.state.current?.length==0 && app.multiController.state.selections.contains {$0.length>0})
+        precondition(app.textView.validateUserInterfaceItem(NSMenuItem(title:"Copy",action:#selector(NSText.copy(_:)),keyEquivalent:"c")))
+        app.textView.copy(nil);precondition(app.clipboard.string(forType:.string)=="cat\ncat\nCAT\ncat")
+        selectAll();let beforeEscape=app.document.revision;app.textView.cancelOperation(nil)
+        precondition(!app.multiController.active && app.textView.secondaryCarets.isEmpty && app.document.revision==beforeEscape)
+        selectAll();app.textView.setMarkedText("に",selectedRange:NSRange(location:1,length:0),replacementRange:NSRange(location:NSNotFound,length:0))
+        precondition(!app.multiController.active && app.document.text=="に 👩‍💻\r\ncat CAT cat" && app.document.text==app.textView.string)
+        app.textView.unmarkText()
+        // Composition uses the ordinary primary-cursor path; its history granularity is a separate IME gate.
+        selectAll(NSRange(location:0,length:1));app.newPrivateScratch();precondition(!app.multiController.active)
+        let privateText="PRIVATE_MULTI_FIXTURE x x"
+        precondition(app.document.replace(NSRange(location:0,length:0),with:privateText));app.textView.string=app.document.text
+        let privateRange=(privateText as NSString).range(of:"x");selectAll(privateRange)
+        precondition(app.multiController.state.selections.count==2);app.textView.insertText("Y",replacementRange:NSRange(location:NSNotFound,length:0))
+        precondition(app.document.text=="PRIVATE_MULTI_FIXTURE Y Y" && app.session.isPrivate)
+        precondition(app.recovery!.flush(app.session.checkpoint()))
+        precondition(!String(decoding:try! Data(contentsOf:app.recovery!.fileURL),as:UTF8.self).contains("PRIVATE_MULTI_FIXTURE"))
+        print("Multiple selections native smoke passed: next/all, quiet selection, grouped typing, copy/cut/paste, grapheme deletion, navigation, Find regex, Undo/Redo, Escape, tab/private recovery, light/dark narrow/wide rendering")
     }
 
     static func toolsSmokeTest() {

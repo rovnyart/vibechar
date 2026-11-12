@@ -16,6 +16,8 @@ fn query(needle: &str, replacement: Option<&str>, regex: bool) -> Query {
         replacement: replacement.map(str::to_owned),
         regex,
         case_sensitive: false,
+        whole_graphemes: false,
+        whole_words: false,
     }
 }
 #[test]

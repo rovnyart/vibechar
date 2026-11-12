@@ -261,6 +261,63 @@ and its source/selection stays excluded from recovery. Ordinary match selection
 checkpoints quietly, without flashing Saving locally. Dependency notices are
 bundled alongside the existing syntax notices.
 
+## Multiple selections
+
+| Action | Mac | Terminal |
+| --- | --- | --- |
+| Select word / add next occurrence | Cmd+D | Ctrl+D |
+| Select all occurrences / current Find hits | Cmd+Shift+L | Ctrl+L |
+| Move all carets / extend all selections | Arrows, Shift+arrows | Arrows, Shift+arrows |
+| Line/document boundaries | Cmd+Left/Right, Cmd+Up/Down; Shift extends | Home/End, Ctrl+Home/End; Shift extends |
+| Keep only the primary selection | Escape or click the text | Escape or click the text |
+
+With an empty selection, the first Next selects a Unicode word (or an emoji/
+grapheme); later requests add following occurrences and wrap. Word-at-caret
+matching is case-sensitive and whole-word, so `cat` does not select `category`.
+An explicit selection uses literal, case-sensitive fragment matching instead.
+All occurrences selects the same kind of matches. While Find is open, All adopts
+its actual results, respecting regex/case options and supporting zero-width hits.
+A request made before Find completes waits for its current frame. Matches that
+split a composed character are rejected; normal occurrence matching filters them.
+
+Typing, Backspace/Delete, newline/tab insertion and paste apply to every range.
+The same complete pasted text goes to each range, without splitting it into rows.
+Copy joins nonempty selections in document order with LF separators; cut edits
+only after a successful copy. Clipboard failures leave source and selections.
+Caret deletion consumes whole graphemes/CRLF. Overlapping selections and colliding
+carets merge. Arrows move all carets, Shift extends them; vertical movement uses
+logical document lines and Unicode cell columns (tabs every four cells).
+
+Input runs are grouped across all targets. Pause, navigation, paste, newline, save
+and changing tabs establish boundaries; groups retain the 512-step / 64 KiB caps.
+Every batch changes the document revision once and is atomic. Undo/Redo returns
+to one primary caret; it never leaves stale secondary ranges over restored text.
+Selection/navigation/copy/no-op operations neither mark text dirty nor revoke
+Secret Drop. A real edit revokes access, including in private tabs.
+
+The set is transient: only the primary selection enters ordinary recovery.
+Switching tabs, opening Find/tools/language search or ordinary single-selection
+editing clears the set. Native IME composition deliberately returns to the primary
+selection before composing; arbitrary native word/paragraph commands may do the
+same. Private text remains excluded from recovery. No network or source persistence
+is added by occurrence matching.
+
+Input/navigation arriving while occurrence matching is pending is queued and
+replayed on the full set, never silently applied to just the seed. The queue caps
+at 512 actions / 8 MiB text. Copy waits for the set; save/close/tab/mode-changing
+commands ask to retry if queued input has not finished, preventing its loss or a
+save of stale text. Selection failures discard queued input without partial edits.
+IME uses the existing single-cursor history behavior; composition Undo granularity
+remains part of native IME qualification.
+
+Initial limits: **4 MiB** source for matching/adoption, **1 KiB** literal seed,
+**1,000** selections, **8 MiB** combined removed/inserted bytes per edit. Oversized
+match sets fail without a partial Select All; use Replace All for larger batches.
+Word-at-caret detection asks for an explicit fragment on lines over 64 KiB.
+Navigation/deletion caches per-line grapheme/column maps with an 8 MiB source
+budget. Rectangular selections, mouse-added independent carets, per-selection paste
+distribution and persisted multicursor sets are not implemented in this increment.
+
 ## Local text tools
 
 Open **Edit → Text Tools… / Cmd+K** on Mac or **Ctrl+K** in the terminal.

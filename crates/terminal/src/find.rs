@@ -101,6 +101,7 @@ enum Action {
     Move(isize),
     One,
     Preview,
+    SelectAll,
 }
 pub struct Find {
     engine: Engine,
@@ -165,6 +166,7 @@ impl Editor {
             .is_some_and(|f| f.frame.is_none() || f.engine.busy())
     }
     fn open_find(&mut self, replacing: bool) {
+        self.multi.clear();
         self.pointer = selection::Pointer::default();
         self.document_mut_break();
         if self.find.is_none() {
@@ -235,6 +237,8 @@ impl Editor {
                 replacement: find.replacing.then(|| find.replacement.text.clone()),
                 regex: find.regex,
                 case_sensitive: find.sensitive,
+                whole_graphemes: false,
+                whole_words: false,
             },
         );
     }
@@ -313,6 +317,28 @@ impl Editor {
             return;
         };
         match action {
+            Action::SelectAll => {
+                if frame.error.is_some() || frame.limited {
+                    find.notice = "Refine Find before selecting matches".into();
+                    return;
+                }
+                let ranges = frame
+                    .matches
+                    .iter()
+                    .map(|hit| hit.start..hit.end)
+                    .collect::<Vec<_>>();
+                let primary = find.current.unwrap_or(0);
+                match self
+                    .multi
+                    .adopt(&self.session.active().document, &ranges, primary)
+                {
+                    Ok(()) => {
+                        self.find = None;
+                        self.sync_multi();
+                    }
+                    Err(error) => self.find.as_mut().unwrap().notice = error,
+                }
+            }
             Action::Move(direction) => {
                 if frame.matches.is_empty() {
                     return;
@@ -338,6 +364,9 @@ impl Editor {
                 }
             }
         }
+    }
+    pub(super) fn select_find_matches(&mut self) {
+        self.find_action(Action::SelectAll);
     }
     fn apply_find(&mut self, serial: u64, index: Option<usize>) {
         let Some(find) = &self.find else {
@@ -410,7 +439,12 @@ impl Editor {
         if !find.focused {
             return false;
         }
-        if control && matches!(key.code, KeyCode::Char('q' | 'n' | 'p' | 'w' | 's')) {
+        if control
+            && matches!(
+                key.code,
+                KeyCode::Char('q' | 'n' | 'p' | 'w' | 's' | 'd' | 'l')
+            )
+        {
             if key.code == KeyCode::Char('s') {
                 find.focused = false;
             }

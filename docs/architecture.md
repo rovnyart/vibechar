@@ -211,6 +211,36 @@ agent runtime, or per-agent MCP setup is involved. See the
 
 ## Commands, transforms, proposals
 
+`multi::Multi` owns transient anchored selections, their primary index and the
+document identity/revision. Both adapters use the same seed/next/all, adoption,
+navigation, clipboard-text and edit operations. Next/all reuses the local search
+worker with literal/case-sensitive matching plus streaming grapheme/word boundary
+filters. It queues rapid requests until a current frame exists. Find can adopt
+its actual regex/literal hits after identity/revision/budget checks, including
+zero-width carets. UI adapters never independently expand edit ranges.
+While matching is pending, bounded input/navigation is queued in the shared core.
+The UI-thread pump adopts the current frame and replays actions in order; stale/
+limited failures cannot apply queued text to only the initial range. Adapters
+compare revisions when pumping so deferred edits update mirrors and real-save
+status. Commands that could discard queued input first pump it or require retry.
+
+Multicursor edits normalize overlapping deletion targets, check the aggregate
+payload and apply descending through `Document::replace_many_input`. A history
+entry records batch-step counts separately from individual target changes, so
+bounded typing/deletion runs group without merging with ordinary single-cursor
+input. Undo/Redo replays the complete sequence and returns a valid single caret.
+Per-operation line caches supply whole-grapheme deletion and logical-line/cell
+navigation without rescanning the same line for each caret. Sets are not stored
+in session checkpoints; only the primary uses existing quiet recovery.
+
+Mac keeps one native primary selection and paints secondary ranges/carets; AppKit
+does not expose multiple empty selectedRanges. PocketTextView routes supported
+input through Rust before native mutation, mirrors accepted text once and guards
+programmatic selection callbacks so they do not break grouped input. IME marked
+text clears the set first. Terminal shares the same ranges/history, renders only
+visible intersections and polls only while matching is pending. Selection metadata
+alone cannot trigger the Saving locally text-change status.
+
 The find/replace worker owns a latest-wins request slot, a compiled-regex cache
 and an immutable rope snapshot. It is created on opening Find and sleeps when idle;
 closing Find or changing tabs releases it. The key includes document identity,

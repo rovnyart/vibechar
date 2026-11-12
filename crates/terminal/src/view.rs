@@ -147,6 +147,17 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         .as_ref()
         .filter(|frame| frame.document == editor.document().id());
     let selection = editor.selection();
+    let multiple = editor.multi.active(editor.document());
+    let multi_ranges = if multiple {
+        editor
+            .multi
+            .selections()
+            .iter()
+            .map(|s| s.range())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     let find_frame = editor
         .find
         .as_ref()
@@ -158,20 +169,33 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
             let text = editor.document().line(index);
             let start = editor.document().line_start(index);
             let end = start + text.chars().count();
-            let hits = find_frame.map_or_else(Vec::new, |f| {
-                f.matches
+            let hits = if multiple {
+                multi_ranges
                     .iter()
-                    .enumerate()
-                    .skip_while(|(_, h)| h.end < start)
-                    .take_while(|(_, h)| h.start <= end)
-                    .map(|(i, h)| {
+                    .filter(|range| range.end >= start && range.start <= end)
+                    .map(|range| {
                         (
-                            h.start.saturating_sub(start)..h.end.saturating_sub(start),
-                            editor.find.as_ref().and_then(|f| f.current) == Some(i),
+                            range.start.saturating_sub(start)..range.end.saturating_sub(start),
+                            true,
                         )
                     })
                     .collect()
-            });
+            } else {
+                find_frame.map_or_else(Vec::new, |f| {
+                    f.matches
+                        .iter()
+                        .enumerate()
+                        .skip_while(|(_, h)| h.end < start)
+                        .take_while(|(_, h)| h.start <= end)
+                        .map(|(i, h)| {
+                            (
+                                h.start.saturating_sub(start)..h.end.saturating_sub(start),
+                                editor.find.as_ref().and_then(|f| f.current) == Some(i),
+                            )
+                        })
+                        .collect()
+                })
+            };
             let paint = syntax
                 .and_then(|frame| frame.lines.get(index))
                 .filter(|paint| paint.hash == vibechar_core::syntax::line_hash(&text));
@@ -184,8 +208,8 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 (
                     selection.start.saturating_sub(start)..selection.end.saturating_sub(start),
                     index + 1 < editor.document().line_count()
-                        && selection.start <= end
-                        && selection.end > end,
+                        && (selection.start <= end && selection.end > end
+                            || multi_ranges.iter().any(|r| r.start <= end && r.end > end)),
                 ),
                 &hits,
             )
@@ -227,10 +251,26 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
             recovery,
             line + 1,
             column + 1,
-            if selection.is_empty() {
-                ""
+            if multiple {
+                format!(
+                    " · {} {}",
+                    multi_ranges.len(),
+                    if multi_ranges.iter().all(|r| r.is_empty()) {
+                        if multi_ranges.len() == 1 {
+                            "caret"
+                        } else {
+                            "carets"
+                        }
+                    } else if multi_ranges.len() == 1 {
+                        "selection"
+                    } else {
+                        "selections"
+                    }
+                )
+            } else if selection.is_empty() {
+                String::new()
             } else {
-                " · selected"
+                " · selected".into()
             },
             language,
         ))
@@ -240,8 +280,8 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     let prompt = editor.save_prompt.as_ref().map_or_else(
         || {
             if editor.message.is_empty() {
-                " ^K tools ^F find ^R replace · ^C copy ^V paste · ^S save F2 lang F6 next ^G agent ^Q quit"
-                    .into()
+                if multiple {" ^D next ^L all · arrows move · Shift selects · ^C/^X/^V · Esc single selection".into()}
+                else {" ^D next ^L all ^K tools ^F find ^R replace · ^S save F2 lang F6 next ^G agent ^Q quit".into()}
             } else {
                 format!(" {}", editor.message)
             }

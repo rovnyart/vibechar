@@ -122,6 +122,8 @@ struct FindFrame: Decodable {
 @MainActor final class FindController: NSObject, NSSearchFieldDelegate {
     let bar: FindBar; let document: RustDocument; let textView: NSTextView
     var didReplace: ((NSRange) -> Void)?
+    var didSelectAll: ((FindFrame,Int)->Void)?
+    private var selectingAll=false
     private(set) var frame: FindFrame?
     private(set) var current: Int?
     private var engine: RustSearch?
@@ -147,6 +149,7 @@ struct FindFrame: Decodable {
         submit(); bar.window?.makeFirstResponder(bar.find); bar.find.selectText(nil)
     }
     @objc func close() {
+        selectingAll=false
         timer?.invalidate(); timer=nil; popover?.performClose(nil); popover=nil
         engine=nil; frame=nil; current=nil
         let field=bar.window?.fieldEditor(false,for:bar.find) as? NSTextView
@@ -167,6 +170,7 @@ struct FindFrame: Decodable {
     }
     func sourceChanged() { if visible { submit() } }
     private func submit() {
+        selectingAll=false
         popover?.performClose(nil); popover=nil; frame=nil; current=nil; paint()
         guard let engine, engine.submit(document,needle:bar.find.stringValue,replacement:bar.replacing ? bar.replacement.stringValue : nil,regex:bar.regex.state == .on,sensitive:bar.sensitive.state == .on) else { bar.count.stringValue="Find text too long"; updateButtons(); return }
         bar.count.stringValue = bar.find.stringValue.isEmpty ? "Find in this tab" : "Searching…"; updateButtons()
@@ -179,9 +183,16 @@ struct FindFrame: Decodable {
             current=found.matches.firstIndex { $0.utf16_start >= textView.selectedRange().location } ?? (found.matches.isEmpty ? nil : 0)
             if let current { select(current) }
             updateButtons(); paint()
+            if selectingAll {finishSelectAll()}
         }
         if !busy { timer?.invalidate(); timer=nil }
-        return busy
+        return busy && visible
+    }
+    func selectAllForEditing() {selectingAll=true;if frame != nil {finishSelectAll()}}
+    private func finishSelectAll() {
+        selectingAll=false
+        guard let frame,frame.revision==document.revision,frame.error==nil,!frame.limited,!frame.matches.isEmpty else {bar.count.stringValue="Refine Find";return}
+        didSelectAll?(frame,current ?? 0)
     }
     private func updateButtons() {
         let valid=frame?.error == nil && frame?.limited == false

@@ -51,6 +51,10 @@ while progressing through the remaining M2 behavior work.
 - Syntax colors belong to Pocket: muted rose keywords, sage strings, ochre
   constants, teal keys and soft purple types. Keep separate light/dark palettes
   and reserve the warm orange chrome accent for actions and the `V_` mark.
+- Cmd+D selects a word/adds the next occurrence; Cmd+Shift+L selects all, including
+  current Find results. Secondary selections use warm Pocket highlighting and
+  secondary carets use slim orange strokes; the primary stays native. A quiet
+  footer count states the mode and Escape exit. No extra permanent editing panel.
 
 ## Identity
 
@@ -92,6 +96,10 @@ while progressing through the remaining M2 behavior work.
   application; a tool error stays in the panel, and one Undo reverses a change.
   Fit at most five rows (fewer in a short terminal), reveal the current choice while
   navigating and show the visible range/count when more tools are available.
+- Ctrl+D / Ctrl+L share next/all occurrence semantics with Mac. Paint all ranges
+  and secondary block carets, retaining the terminal cursor on the primary. Show
+  a count and keyboard hints. Mouse clicks and Escape return to a single selection;
+  wheel scrolling keeps the set and never flashes a recovery-save status.
 
 ## Editing and AI
 

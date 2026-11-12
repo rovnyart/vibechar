@@ -33,6 +33,7 @@ impl Editor {
             && self.save_prompt.is_none()
             && self.language_prompt.is_none()
         {
+            self.multi.clear();
             self.find = None;
             self.pointer = selection::Pointer::default();
             let target = self.selection();

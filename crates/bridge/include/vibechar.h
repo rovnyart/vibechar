@@ -43,6 +43,25 @@ int32_t vc_search_apply(const VcSearch *search, VcDocument *document, uint64_t s
                         size_t index, size_t *utf16_start, size_t *utf16_length);
 
 typedef struct VcSession VcSession;
+typedef struct VcMulti VcMulti;
+VcMulti *vc_multi_new(void);
+void vc_multi_free(VcMulti *multi);
+void vc_multi_clear(VcMulti *multi);
+// Capture a UTF-16 selection (or word at caret), then match locally off the UI thread.
+bool vc_multi_request(VcMulti *multi, VcDocument *document, size_t start, size_t length, bool all);
+bool vc_multi_poll(VcMulti *multi, VcDocument *document);
+// Adopt current Find hits (including regex/zero-width), guarded by identity/revision.
+bool vc_multi_adopt(VcMulti *multi, VcDocument *document, uint64_t document_id, uint64_t revision,
+                     const size_t *starts, const size_t *lengths, size_t count, size_t primary);
+// Transient metadata only: selections, primary, busy, message. No source text.
+size_t vc_multi_state(const VcMulti *multi, const VcDocument *document, uint8_t *output, size_t capacity);
+// kind 0 isolated, 1 typing, 2 backspace, 3 delete forward, 4 newline.
+// 1 changed, 2 no-op, 0 invalid/stale/limited. All targets share one undo transaction.
+int32_t vc_multi_edit(VcMulti *multi, VcDocument *document, const uint8_t *text, size_t length, uint32_t kind);
+// Directions: 0 left, 1 right, 2 up, 3 down, 4 line start, 5 line end, 6/7 document bounds.
+bool vc_multi_move(VcMulti *multi, VcDocument *document, uint32_t direction, bool extend);
+// Explicit clipboard action; returns joined nonempty selections in document order.
+size_t vc_multi_copy(VcMulti *multi, const VcDocument *document, uint8_t *output, size_t capacity);
 // Local text tools: commands/queries contain no source text and are never persisted.
 typedef struct VcTool VcTool;
 size_t vc_tool_choices(const uint8_t *query, size_t length, uint8_t *output, size_t capacity);

@@ -12,6 +12,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 pub const MAX_SOURCE: usize = 4 * 1024 * 1024;
 pub const MAX_MATCHES: usize = 10_000;
@@ -25,6 +26,8 @@ pub struct Query {
     pub replacement: Option<String>,
     pub regex: bool,
     pub case_sensitive: bool,
+    pub whole_graphemes: bool,
+    pub whole_words: bool,
 }
 #[derive(Serialize, Clone, Debug)]
 pub struct Hit {
@@ -347,6 +350,15 @@ fn scan(request: &Request, shared: &Shared, compiled: &mut Compiled) -> Option<F
         let source = request.text.to_string();
         let started = Instant::now();
         let mut output_bytes = source.len();
+        let mut boundaries = source
+            .grapheme_indices(true)
+            .map(|(i, _)| i)
+            .chain(std::iter::once(source.len()))
+            .peekable();
+        let mut words = source
+            .unicode_word_indices()
+            .map(|(start, word)| start..start + word.len())
+            .peekable();
         for captures in regex.captures_iter(&source) {
             if shared.stop.load(Ordering::Acquire)
                 || shared.wanted.load(Ordering::Acquire) != request.token
@@ -361,6 +373,35 @@ fn scan(request: &Request, shared: &Shared, compiled: &mut Compiled) -> Option<F
                 return Err("Search budget exceeded · refine the pattern");
             }
             let found = captures.get(0).unwrap();
+            if query.whole_words {
+                while words.peek().is_some_and(|range| range.end <= found.start()) {
+                    words.next();
+                }
+                if !words
+                    .peek()
+                    .is_some_and(|range| range.start == found.start() && range.end == found.end())
+                {
+                    continue;
+                }
+            }
+            if query.whole_graphemes {
+                while boundaries
+                    .peek()
+                    .is_some_and(|offset| *offset < found.start())
+                {
+                    boundaries.next();
+                }
+                let start_ok = boundaries.peek() == Some(&found.start());
+                while boundaries
+                    .peek()
+                    .is_some_and(|offset| *offset < found.end())
+                {
+                    boundaries.next();
+                }
+                if !start_ok || boundaries.peek() != Some(&found.end()) {
+                    continue;
+                }
+            }
             let start = request.text.byte_to_char(found.start());
             let end = request.text.byte_to_char(found.end());
             let utf16_start = request.text.char_to_utf16_cu(start);
