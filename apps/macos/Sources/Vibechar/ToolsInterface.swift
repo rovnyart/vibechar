@@ -59,9 +59,12 @@ private final class ToolRow: NSButton {
     private let didApply: (NSRange, Bool) -> Void
     private let didDismiss: () -> Void
     private var rows: [ToolRow]=[]
+    private let list=PocketSurface()
+    private let scroll=NSScrollView()
     private(set) var choices: [ToolChoice]=[]
     private var selected=0
     private let notice=NSTextField(labelWithString:"")
+    private var message: String?
     private var popover: NSPopover?
     private var job: RustTool?
     private var timer: Timer?
@@ -86,10 +89,15 @@ private final class ToolRow: NSButton {
         let caption=NSTextField(labelWithString:scope)
         caption.font = .systemFont(ofSize:11); caption.textColor=PocketPalette.secondary
         caption.frame=NSRect(x:20,y:88,width:336,height:18); caption.lineBreakMode = .byTruncatingTail; view.addSubview(caption)
-        for index in 0..<5 {
+        scroll.frame=NSRect(x:12,y:116,width:352,height:250)
+        scroll.hasVerticalScroller=true; scroll.autohidesScrollers=true; scroll.scrollerStyle = .overlay
+        scroll.drawsBackground=false; scroll.contentView.drawsBackground=false
+        list.frame=NSRect(x:0,y:0,width:352,height:250); list.clipsToBounds=true
+        scroll.documentView=list; view.addSubview(scroll)
+        for index in 0..<toolChoices("").count {
             let row=ToolRow(title:"",target:self,action:#selector(choose(_:)))
-            row.tag=index; row.isBordered=false; row.frame=NSRect(x:12,y:116+index*50,width:352,height:50)
-            rows.append(row); view.addSubview(row)
+            row.tag=index; row.isBordered=false; row.frame=NSRect(x:0,y:index*50,width:352,height:50)
+            rows.append(row); list.addSubview(row)
         }
         notice.font = .systemFont(ofSize:11); notice.textColor=PocketPalette.accent
         notice.frame=NSRect(x:20,y:376,width:336,height:18); notice.lineBreakMode = .byTruncatingTail; view.addSubview(notice)
@@ -117,7 +125,7 @@ private final class ToolRow: NSButton {
     private func refresh() {
         guard job==nil else { return }
         choices=toolChoices(search.stringValue); selected=0
-        notice.stringValue=choices.isEmpty ? "No tools found · try json, sort, dedupe or trim" : ""
+        message=nil
         updateRows()
     }
     private func updateRows() {
@@ -125,12 +133,17 @@ private final class ToolRow: NSButton {
             row.isHidden=index>=choices.count; row.choice=index<choices.count ? choices[index] : nil
             row.chosen=index==selected; row.isEnabled=job==nil
         }
+        list.setFrameSize(NSSize(width:352,height:max(250,choices.count*50)))
+        if selected<choices.count { list.scrollToVisible(rows[selected].frame) }
+        else { list.scroll(NSPoint.zero) }
+        notice.stringValue=message ?? (choices.isEmpty ? "No tools found · try json, case or url" : choices.count>5 ? "\(choices.count) tools · scroll or ↑↓ · type to filter" : "")
+        notice.textColor=message == nil ? PocketPalette.secondary : PocketPalette.accent
     }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         if selector == #selector(NSResponder.cancelOperation(_:)) { close(); didDismiss(); return true }
         if selector == #selector(NSResponder.insertNewline(_:)) { runSelected(); return true }
         if selector == #selector(NSResponder.moveDown(_:)) || selector == #selector(NSResponder.moveUp(_:)) {
-            if !choices.isEmpty && job==nil { selected=(selected+(selector == #selector(NSResponder.moveDown(_:)) ? 1 : choices.count-1))%choices.count; updateRows() }
+            if !choices.isEmpty && job==nil { selected=(selected+(selector == #selector(NSResponder.moveDown(_:)) ? 1 : choices.count-1))%choices.count; message=nil; updateRows() }
             return true
         }
         return false
@@ -139,8 +152,8 @@ private final class ToolRow: NSButton {
     func runSelected() {
         guard job==nil,selected<choices.count else { return }
         document.breakUndoGroup()
-        guard let job=RustTool(document,range:target,command:choices[selected].id) else { notice.stringValue="Text range is no longer available"; return }
-        self.job=job; search.isEnabled=false; notice.stringValue="Working locally…"; updateRows()
+        guard let job=RustTool(document,range:target,command:choices[selected].id) else { message="Text range is no longer available"; updateRows(); return }
+        self.job=job; search.isEnabled=false; message="Working locally…"; updateRows()
         timer=Timer.scheduledTimer(withTimeInterval:0.02,repeats:true) { [weak self] timer in
             MainActor.assumeIsolated { guard let self else { timer.invalidate(); return }; self.poll() }
         }
@@ -153,8 +166,48 @@ private final class ToolRow: NSButton {
             let range=selectedText ? result.range : NSRange(location:result.range.location,length:0)
             close(); didApply(range,result.changed)
         } else {
-            notice.stringValue=job.error.isEmpty ? "Text changed · run the command again" : job.error
+            message=job.error.isEmpty ? "Text changed · run the command again" : job.error
             self.job=nil; search.isEnabled=true; updateRows(); view.window?.makeFirstResponder(search)
         }
+    }
+
+    static func smokeTest() {
+        let document=RustDocument("👩‍💻 %C3%9F tail")
+        let target=NSRange(location:6,length:6)
+        var applied: (NSRange,Bool)?
+        func palette() -> ToolPalette {
+            applied=nil
+            let picker=ToolPalette(document:document,target:target,selectedText:true,scope:"Selection · local text tools",didDismiss:{},didApply:{ applied=($0,$1) })
+            _=picker.view
+            return picker
+        }
+        func wait(_ picker:ToolPalette) {
+            let deadline=Date(timeIntervalSinceNow:3)
+            while applied==nil { RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01)); picker.poll(); precondition(Date()<deadline) }
+        }
+        let picker=palette()
+        precondition(picker.choices.count==9 && picker.rows.count==9)
+        for _ in 0..<8 { _=picker.control(picker.search,textView:NSTextView(),doCommandBy:#selector(NSResponder.moveDown(_:))) }
+        precondition(picker.choices[picker.selected].id==9)
+        precondition(picker.scroll.documentVisibleRect.contains(picker.rows[8].frame),"Arrow navigation reveals the chosen tool")
+        picker.rows[8].performClick(nil); wait(picker)
+        precondition(document.text=="👩‍💻 ß tail" && applied!.0==NSRange(location:6,length:1) && applied!.1)
+        precondition(document.history(redo:false) != nil && document.text=="👩‍💻 %C3%9F tail" && !document.isDirty)
+        precondition(document.replace(target,with:"straße")); document.markSaved()
+        let upper=palette()
+        upper.search.stringValue="upper"; upper.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification))
+        precondition(upper.choices.count==1 && upper.rows[1].isHidden)
+        precondition(upper.control(upper.search,textView:NSTextView(),doCommandBy:#selector(NSResponder.insertNewline(_:))))
+        wait(upper)
+        precondition(document.text=="👩‍💻 STRASSE tail" && applied!.0==NSRange(location:6,length:7))
+        precondition(document.history(redo:false) != nil && !document.isDirty)
+        let last=palette()
+        _=last.control(last.search,textView:NSTextView(),doCommandBy:#selector(NSResponder.moveUp(_:)))
+        precondition(last.selected==8 && last.scroll.documentVisibleRect.contains(last.rows[8].frame))
+        last.search.stringValue="url"; last.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification))
+        precondition(last.choices.map(\.id)==[8,9] && last.selected==0)
+        precondition(last.scroll.documentVisibleRect.minY==0,"Filtering resets the list scroll")
+        last.close()
+        print("Extended tools native smoke passed: nine-tool scrolling, arrow wrap, tail-row click, URL decoding, expanding Unicode selection, search reset and Undo")
     }
 }

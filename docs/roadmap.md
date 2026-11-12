@@ -177,7 +177,9 @@ into a child process. Implement the same operation model in Mac and terminal.
 - [x] Local transforms and a keyboard command palette in both clients: JSON
   format/minify, sort lines, remove duplicate lines and trim trailing whitespace.
   Selection/whole-tab scope, background execution and one Undo share the Rust core.
-- [ ] Extend local tools with case conversion and URL encoding/decoding.
+- [x] Extend local tools with Unicode uppercase/lowercase and URL component
+  encoding/decoding. The nine-command palette keeps five rows visible, with
+  search and keyboard navigation; Mac additionally scrolls with a mouse/trackpad.
 - [x] Shared atomic batch edits as one undo transaction, first used by Replace All.
   Future transforms and multicursor commands can reuse this operation.
 - [ ] Large document mode with explicit budgets for parsing, rendering, and history.

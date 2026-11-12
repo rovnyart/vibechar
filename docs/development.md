@@ -264,9 +264,10 @@ bundled alongside the existing syntax notices.
 ## Local text tools
 
 Open **Edit → Text Tools… / Cmd+K** on Mac or **Ctrl+K** in the terminal.
-Search by title or aliases (`json`, `pretty`, `compact`, `sort`, `dedupe`, `trim`).
-At most five commands are shown. Up/Down chooses, Enter applies, Escape cancels;
-Mac rows are clickable. The target is the exact selection, otherwise the whole tab,
+Search by title or aliases (`json`, `pretty`, `compact`, `sort`, `dedupe`, `trim`,
+`case`, `upper`, `lower`, `url`). Nine tools fit into a five-row scrolling list.
+Up/Down chooses and reveals the selected row, Enter applies, Escape cancels;
+Mac also supports mouse/trackpad scrolling and clicking rows. The target is the exact selection, otherwise the whole tab,
 and is stated above the commands. A partial-line selection is not expanded.
 Input stays in the palette while it is open; terminal mouse events cannot edit
 the document behind it. An error leaves the original untouched and allows retry.
@@ -278,6 +279,23 @@ the document behind it. An error leaves the original untouched and allows retry.
 | Sort lines | Ascending, case-sensitive Unicode order |
 | Remove duplicate lines | Exact matches, retain first occurrence order |
 | Trim trailing whitespace | Remove spaces/tabs at line ends; preserve indentation |
+| Uppercase / Lowercase | Unicode case conversion; preserve whitespace and line endings |
+| URL encode | Percent-encode a UTF-8 URL component; spaces become `%20` |
+| URL decode | Decode `%HH` once; literal `+` remains `+`; reject malformed escapes/UTF-8 |
+
+Case conversion uses Rust's locale-independent [Unicode casing](https://doc.rust-lang.org/std/primitive.str.html#method.to_lowercase).
+Characters may expand (`straße` → `STRASSE`, `İ` → `i` + combining dot), so upper/
+lower are not guaranteed inverses; Undo restores the original exactly. The resulting
+selection accounts for changed character/UTF-16 length in both clients.
+
+URL encode follows the [RFC 3986 unreserved set](https://www.rfc-editor.org/rfc/rfc3986#section-2.3):
+ASCII letters/digits and `-._~` stay literal; other UTF-8 bytes become uppercase
+`%HH`. It encodes a component, including `/`, `?`, `&`, `+` and existing `%`, rather
+than preserving URL delimiters. Decode accepts upper/lower hex, performs exactly
+one pass (`%252F` → `%2F`) and preserves raw `+`; this is not HTML form decoding.
+It can restore encoded whitespace/newlines/NUL. Malformed escape errors contain
+only a target-relative byte offset, and invalid decoded UTF-8 is rejected without
+lossy replacement. Commands never open or request URLs.
 
 JSON is validated without serializing through a numeric/value representation:
 original number lexemes (including large integers/exponents), key order, duplicate
@@ -287,7 +305,8 @@ original line-ending sequence for retained positions and the final-newline state
 sorting compares line bodies. They recognize LF and CRLF, not bare CR separators.
 
 Each explicit command snapshots its target and prepares on a Rust worker. The
-target may contain up to **1 MiB UTF-8**; formatted output is bounded at **2 MiB**.
+target may contain up to **1 MiB UTF-8**; output is bounded at **2 MiB**. URL encoding
+preflights its expanded length before allocating the output.
 Select a smaller range in a large document. A ready plan applies only to the same
 document/revision, through one shared Undo transaction. A no-op creates no history,
 dirty state, recovery-write flash or Secret Drop revocation. A real edit revokes

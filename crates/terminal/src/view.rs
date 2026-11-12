@@ -372,11 +372,14 @@ fn draw_tools(frame: &mut Frame, palette: &crate::editor::tools::Palette, light:
         Line::raw(""),
     ];
     if palette.choices.is_empty() {
-        lines.push(Line::raw(
-            " No tools found. Try json, sort, dedupe or trim.",
-        ));
+        lines.push(Line::raw(" No tools found. Try json, case or url."));
     }
-    for (index, command) in palette.choices.iter().enumerate() {
+    let visible = usize::from(inner.height.saturating_sub(5) / 2).clamp(1, 5);
+    let first = palette
+        .selected
+        .saturating_sub(visible / 2)
+        .min(palette.choices.len().saturating_sub(visible));
+    for (index, command) in palette.choices.iter().enumerate().skip(first).take(visible) {
         lines.push(Line::styled(
             format!(
                 " {} {}",
@@ -398,7 +401,16 @@ fn draw_tools(frame: &mut Frame, palette: &crate::editor::tools::Palette, light:
             Style::default().fg(if light { Color::DarkGray } else { Color::Gray }),
         ));
     }
-    lines.push(Line::raw(""));
+    lines.push(Line::raw(if palette.choices.len() > visible {
+        format!(
+            " Tools {}–{} of {} · type to filter",
+            first + 1,
+            (first + visible).min(palette.choices.len()),
+            palette.choices.len()
+        )
+    } else {
+        String::new()
+    }));
     lines.push(Line::styled(
         format!(
             " {}",

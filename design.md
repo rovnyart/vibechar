@@ -41,7 +41,10 @@ while progressing through the remaining M2 behavior work.
   with at most seven suggestions, never an alphabetic wall. Return pins, Escape
   cancels, Auto resets. Preserve text, selection and Undo throughout.
 - Cmd+K opens a small Pocket Text Tools popover with the orange `V_` signature,
-  explicit Selection/Whole tab scope, one search field and at most five commands.
+  explicit Selection/Whole tab scope, one search field and five visible command rows.
+  A native scrolling list reveals additional tools; arrows keep the current row in
+  view and a quiet count hints at more commands. Filtering by `case` or `url` narrows
+  the catalog immediately.
   Rows pair a clear action with a short semantic hint. Arrows/Enter or a click
   applies; Escape dismisses and returns focus to the text. Keep this transient,
   with no recent-query history, permanent sidebar or second confirmation step.
@@ -87,6 +90,8 @@ while progressing through the remaining M2 behavior work.
 - Ctrl+K opens the same Text Tools catalog in a compact centered panel. Show target,
   command descriptions and keyboard hints. Keep source selection untouched until
   application; a tool error stays in the panel, and one Undo reverses a change.
+  Fit at most five rows (fewer in a short terminal), reveal the current choice while
+  navigating and show the visible range/count when more tools are available.
 
 ## Editing and AI
 

@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 85 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 88 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -23,7 +23,7 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Thirty real PTY scenarios across the baseline, selection, find and local-tool suites,
+- Thirty-two real PTY scenarios across the baseline, selection, find and local-tool suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -633,6 +633,42 @@ A follow-up bridge regression checks a selected JSON object surrounded by unrela
 text, including a UTF-16 emoji prefix: only the selection is formatted, one Undo
 restores the source, and a missing closing quote returns an error without edits.
 
+## Unicode case and URL tools — 2026-11-12
+
+The complete `scripts/check.sh` passed: formatting, Clippy with warnings as errors,
+88 Rust tests, release builds, 32 PTY scenarios plus Secret Drop, and native smoke.
+Three additional core tests cover Cyrillic, Greek final sigma, expanding Unicode
+case mappings and selection ranges, CRLF/whitespace/NUL preservation, UTF-8 percent
+encoding round trips, upper/lower hex, literal plus, one-pass decoding, malformed
+escapes, invalid UTF-8, expansion limits and private grant behavior on error/edit.
+
+The local-tools PTY suite now has six scenarios. New coverage includes uppercase/
+lowercase on a Unicode/CRLF selection with untouched neighbors and clean Undo,
+reaching the ninth command via Up, the five-row viewport and its range/count,
+URL round trips/Redo/error cancellation, and new commands in private tabs. Native
+smoke additionally exercises nine rows in the fixed-height NSScrollView, reveal/
+wrap, clicking the last command, UTF-16 expansion/contraction and filtering after
+scrolling. Real palette views are under ignored `dist/tools-extended-ui/`.
+
+An isolated `dev.vibechar.tools-extended-check` app verified the visible five-row
+list/count, native accessibility scroll action and tail-row click, URL encode/
+decode of Unicode/plus/slash, filtered `url`/`case`/`lower`, Up wrapping/revealing the
+last command, a no-op decode, ordinary/rapid Enter and selected `Straße` → `STRASSE`
+with preserved neighbors and one-step Undo. Native pointer-scroll automation did
+not move the popover, while its accessibility scroll action and keyboard reveal
+did; physical mouse/trackpad qualification remains open. One earlier automated
+Return inserted a newline over the selected source rather than applying the
+command; Undo restored it, and relaunch plus repeated normal/rapid Enter checks
+did not reproduce it. Its origin is unestablished: keep keyboard/focus qualification
+open rather than claiming that every live-input edge is resolved. The QA process
+was quit and its own bundle, registration, recovery and preferences removed.
+
+URL encoding operates on components, with a 1 MiB target / 2 MiB output bound.
+Decoding never fetches a URL, never performs a second pass and rejects invalid
+UTF-8 without partial/lossy edits. Case mappings use Rust's Unicode defaults,
+without locale-specific settings. No dependency or network call was added.
+M3 multicursor and complete large-document mode remain open; M4/M5 AI follows M3.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS
@@ -672,7 +708,7 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 Native startup and Mac bridge/presentation costs across representative file sizes
 still need measurement. The milestone's baseline checkbox remains open until that
 evidence is recorded. M2 recovery is partial: retention and broader durability
-qualification remain open. M3 smart syntax, find/replace and five local tools with
-a shared command palette are implemented; additional transforms, multicursor
+qualification remain open. M3 smart syntax, find/replace and nine local tools with
+a shared command palette are implemented; multicursor
 editing and complete large-document mode remain open. M4/M5 AI is not
 implemented. The prototype should not hold the only copy of important text.

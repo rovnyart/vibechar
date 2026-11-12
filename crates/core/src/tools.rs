@@ -13,7 +13,7 @@ pub struct Command {
     pub detail: &'static str,
     pub keywords: &'static str,
 }
-pub const COMMANDS: [Command; 5] = [
+pub const COMMANDS: [Command; 9] = [
     Command {
         id: 1,
         title: "Format JSON",
@@ -43,6 +43,30 @@ pub const COMMANDS: [Command; 5] = [
         title: "Trim trailing whitespace",
         detail: "Remove spaces and tabs at line ends",
         keywords: "clean trim trailing whitespace spaces tabs",
+    },
+    Command {
+        id: 6,
+        title: "Uppercase",
+        detail: "Unicode uppercase · preserve whitespace",
+        keywords: "upper case caps capital letters регистр верхний",
+    },
+    Command {
+        id: 7,
+        title: "Lowercase",
+        detail: "Unicode lowercase · preserve whitespace",
+        keywords: "lower case small letters регистр нижний",
+    },
+    Command {
+        id: 8,
+        title: "URL encode",
+        detail: "Encode a URL component · UTF-8 → %HH",
+        keywords: "url encode percent escape uri кодировать",
+    },
+    Command {
+        id: 9,
+        title: "URL decode",
+        detail: "Decode %HH once · + stays +",
+        keywords: "url decode percent unescape uri декодировать",
     },
 ];
 pub fn choices(query: &str) -> Vec<Command> {
@@ -137,6 +161,20 @@ fn transform(source: &str, command: u32, newline: &str) -> Result<String, String
     if command <= 2 {
         return json(source, command == 1, newline);
     }
+    if command >= 6 {
+        let output = match command {
+            6 => source.to_uppercase(),
+            7 => source.to_lowercase(),
+            8 => encode_component(source)?,
+            9 => decode_component(source)?,
+            _ => return Err("Unknown command".into()),
+        };
+        return if output.len() > MAX_OUTPUT {
+            Err("Result exceeds 2 MiB".into())
+        } else {
+            Ok(output)
+        };
+    }
     if command == 5 {
         let mut output = String::with_capacity(source.len());
         for line in source.split_inclusive('\n') {
@@ -169,6 +207,61 @@ fn transform(source: &str, command: u32, newline: &str) -> Result<String, String
         });
     }
     Ok(output)
+}
+
+fn unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+fn encode_component(source: &str) -> Result<String, String> {
+    let size = source
+        .bytes()
+        .map(|byte| if unreserved(byte) { 1 } else { 3 })
+        .sum::<usize>();
+    if size > MAX_OUTPUT {
+        return Err("Encoded text exceeds 2 MiB".into());
+    }
+    let mut output = String::with_capacity(size);
+    const HEX: &[u8] = b"0123456789ABCDEF";
+    for byte in source.bytes() {
+        if unreserved(byte) {
+            output.push(char::from(byte));
+        } else {
+            output.push('%');
+            output.push(char::from(HEX[usize::from(byte >> 4)]));
+            output.push(char::from(HEX[usize::from(byte & 15)]));
+        }
+    }
+    Ok(output)
+}
+fn decode_component(source: &str) -> Result<String, String> {
+    let bytes = source.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let octet = bytes
+                .get(index + 1)
+                .and_then(|byte| hex(*byte))
+                .zip(bytes.get(index + 2).and_then(|byte| hex(*byte)));
+            let Some((high, low)) = octet else {
+                return Err(format!("Invalid URL escape · byte {}", index + 1));
+            };
+            output.push(high * 16 + low);
+            index += 3;
+        } else {
+            output.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(output).map_err(|_| "Decoded text is not valid UTF-8".into())
+}
+fn hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 fn split_ending(line: &str) -> (&str, &str) {
     if let Some(body) = line.strip_suffix("\r\n") {
@@ -343,6 +436,9 @@ mod tests {
         assert_eq!(choices("json").len(), 2);
         assert_eq!(choices("dedupe")[0].id, 4);
         assert!(choices("missing").is_empty());
+        assert_eq!(choices("").len(), 9);
+        assert_eq!(choices("url decode")[0].id, 9);
+        assert_eq!(choices("регистр").len(), 2);
         let large = Document::new(&"a".repeat(MAX_SOURCE + 1));
         assert!(Job::start(&large, 0..large.len_chars(), 3).is_err());
         assert!(Job::start(&large, 1..2, 999).is_err());
@@ -354,6 +450,87 @@ mod tests {
             "\n"
         )
         .is_ok());
+    }
+
+    #[test]
+    fn unicode_case_preserves_layout_and_can_expand_a_selection() {
+        let text = "\tStraße Привет e\u{301} 👩‍💻\r\n";
+        assert_eq!(
+            transform(text, 6, "\n").unwrap(),
+            "\tSTRASSE ПРИВЕТ E\u{301} 👩‍💻\r\n"
+        );
+        assert_eq!(
+            transform("ΟΣ İ ПРИВЕТ\0\r\n", 7, "\n").unwrap(),
+            "ος i\u{307} привет\0\r\n"
+        );
+        let prefix = "👩‍💻 ";
+        let mut doc = Document::new(&format!("{prefix}straße tail"));
+        let start = prefix.chars().count();
+        let mut job = Job::start(&doc, start..start + 6, 6).unwrap();
+        assert_eq!(
+            wait(&mut job).as_ref().unwrap().apply(&mut doc).unwrap(),
+            (true, start..start + 7)
+        );
+        assert_eq!(doc.text(), format!("{prefix}STRASSE tail"));
+        doc.undo();
+        assert_eq!(doc.text(), format!("{prefix}straße tail"));
+        assert!(!doc.is_dirty());
+    }
+
+    #[test]
+    fn percent_encoding_round_trips_utf8_and_decodes_only_once() {
+        let text = "Az09-._~ /+?&=é🦀\r\n\0";
+        let encoded = "Az09-._~%20%2F%2B%3F%26%3D%C3%A9%F0%9F%A6%80%0D%0A%00";
+        assert_eq!(transform(text, 8, "\n").unwrap(), encoded);
+        assert_eq!(transform(encoded, 9, "\n").unwrap(), text);
+        assert_eq!(transform("%252F+%2b", 9, "\n").unwrap(), "%2F++");
+        assert_eq!(transform("%2F", 8, "\n").unwrap(), "%252F");
+        for text in ["%", "%A", "%GG", "prefix%SECRET"] {
+            let error = transform(text, 9, "\n").unwrap_err();
+            assert!(error.starts_with("Invalid URL escape · byte "));
+            assert!(!error.contains("SECRET"));
+        }
+        for text in ["%FF", "%C3%28", "%ED%A0%80"] {
+            assert_eq!(
+                transform(text, 9, "\n").unwrap_err(),
+                "Decoded text is not valid UTF-8"
+            );
+        }
+        assert_eq!(
+            transform("already+plain", 9, "\n").unwrap(),
+            "already+plain"
+        );
+    }
+
+    #[test]
+    fn url_expansion_is_bounded_and_errors_do_not_change_private_access() {
+        assert_eq!(
+            transform(&"~".repeat(MAX_SOURCE), 8, "\n").unwrap().len(),
+            MAX_SOURCE
+        );
+        assert_eq!(
+            transform(&" ".repeat(MAX_SOURCE), 8, "\n").unwrap_err(),
+            "Encoded text exceeds 2 MiB"
+        );
+        let mut session = crate::session::Session::new("", None);
+        session.open_private();
+        session.active_mut().document.replace(0..0, "%GG").unwrap();
+        let reference = session.share_active().unwrap();
+        let doc = &session.active().document;
+        let revision = doc.revision();
+        let mut job = Job::start(doc, 0..doc.len_chars(), 9).unwrap();
+        assert!(wait(&mut job).is_err());
+        assert_eq!(session.active().document.revision(), revision);
+        assert!(crate::handoff::fetch(&reference).is_ok());
+        let doc = &session.active().document;
+        let mut job = Job::start(doc, 0..doc.len_chars(), 8).unwrap();
+        wait(&mut job)
+            .as_ref()
+            .unwrap()
+            .apply(&mut session.active_mut().document)
+            .unwrap();
+        assert_eq!(session.active().document.text(), "%25GG");
+        assert!(crate::handoff::fetch(&reference).is_err());
     }
 
     #[test]

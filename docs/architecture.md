@@ -229,7 +229,7 @@ other edit. Find applies only when the engine request/serial, document and revis
 still match the preview. Error/limited results are not partially applied. Search
 budgets and replacement-group expansion bounds are documented in development.
 
-The implemented `tools` module owns a five-command catalog, shared query filtering,
+The implemented `tools` module owns a nine-command catalog, shared query filtering,
 bounded transformations and revision-bound plans. Both adapters display the same
 IDs/titles/semantics. On Enter, a job captures a cheap immutable Rope snapshot and
 explicit scalar range, extracts/transforms up to 1 MiB on a worker and returns a
@@ -239,6 +239,9 @@ The C bridge owns the job, polls nonblockingly and converts UTF-16 only at the
 boundary. Apply checks identity/revision and uses `replace_many`, so history,
 dirty state and Secret Drop behavior stay shared. Errors have metadata-only messages;
 JSON formatting preserves original token lexemes after validation with IgnoredAny.
+Case changes use Unicode string mappings, preserving context-sensitive casing.
+URL component encoding preflights its output budget; decoding is a strict one-pass
+UTF-8 conversion. Both use the same selected-range plan and history as other tools.
 Queries/jobs are transient and excluded from persistence. Named tools apply on
 Enter and use Undo for reversal; inference/recipe previews remain future work.
 

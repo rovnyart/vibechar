@@ -955,6 +955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         while stale.poll()==0 { RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01)); precondition(Date()<deadline) }
         precondition(stale.apply(app.document)==nil)
         print("Text tools native smoke passed: command search, UTF-16 selection, exact scope, one Undo, no-op, cancel, private JSON, stale/error rejection, light/dark palette")
+        ToolPalette.smokeTest()
     }
 
     static func findSmokeTest() {
