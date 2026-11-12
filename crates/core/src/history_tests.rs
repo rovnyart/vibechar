@@ -163,3 +163,149 @@ fn invalid_and_noop_edits_preserve_revision_and_the_active_group() {
     doc.undo();
     assert_eq!(doc.text(), "");
 }
+
+fn assert_history_accounting(doc: &Document) {
+    assert_eq!(
+        doc.history_bytes,
+        doc.undo
+            .iter()
+            .chain(&doc.redo)
+            .map(HistoryEntry::retained_bytes)
+            .sum::<usize>()
+    );
+    assert!(doc.undo.len() + doc.redo.len() <= MAX_HISTORY_STEPS);
+    assert!(doc.history_bytes <= MAX_HISTORY_BYTES || doc.undo.len() + doc.redo.len() == 1);
+}
+
+#[test]
+fn oldest_steps_expire_without_changing_saved_state_or_redo_order() {
+    let mut doc = Document::new("");
+    for _ in 0..MAX_HISTORY_STEPS + 5 {
+        doc.replace(doc.len_chars()..doc.len_chars(), "я").unwrap();
+    }
+    assert_eq!(doc.undo.len(), MAX_HISTORY_STEPS);
+    assert_history_accounting(&doc);
+    doc.mark_saved();
+    for _ in 0..MAX_HISTORY_STEPS {
+        assert!(doc.undo().is_some());
+        assert!(doc.is_dirty());
+        assert_history_accounting(&doc);
+    }
+    assert_eq!(doc.text(), "я".repeat(5));
+    let revision = doc.revision();
+    assert_eq!(doc.undo(), None);
+    assert_eq!(doc.revision(), revision);
+    for _ in 0..MAX_HISTORY_STEPS {
+        assert!(doc.redo().is_some());
+        assert_history_accounting(&doc);
+    }
+    assert_eq!(doc.len_chars(), MAX_HISTORY_STEPS + 5);
+    assert!(!doc.is_dirty());
+    assert_eq!(doc.redo(), None);
+}
+
+#[test]
+fn large_replacements_evict_oldest_history_within_the_allocation_budget() {
+    let a = "a".repeat(512 * 1024);
+    let b = "b".repeat(a.len());
+    let mut doc = Document::new(&a);
+    for step in 0..48 {
+        doc.replace(0..doc.len_chars(), if step % 2 == 0 { &b } else { &a })
+            .unwrap();
+        assert_history_accounting(&doc);
+    }
+    let retained = doc.undo.len();
+    assert!(retained > 1 && retained < 48);
+    assert!(doc.history_bytes <= MAX_HISTORY_BYTES);
+    // Identical bytes do not make an expired save-state identity reachable again.
+    for _ in 0..retained {
+        assert!(doc.undo().is_some());
+    }
+    assert_eq!(doc.undo(), None);
+    assert!(doc.is_dirty());
+    for _ in 0..retained {
+        assert!(doc.redo().is_some());
+    }
+    assert_eq!(doc.text(), a);
+    doc.mark_saved();
+    doc.undo();
+    assert!(doc.is_dirty());
+    doc.redo();
+    assert!(!doc.is_dirty());
+    assert_history_accounting(&doc);
+}
+
+#[test]
+fn an_oversized_atomic_edit_keeps_one_undo_and_yields_to_a_newer_edit() {
+    let mut doc = Document::new("old");
+    doc.replace(0..3, "new").unwrap();
+    doc.mark_saved();
+    let large = "x".repeat(MAX_HISTORY_BYTES + 1);
+    doc.replace(0..3, &large).unwrap();
+    assert_eq!(doc.undo.len(), 1);
+    assert!(doc.history_bytes > MAX_HISTORY_BYTES);
+    assert_history_accounting(&doc);
+    assert_eq!(doc.undo(), Some(3));
+    assert_eq!(doc.text(), "new");
+    assert!(!doc.is_dirty());
+    assert_eq!(doc.undo(), None);
+    assert!(doc.redo().is_some());
+    doc.replace(0..1, "y").unwrap();
+    assert_eq!(doc.undo.len(), 1);
+    assert!(doc.history_bytes < 1024);
+    assert_eq!(doc.undo(), Some(1));
+    assert_eq!(doc.len_bytes(), large.len());
+    assert_eq!(doc.text_range(0..1).unwrap(), "x");
+    assert!(doc.is_dirty());
+    assert_history_accounting(&doc);
+}
+
+#[test]
+fn grouped_and_batch_allocations_follow_undo_redo_and_branch_invalidation() {
+    let mut doc = Document::new("");
+    let now = Instant::now();
+    for text in ["я", "🦀", "e\u{301}"] {
+        type_at(&mut doc, text, now);
+        assert_history_accounting(&doc);
+    }
+    for continuation in [false, true] {
+        let end = doc.len_chars();
+        doc.replace_many_input(
+            &[
+                TextEdit {
+                    range: 0..0,
+                    text: "L".into(),
+                },
+                TextEdit {
+                    range: end..end,
+                    text: "R".into(),
+                },
+            ],
+            EditKind::Typing,
+            continuation,
+        )
+        .unwrap();
+        assert_history_accounting(&doc);
+    }
+    assert_eq!(doc.undo.len(), 2);
+    assert_eq!(doc.text(), "LLя🦀e\u{301}RR");
+    doc.undo();
+    assert_eq!(doc.text(), "я🦀e\u{301}");
+    assert_history_accounting(&doc);
+    let before = doc.history_bytes;
+    assert!(!doc.replace(0..0, "").unwrap());
+    assert!(doc.replace(0..usize::MAX, "bad").is_err());
+    assert_eq!(doc.history_bytes, before);
+    assert_eq!(doc.redo.len(), 1);
+    doc.redo();
+    assert_eq!(doc.text(), "LLя🦀e\u{301}RR");
+    doc.undo();
+    doc.replace(0..0, "new").unwrap();
+    assert_eq!(doc.redo(), None);
+    assert_history_accounting(&doc);
+    doc.undo();
+    doc.undo();
+    assert_eq!(doc.text(), "");
+    assert!(!doc.is_dirty());
+    assert_history_accounting(&doc);
+}

@@ -98,6 +98,10 @@ carets distributes one line to each, preventing duplicated copied selections.
 Escape keeps a single primary selection. Selection changes checkpoint quietly. See the
 [multicursor controls and limits](docs/development.md#multiple-selections).
 
+Undo/Redo history has a shared per-document retention budget in both clients:
+1,024 steps / 32 MiB of charged allocations, keeping the newest operation
+undoable even when it alone exceeds the budget. Oldest steps expire as needed.
+
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar
 creates a private tab and replaces the clipboard with an instruction for your

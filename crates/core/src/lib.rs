@@ -12,6 +12,7 @@ pub mod tools;
 mod history_tests;
 
 use std::{
+    collections::VecDeque,
     fmt,
     ops::Range,
     sync::atomic::{AtomicU64, Ordering},
@@ -65,15 +66,30 @@ struct HistoryEntry {
     batches: Option<usize>,
 }
 
+impl HistoryEntry {
+    fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.changes.capacity() * std::mem::size_of::<Change>()
+            + self
+                .changes
+                .iter()
+                .map(|change| change.removed.capacity() + change.inserted.capacity())
+                .sum::<usize>()
+    }
+}
+
 const TYPING_PAUSE: Duration = Duration::from_secs(1);
 const MAX_GROUP_EDITS: usize = 512;
 const MAX_GROUP_BYTES: usize = 64 * 1024;
+const MAX_HISTORY_BYTES: usize = 32 * 1024 * 1024;
+const MAX_HISTORY_STEPS: usize = 1024;
 
 pub struct Document {
     id: u64,
     text: Rope,
-    undo: Vec<HistoryEntry>,
+    undo: VecDeque<HistoryEntry>,
     redo: Vec<HistoryEntry>,
+    history_bytes: usize,
     last_edit: Option<Instant>,
     revision: u64,
     state: u64,
@@ -117,8 +133,9 @@ impl Document {
         Self {
             id: NEXT_DOCUMENT.fetch_add(1, Ordering::Relaxed),
             text: Rope::from_str(text),
-            undo: Vec::new(),
+            undo: VecDeque::new(),
             redo: Vec::new(),
+            history_bytes: 0,
             last_edit: None,
             revision: 0,
             state: 0,
@@ -152,6 +169,18 @@ impl Document {
 
     pub fn break_undo_group(&mut self) {
         self.last_edit = None;
+    }
+
+    fn retain_history(&mut self) {
+        for entry in self.redo.drain(..) {
+            self.history_bytes -= entry.retained_bytes();
+        }
+        // Keep the newest atomic operation, even when it alone exceeds the budget.
+        while self.undo.len() > 1
+            && (self.history_bytes > MAX_HISTORY_BYTES || self.undo.len() > MAX_HISTORY_STEPS)
+        {
+            self.history_bytes -= self.undo.pop_front().unwrap().retained_bytes();
+        }
     }
 
     /// Apply sorted, nonoverlapping edits atomically as a single history entry.
@@ -210,7 +239,7 @@ impl Document {
             && self
                 .last_edit
                 .is_some_and(|last| now.saturating_duration_since(last) < TYPING_PAUSE)
-            && self.undo.last().is_some_and(|entry| {
+            && self.undo.back().is_some_and(|entry| {
                 entry.kind == kind
                     && entry.batches.is_some_and(|steps| steps < MAX_GROUP_EDITS)
                     && entry.bytes + bytes <= MAX_GROUP_BYTES
@@ -228,20 +257,22 @@ impl Document {
         }
         self.revision += 1;
         if merge {
-            let entry = self.undo.last_mut().unwrap();
+            let entry = self.undo.back_mut().unwrap();
+            self.history_bytes -= entry.retained_bytes();
             entry.changes.extend(changes);
             entry.bytes += bytes;
             *entry.batches.as_mut().unwrap() += 1;
         } else {
-            self.undo.push(HistoryEntry {
+            self.undo.push_back(HistoryEntry {
                 changes,
                 kind: if groupable { kind } else { EditKind::Isolated },
                 bytes,
                 batches: Some(1),
             });
         }
+        self.history_bytes += self.undo.back().unwrap().retained_bytes();
         self.last_edit = groupable.then_some(now);
-        self.redo.clear();
+        self.retain_history();
         Ok(true)
     }
 
@@ -279,7 +310,7 @@ impl Document {
                 now.checked_duration_since(last)
                     .is_some_and(|gap| gap < TYPING_PAUSE)
             })
-            && self.undo.last().is_some_and(|entry| {
+            && self.undo.back().is_some_and(|entry| {
                 let last = entry.changes.last().unwrap();
                 entry.kind == kind
                     && entry.batches.is_none()
@@ -308,25 +339,27 @@ impl Document {
         self.next_state += 1;
         self.revision += 1;
         if merge {
-            let entry = self.undo.last_mut().unwrap();
+            let entry = self.undo.back_mut().unwrap();
+            self.history_bytes -= entry.retained_bytes();
             entry.bytes += bytes;
             entry.changes.push(change);
         } else {
-            self.undo.push(HistoryEntry {
+            self.undo.push_back(HistoryEntry {
                 changes: vec![change],
                 kind: if groupable { kind } else { EditKind::Isolated },
                 bytes,
                 batches: None,
             });
         }
+        self.history_bytes += self.undo.back().unwrap().retained_bytes();
         self.last_edit = groupable.then_some(now);
-        self.redo.clear();
+        self.retain_history();
         Ok(true)
     }
 
     pub fn undo(&mut self) -> Option<usize> {
         self.break_undo_group();
-        let entry = self.undo.pop()?;
+        let entry = self.undo.pop_back()?;
         self.revoke_drop();
         for change in entry.changes.iter().rev() {
             self.text
@@ -363,7 +396,7 @@ impl Document {
         self.state = last.after;
         self.revision += 1;
         let cursor = last.start + last.inserted_chars;
-        self.undo.push(entry);
+        self.undo.push_back(entry);
         Some(cursor)
     }
 

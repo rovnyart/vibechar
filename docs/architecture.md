@@ -30,7 +30,7 @@ and a Swift Package. No runtime service, webview, or JavaScript engine is requir
 - Changes keep inserted/removed payloads for undo; do not clone the whole document
   into a String for every keystroke. Adjacent input groups share one history entry
   containing ordered deltas, avoiding repeated prepend/copy of deleted runs.
-  Total history retention limits remain M2 work.
+  History retention is bounded per document as described below.
 - Every mutation, including undo/redo, advances a monotonic revision. Dirty tracking
   uses history state identity so undo to a saved state becomes clean again.
 - AppKit should patch its presentation storage instead of replacing the whole view
@@ -41,7 +41,19 @@ operations. Only adjacent operations of the same input kind coalesce, with less
 than one second between edits. Line boundaries, selection replacement, clipboard
 operations, navigation, explicit save, undo/redo and tab changes separate steps.
 Each group is bounded to 512 edits and 64 KiB of changed payload. A single large
-paste is still one isolated step; total history is not capped by these limits.
+paste is still one isolated step.
+
+Undo and Redo share a per-document retention budget of 32 MiB of charged history
+allocations and 1,024 complete steps. Accounting includes string capacities and
+change-vector capacity, rather than text lengths alone. Each real edit discards
+the divergent Redo branch and evicts oldest whole Undo entries through a deque,
+without shifting the remaining entries or rescanning the entire history. Moving
+an entry between Undo and Redo retains its charge. The newest atomic operation is
+always retained, even when it alone exceeds the byte budget; a subsequent edit
+can expire it. Current text, state identities and save points are never rewritten
+by retention. This bounds retained history, not total process RSS or peak memory
+while applying a large edit; allocator overhead and unused outer-container slots
+are outside the charge. Each open document has its own budget.
 
 Every edit advances state/revision even when added to an existing group. Undo
 reverses its deltas in reverse order and redo replays them forward; each advances

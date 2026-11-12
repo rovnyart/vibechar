@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 104 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 108 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -23,7 +23,7 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Thirty-nine real PTY scenarios across the baseline, selection, find, tools and multicursor suites,
+- Forty real PTY scenarios across the baseline, selection, find, tools, multicursor and history suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -751,6 +751,58 @@ exactly four `foo` rows and two carets, with one Undo restoring the source.
 restored the source. Live paste restored the user's previous clipboard; actual
 copy was tested with the unique-pasteboard native smoke. The QA app was quit and
 its bundle, registration, recovery and preferences removed.
+
+## Shared history retention — first large-document increment (2026-11-12)
+
+History previously retained every inserted/removed string for the life of a
+document. The shared core now retains at most 1,024 complete Undo/Redo steps and
+32 MiB of charged history allocations per document, evicting oldest whole steps.
+Charges include string and change-vector capacities. A single newest operation
+larger than the budget is retained so it remains undoable; the next edit may
+expire it. This is a retention policy, not a hard process/peak-RSS ceiling.
+
+Four new Rust regressions exercise entry and allocation limits, grouped and batch
+accounting, Unicode, saved-state identity after expiry, complete ordered Undo/Redo,
+divergent branches, invalid/no-op edits and an oversized atomic operation. A new
+release PTY scenario sends 1,029 separate Unicode pastes, exhausts the 1,024 retained
+steps, tests one extra Undo, replays Redo to a clean saved file and branches with
+an emoji. It verifies saved bytes remain unchanged after unsaved editing. The
+bulk-input helper pumps both PTY directions with nonblocking writes: its first
+blocking producer attempt deadlocked on PTY backpressure; the isolated processes
+were terminated and their synthetic temporary state removed. No application
+deadlock was established by that harness failure.
+
+Native smoke uses RustDocument through the Swift/C bridge to exhaust the retained
+Unicode steps, replay Redo to the exact saved-state identity and invalidate a
+divergent branch. `bash scripts/check.sh` passed formatting, Clippy, all 108 Rust
+tests, release builds, 40 PTY scenarios plus the separate Secret Drop helper, and
+all native smoke checks. No user clipboard or recovery state was used.
+
+The `profile_history` example provides a repeatable synthetic workload:
+a 512 KiB document with 96 alternating full replacements, followed by all retained
+Undo/Redo operations. It samples RSS using `ps` before history replay, and checks
+the final saved-state identity. Thirty separate release processes per version
+on the named hardware above observed:
+
+| Measurement | Unbounded history | Bounded history, quiet follow-up |
+| --- | --- | --- |
+| Median sampled RSS | 103,504 KiB | 26,720 KiB |
+| Maximum sampled RSS | 103,616 KiB | 26,720 KiB |
+| Median of each process's edit p95 | 0.204 ms | 0.192 ms |
+| Retained Undo steps | 96 | 21 |
+
+An earlier post-change series concurrent with compilation had 49,616 KiB median
+and 57,056 KiB maximum RSS, with 0.435 ms median edit p95. The quiet series avoids
+concurrent compilation. RSS varied between series; these observations are not
+memory ceilings.
+Raw samples are in ignored `dist/history-before.json` and `dist/history-after.json`.
+These are core-only warm-binary observations, not editor startup, input-to-display
+latency, peak-memory measurements or a Sublime comparison. The document/fixtures,
+Rope allocations, allocator overhead and UI copies are outside the history charge.
+
+Large/minified viewport and navigation costs, native bridge copies, parsing limits
+under representative workloads and peak-memory qualification remain open. M3
+large-document mode and the M1/M6 performance gates are not complete.
 
 ## Initial performance observations
 

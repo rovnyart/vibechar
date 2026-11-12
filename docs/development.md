@@ -24,6 +24,17 @@ bash scripts/cargo.sh clippy --workspace --all-targets -- -D warnings
 bash scripts/cargo.sh build --release --workspace
 ```
 
+Synthetic history memory/latency sample (no files, clipboard or recovery data):
+
+```sh
+bash scripts/cargo.sh run --release -p vibechar-core --example profile_history --locked
+```
+
+It performs 96 alternating full replacements of a 512 KiB document, samples
+process RSS with `ps`, then verifies all retained Undo/Redo steps and the save
+point. Run the built example repeatedly for comparisons. These are core-only
+samples, not native/TUI input latency or a process-memory ceiling.
+
 Start the terminal editor:
 
 ```sh
@@ -505,9 +516,8 @@ docs/              roadmap, architecture, development, verification evidence
 
 ## M1 limitations
 
-The app is an early prototype. AI,
-multicursors and global hotkeys are later
-milestones. TUI selection/clipboard is implemented; acceptance across terminal
+The app is an early prototype. AI and global hotkeys are later milestones.
+Shared multicursors and TUI selection/clipboard are implemented; acceptance across terminal
 emulators/Linux and native IME composition qualification remain pending. No
 dedicated settings window exists; recovery uses a versioned JSON checkpoint.
 
@@ -517,7 +527,14 @@ explicit save, undo/redo or changing tabs ends the run. Typing and deletion do n
 merge with one another. Paste and selection replacement remain separate undo steps,
 including a one-character paste. Undo across a file save restores the correct
 modified/clean flag. Groups cap at 512 edits / 64 KiB; a large single paste remains
-one step. These limits do not bound total history memory.
+one step. Undo and Redo together retain up to **1,024 steps / 32 MiB of charged
+history allocations per document**. The engine removes oldest whole steps when
+either budget is reached. String and change-vector capacities count toward the
+budget. The newest operation always remains undoable, including one operation
+larger than 32 MiB; the next edit may expire that oversized step. Eviction never
+changes current text, file contents or saved/modified state. History is still
+memory-only and is not restored after restart. This is not a total process or
+peak-memory limit; full large-document rendering qualification remains open.
 
 Both clients start with one buffer and allow more buffers in the same process.
 Both clients restore their separate sessions after restart. Switching restores

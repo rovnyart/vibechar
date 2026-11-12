@@ -15,6 +15,7 @@ struct VibecharApp {
             precondition(document.history(redo: true) == 6)
             document.markSaved()
             precondition(!document.isDirty)
+            historyRetentionSmokeTest()
 
             let session = RustSession()
             let activeDocument = RustDocument(session: session)
@@ -51,6 +52,26 @@ struct VibecharApp {
         app.delegate = delegate
         app.setActivationPolicy(.regular)
         withExtendedLifetime(delegate) { app.run() }
+    }
+
+    @MainActor
+    private static func historyRetentionSmokeTest() {
+        let document = RustDocument("")
+        for index in 0..<1029 {
+            precondition(document.replace(NSRange(location:index,length:0),with:"я"))
+        }
+        document.markSaved()
+        for remaining in stride(from:1028,through:5,by:-1) {
+            precondition(document.history(redo:false)==remaining && document.isDirty)
+        }
+        precondition(document.history(redo:false)==nil && document.text==String(repeating:"я",count:5))
+        for _ in 0..<1024 {precondition(document.history(redo:true) != nil)}
+        precondition(document.text==String(repeating:"я",count:1029) && !document.isDirty)
+        precondition(document.history(redo:false) != nil)
+        precondition(document.replace(NSRange(location:1028,length:0),with:"🦀"))
+        precondition(document.history(redo:true)==nil && document.isDirty)
+        precondition(document.history(redo:false)==1028)
+        print("History retention native smoke passed: bounded steps, Unicode, exhausted Undo, saved-state Redo and divergent edits")
     }
 
     @MainActor

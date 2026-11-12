@@ -119,6 +119,8 @@ are measured with larger documents.
   when actions, diagnostics, and AI are introduced.
 - [x] Group adjacent typing/backspace/forward-delete into shared undo steps, with
   pause, navigation, paste, save and tab boundaries in Mac and terminal.
+- [x] Bound per-document Undo/Redo retention by allocation bytes and complete
+  steps in the shared engine, preserving one oversized atomic operation.
 - [x] TUI keyboard/mouse selections, word double click, drag autoscroll, clipboard,
   selection replacement/deletion and per-tab/restart direction preservation.
 - [ ] Word navigation and indentation improvements; qualify selection/clipboard
@@ -187,6 +189,9 @@ into a child process. Implement the same operation model in Mac and terminal.
 - [x] Shared atomic batch edits as one undo transaction, first used by Replace All.
   Future transforms and multicursor commands can reuse this operation.
 - [ ] Large document mode with explicit budgets for parsing, rendering, and history.
+  History retention now has a shared 32 MiB / 1,024-step budget with a newest-step
+  exception. Large/minified rendering, navigation, bridge-copy and peak-memory
+  qualification remain open; this does not complete large-document mode.
 
 Exit: representative JSON, logs, code, and prose are pleasant to manipulate offline;
 highlighting and commands do not block text input. Terminal styling and width
