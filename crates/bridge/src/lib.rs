@@ -910,6 +910,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn json_tool_formats_only_the_selected_object_and_rejects_a_missing_quote() {
+        unsafe {
+            // The complete document is not valid JSON; only the second object is the target.
+            let prefix = "👩‍💻\n{\"foo\":\"bar\"}\n\n";
+            let suffix = "\nnot JSON after the selection";
+            for (selected, valid) in [
+                ("{ \"foo\": \"bar2\"\n}", true),
+                ("{ \"foo\": \"bar2\n}", false),
+            ] {
+                let source = format!("{prefix}{selected}{suffix}");
+                let doc = vc_document_new(source.as_ptr(), source.len());
+                let job = vc_tool_start(
+                    doc,
+                    prefix.encode_utf16().count(),
+                    selected.encode_utf16().count(),
+                    1,
+                );
+                assert!(!job.is_null());
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                let state = loop {
+                    let state = vc_tool_poll(job);
+                    if state != 0 {
+                        break state;
+                    }
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                };
+                if valid {
+                    assert_eq!(state, 1);
+                    let (mut start, mut length) = (0, 0);
+                    assert_eq!(vc_tool_apply(job, doc, &mut start, &mut length), 1);
+                    assert_eq!(
+                        (*doc).text(),
+                        format!("{prefix}{{\n  \"foo\": \"bar2\"\n}}{suffix}")
+                    );
+                    assert!(vc_document_undo(doc, &mut start));
+                    assert_eq!((*doc).text(), source);
+                    assert!(!vc_document_dirty(doc));
+                } else {
+                    assert_eq!(state, -1);
+                    let mut bytes = vec![0; vc_tool_error(job, ptr::null_mut(), 0)];
+                    vc_tool_error(job, bytes.as_mut_ptr(), bytes.len());
+                    assert_eq!(
+                        String::from_utf8(bytes).unwrap(),
+                        "Invalid JSON · line 1, column 14"
+                    );
+                    assert_eq!((*doc).text(), source);
+                    assert!(!vc_document_dirty(doc));
+                }
+                vc_tool_free(job);
+                vc_document_free(doc);
+            }
+        }
+    }
+
+    #[test]
     fn tools_validate_utf16_and_apply_one_revision_bound_transaction() {
         unsafe {
             assert!(vc_tool_start(ptr::null(), 0, 0, 1).is_null());

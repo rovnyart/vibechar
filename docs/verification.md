@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 84 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 85 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -628,6 +628,10 @@ a bounded worker and applies only to the captured document/revision; cancellatio
 discards its result. Named reversible tools apply directly on Enter. This is not
 the future AI/recipe preview feature. No network or user credentials were used.
 Terminal-emulator/Linux qualification and general large-document budgets remain open.
+
+A follow-up bridge regression checks a selected JSON object surrounded by unrelated
+text, including a UTF-16 emoji prefix: only the selection is formatted, one Undo
+restores the source, and a missing closing quote returns an error without edits.
 
 ## Initial performance observations
 
