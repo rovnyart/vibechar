@@ -107,6 +107,15 @@ Save buffers through a same-directory temporary file + flush/sync + atomic repla
 with a documented symlink/permissions policy and external-change check. Prototype
 save support must be labeled until these semantics are complete.
 
+Save As always asks for a destination, including for an already attached file.
+Mac uses the native panel and its replacement confirmation; terminal F4 uses a
+filename prompt and an explicit second Enter for an existing destination. Filename
+edits/cancellation clear pending replacement approval. Both reuse the ordinary
+write/completion path: changing the session's destination happens only after a
+successful write. Save As does not create a second tab or reset text/undo/selection.
+The old file stays untouched when choosing another destination. Known read-only
+files and symlinks are rejected; external-change and race qualification remain M2.
+
 ## Secret Drop: explicit local export
 
 The session lazily owns one `DropHost`, an embedded Unix-socket worker. Publishing

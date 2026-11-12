@@ -93,4 +93,6 @@ prevents later fetches; a command which already fetched the value can continue.
   close/quit, no recovery bytes, output masking, CLI failure before child execution.
 - [x] Native and real PTY end-to-end checks with disposable fixtures only.
 - [ ] Actual OS lock/sleep behavior and Linux runtime acceptance.
-- [ ] Local commit and Art's hands-on feedback before the next feature.
+- [x] Local commit and Art's Mac hands-on feedback: Give to Agent delivered a
+  nonempty value; after Stop the old reference failed before child execution.
+- [ ] Hands-on terminal and clipboard fast-path acceptance.

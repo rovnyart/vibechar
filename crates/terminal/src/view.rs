@@ -88,14 +88,21 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     let prompt = editor.save_prompt.as_ref().map_or_else(
         || {
             if editor.message.is_empty() {
-                " ^N new  ^P private  ^G give  F8 paste+give  F9 stop  F6 next  ^S save  ^Q quit"
+                " ^N new ^P private ^S save F4 save as F6 next ^G agent F8 paste F9 stop ^Q quit"
                     .into()
             } else {
                 format!(" {}", editor.message)
             }
         },
         |value| {
-            if editor.session.active().is_private() {
+            if editor.confirming_overwrite() {
+                let privacy = if editor.session.active().is_private() {
+                    " · ends private mode"
+                } else {
+                    ""
+                };
+                format!(" Replace file? Enter confirms{privacy} · Esc cancels: {value}")
+            } else if editor.session.active().is_private() {
                 format!(" Save as (ends private mode): {value}  [Enter save · Esc cancel]")
             } else {
                 format!(" Save as: {value}  [Enter save · Esc cancel]")

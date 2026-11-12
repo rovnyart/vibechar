@@ -41,8 +41,14 @@ Private scratches are now available in both clients: Shift+Cmd+N on Mac or Ctrl+
 in the terminal. They are excluded from recovery and have generic titles. Closing
 or quitting with private text asks before discarding it. Saving a private tab makes
 it an ordinary file tab, includes it in recovery, and closes that tab's agent access.
-Cancelled or failed saves keep the tab private. The next feedback checkpoint is Secret Drop below.
+Cancelled or failed saves keep the tab private.
 See the roadmap for status and the development guide for runnable commands.
+
+Save As is available through File → Save As / Shift+Cmd+S on Mac and F4 in the
+terminal, including for files already open. A successful save attaches the new
+destination; cancellation/failure keeps the original. Existing destinations need
+replacement confirmation. Art has tested the Mac Secret Drop Give/Stop workflow;
+the next feedback increment is Save As.
 
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar

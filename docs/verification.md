@@ -21,12 +21,15 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Twelve real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
+- Thirteen real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
   saved buffers with restart/cursor restoration; background checkpoint + forced
   termination; closed tabs staying closed; corrupt recovery; concurrent writer
   rejection; and failed quit flush with manual text rescue before explicit quit.
+- Save As PTY coverage includes existing file tabs, cancelled prompts, failed and
+  read-only/symlink destinations, replacement confirmation/reset, Unicode paths,
+  subsequent Save to the new path and restart with that destination.
 - Private PTY cases verify mixed/private-only recovery, background exclusion,
   conversion after successful file save, cancelled/failed saves, subsequent saves,
   hidden-private quit confirmation, and forced termination.
@@ -300,6 +303,41 @@ A separate red-window-close case retains the ordinary text for restart. Existing
 Pocket, private-save and Secret Drop native smoke checks also pass. No running
 user window, clipboard or recovery store was used. Interactive discard/error
 dialogs and the complete on-screen quit workflow remain for hands-on acceptance.
+
+### Hands-on checkpoint: Secret Drop (2026-11-12)
+
+Art pasted instructions from Give to Agent in a Mac private tab. The local bundled
+helper ran a child that reported only whether it received a nonempty environment
+value; it returned success. This proves delivery, not equality to an independently
+known value. Art clicked Stop; using the same reference then returned a closed/
+expired error with status 1 before the marker-printing child could start. No raw
+value was printed, copied to a file or retained in this document. Art also confirmed
+the private-save conversion after restarting the updated app. Mac Give/Stop is
+accepted; terminal manual use, clipboard fast paths and OS-event gates remain open.
+
+### Feedback increment: Save As (2026-11-12)
+
+The next bounded M2 increment adds File → Save As / Shift+Cmd+S on Mac and F4 in
+the terminal. Both work on existing file tabs as well as scratches. Success attaches
+the chosen destination for future saves/recovery without creating a second tab.
+Cancellation and write failures preserve the previous path, edited text, dirty
+state and selection. Known read-only files and symlinks are rejected in both clients;
+external-change/race handling and durability qualification remain pending.
+
+Native smoke checks the menu/shortcut, current filename/folder prefill, cancelled
+selection, failed/missing/read-only/symlink destinations, successful replacement,
+byte-exact Unicode/CRLF, preserved selection/history, regular Save to the new path,
+an untouched original file, and restart with the new destination. Destination
+choices are supplied to the same Save/Save As path without opening modal panels.
+The native replacement confirmation itself still needs Art's hands-on acceptance.
+
+The additional real PTY case presses F4 on an edited file, cancels, attempts failed
+destinations, declines then confirms replacement, verifies filename edits reset
+approval, saves again to the new destination, and restarts. Until explicit approval
+the existing target remains unchanged. All fixtures, clipboards and recovery stores
+are isolated from the user's normal app/session. Full `scripts/check.sh` passed:
+41 Rust tests, formatting/Clippy, 13 PTY scenarios, the Secret Drop PTY scenario and
+native release smoke tests. The expanded filename-approval reset case also passed.
 
 ## Initial performance observations
 

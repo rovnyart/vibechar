@@ -45,6 +45,13 @@ that confirmation. If the ordinary-tab flush fails, the editor stays open;
 a second Ctrl+Q allows quitting without the latest changes. Escape
 cancels the save prompt. Bracketed paste is one undo step. No mouse is required.
 
+F4 opens Save As even for an existing file buffer. Type/paste a destination and
+press Enter. An existing destination requires another Enter to confirm replacement;
+Esc cancels. Editing or pasting a filename clears that replacement confirmation.
+Save and Save As reject known symlinks and read-only files. Failed or cancelled
+operations keep the current destination and edited text. Only a successful write
+attaches the new path; subsequent Ctrl+S uses it, and restart restores it.
+
 Build and open the native development app:
 
 ```sh
@@ -63,7 +70,11 @@ cleans up its processes and temporary files and uses no desktop terminal app.
 
 Mac controls: native text editing/selection and clipboard; Cmd+N new scratch,
 Shift+Cmd+N new private scratch, Cmd+O open UTF-8 file in a new buffer,
-Cmd+S save (ends private mode after success), Cmd+Z undo, Shift+Cmd+Z redo,
+Cmd+S save (ends private mode after success), Cmd+Z undo, Shift+Cmd+Z redo.
+Shift+Cmd+S / File → Save As chooses a new destination for the active tab. The native
+panel starts with the current filename/folder and confirms replacement. Success
+attaches the new path; later Cmd+S uses it. Cancellation/failure preserves the old
+path and text. The original file is untouched when choosing a different destination.
 Cmd+W closes a tab; closing the last tab by Cmd+W or its × closes the window and
 exits the app after the existing discard checks. Explicitly closed tabs are removed
 from recovery; closing the final tab restarts into an empty scratch. The terminal
@@ -239,8 +250,9 @@ M3 large-document work before a performance claim.
 Saves are atomic at the file replacement level, but external-change checks,
 filesystem race handling, durability/permission edge cases, and a unified file
 service are M2 work. Do not use this prototype as the only copy of important text.
-Both interfaces reject replacing a known symlink; the TUI also rejects a read-only
-destination. No network calls are made by the editor.
+Both interfaces reject replacing known symlinks and read-only destinations.
+External-change and filesystem-race protection remain unqualified. No network
+calls are made by the editor.
 
 ## Validation policy
 

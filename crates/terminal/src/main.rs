@@ -40,7 +40,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .first()
         .is_some_and(|arg| arg == "--help" || arg == "-h")
     {
-        println!("vibechar [FILE]\nvibechar run <reference> --env NAME -- <program> [args...]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+G / F7 Copy for Agent · F8 Paste Secret for Agent · F9 Close All Agent Access\nCtrl+S save file · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\n\nSecret Drop works with local agents on the same host. Keep the editor open.\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Explicitly saved files remain on disk. Highlighting and AI rewrites are still in development.");
+        println!("vibechar [FILE]\nvibechar run <reference> --env NAME -- <program> [args...]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+G / F7 Copy for Agent · F8 Paste Secret for Agent · F9 Close All Agent Access\nCtrl+S save file · F4 Save As · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\nSave As: Enter submits a filename; Enter again confirms replacement; Esc cancels.\n\nSecret Drop works with local agents on the same host. Keep the editor open.\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Successful file saving ends private mode and closes that tab's agent access. Highlighting and AI rewrites are still in development.");
         return Ok(());
     }
     if args.first().is_some_and(|arg| arg == "--version") {

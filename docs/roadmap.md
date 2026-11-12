@@ -105,14 +105,16 @@ are measured with larger documents.
 - [x] Shared in-memory buffer collection, new/switch/close, and unsaved-close protection.
 - [x] Mac final-tab close exits through the window lifecycle; explicit closure is
   persisted without spawning another visible scratch. TUI keeps its empty fallback.
-- [ ] Save-as for existing file buffers and remaining filesystem protections below.
+- [x] Save As for existing file buffers, cancellation/failure protection and
+  overwrite confirmation in Mac and terminal. Hands-on feedback pending.
 - [ ] Atomic saves, clear policy for symlinks/permissions/external file changes.
 - [ ] Debounced recovery journal, crash recovery, retention limits, private mode.
 - [x] Mac local session checkpoints and restart restoration (first recovery increment).
 - [x] Wire terminal recovery, worker saves, quit flush, restart, and process ownership.
 - [x] Private scratches in both clients: recovery exclusion, generic titles,
   persistent mode labels, explicit saving to ordinary file tabs, and close/quit confirmation.
-- [ ] Art's hands-on acceptance of private mode.
+- [x] Art's Mac hands-on acceptance of private creation and saving into an ordinary
+  file tab. Terminal manual acceptance remains part of platform qualification.
 - [ ] Qualify remaining durability cases and retention; audit private mode again
   when actions, diagnostics, and AI are introduced.
 - [ ] Selection, clipboard, word navigation, indentation, and grouped typing undo.
@@ -150,7 +152,8 @@ into a child process. Implement the same operation model in Mac and terminal.
 - [x] Build a runnable Mac/terminal increment with native and real PTY checks.
 - [x] Saving a private tab ends private mode and revokes its grant only after a
   successful write. Cancellation/failure preserves private mode; both clients agree.
-- [ ] Art's hands-on acceptance before the next feature.
+- [x] Art's Mac hands-on acceptance of Give to Agent and Stop: the local helper
+  received a nonempty value, then the old reference was rejected after Stop.
 - [ ] Qualify actual OS lock/sleep notifications, Linux runtime/clipboard support,
   and terminal lock/sleep behavior. Remote/cloud agents need a separate design.
 

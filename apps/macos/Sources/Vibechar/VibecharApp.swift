@@ -35,6 +35,7 @@ struct VibecharApp {
             pocketInterfaceSmokeTest()
             AppDelegate.interfaceSmokeTest()
             AppDelegate.closeSmokeTest()
+            AppDelegate.saveAsSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -256,6 +257,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         file.addItem(privateScratch)
         addItem("Open…", action: #selector(openFile), key: "o", to: file)
         addItem("Save", action: #selector(saveFile), key: "s", to: file)
+        let saveAs = NSMenuItem(title: "Save As…", action: #selector(saveFileAs), keyEquivalent: "s")
+        saveAs.keyEquivalentModifierMask = [.command, .shift]
+        saveAs.target = self
+        file.addItem(saveAs)
         addItem("Close Tab", action: #selector(closeScratch), key: "w", to: file)
         addMenu("File", submenu: file, to: menu)
         let buffers = NSMenu(title: "Buffers")
@@ -520,28 +525,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func saveFile() {
+        do { try performSave(alwaysChooseDestination: false) }
+        catch { NSApp.presentError(error) }
+    }
+
+    @objc private func saveFileAs() {
+        do { try performSave(alwaysChooseDestination: true) }
+        catch { NSApp.presentError(error) }
+    }
+
+    private func performSave(alwaysChooseDestination: Bool,
+                             chooseDestination: @MainActor (NSSavePanel) -> URL? = { $0.runModal() == .OK ? $0.url : nil }) throws {
         let wasPrivate = session.isPrivate
-        var destination = wasPrivate ? nil : fileURL
+        var destination = alwaysChooseDestination || wasPrivate ? nil : fileURL
         if destination == nil {
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = "Untitled.txt"
+            panel.nameFieldStringValue = fileURL?.lastPathComponent ?? "Untitled.txt"
+            if let fileURL { panel.directoryURL = fileURL.deletingLastPathComponent() }
             if wasPrivate {
                 panel.title = "Save Private Tab"
                 panel.message = "Saving makes this a regular file tab, includes it in local recovery, and closes its agent access."
                 panel.nameFieldStringValue = "Private.txt"
             }
-            guard panel.runModal() == .OK else { return }
-            destination = panel.url
+            destination = chooseDestination(panel)
         }
         guard let destination else { return }
-        do { try saveActive(to: destination) }
-        catch { NSApp.presentError(error) }
+        try saveActive(to: destination)
     }
 
     private func saveActive(to destination: URL) throws {
         do {
-            let values = try destination.resourceValues(forKeys: [.isSymbolicLinkKey])
-            if values.isSymbolicLink == true { throw CocoaError(.fileWriteNoPermission) }
+            let values = try destination.resourceValues(forKeys: [.isSymbolicLinkKey, .isWritableKey])
+            if values.isSymbolicLink == true || values.isWritable == false { throw CocoaError(.fileWriteNoPermission) }
         } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
             // A new destination is expected not to exist before the first save.
         }
@@ -627,6 +642,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "vibechar", .applicationVersion: "0.1.0 · Preview"])
+    }
+
+    static func saveAsSmokeTest() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-save-as-\(UUID().uuidString)", isDirectory: true)
+        let app = AppDelegate(clipboard: .withUniqueName())
+        app.recovery = try! SessionRecovery(directory: root)
+        app.makeWindow(restoreFrame: false)
+        defer {
+            app.pendingSave?.cancel()
+            app.saveGeneration &+= 1
+            app.window.delegate = nil
+            app.window.close()
+            app.recovery = nil
+            app.clipboard.clearContents()
+            try! FileManager.default.removeItem(at: root)
+        }
+        app.makeMenus()
+        let saveAs = NSApp.mainMenu!.items.first { $0.title == "File" }!.submenu!.items.first { $0.action == #selector(saveFileAs) }!
+        precondition(saveAs.keyEquivalent == "s" && saveAs.keyEquivalentModifierMask == [.command, .shift] && saveAs.target === app)
+        let original = root.appendingPathComponent("original.txt")
+        let renamed = root.appendingPathComponent("копия.txt")
+        let fixture = "Save As · Привет 👩‍💻\r\n"
+        try! fixture.write(to: original, atomically: true, encoding: .utf8)
+        precondition(app.document.replace(NSRange(location: 0, length: 0), with: fixture))
+        app.session.completeSave(to: original)
+        precondition(app.document.replace(NSRange(location: fixture.utf16.count, length: 0), with: "!"))
+        app.session.rememberSelection(NSRange(location: 0, length: 1))
+        app.showActiveBuffer()
+        let textBeforeSave = app.document.text
+        var asked = false
+        try! app.performSave(alwaysChooseDestination: true) { panel in
+            asked = true
+            precondition(panel.nameFieldStringValue == "original.txt")
+            precondition(panel.directoryURL?.resolvingSymlinksInPath() == root.resolvingSymlinksInPath())
+            return nil
+        }
+        precondition(asked && app.session.fileURL == original && app.document.isDirty && app.document.text == textBeforeSave)
+        precondition(app.textView.selectedRange() == NSRange(location: 0, length: 1))
+        let readOnly = root.appendingPathComponent("readonly.txt")
+        let symlink = root.appendingPathComponent("link.txt")
+        try! "preserve".write(to: readOnly, atomically: true, encoding: .utf8)
+        try! FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: readOnly.path)
+        try! FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: original)
+        for invalid in [root.appendingPathComponent("missing/file.txt"), readOnly, symlink] {
+            do {
+                try app.performSave(alwaysChooseDestination: true) { _ in invalid }
+                preconditionFailure("A failed Save As must keep the original destination")
+            } catch {}
+            precondition(app.session.fileURL == original && app.document.isDirty && app.document.text == textBeforeSave)
+        }
+        try! "replace fixture".write(to: renamed, atomically: true, encoding: .utf8)
+        try! app.performSave(alwaysChooseDestination: true) { _ in renamed }
+        precondition(app.session.fileURL == renamed && !app.document.isDirty && app.session.count == 1)
+        precondition(app.session.label(0) == "копия.txt" && app.textView.selectedRange() == NSRange(location: 0, length: 1))
+        precondition(try! Data(contentsOf: original) == Data(fixture.utf8))
+        precondition(try! Data(contentsOf: renamed) == Data((fixture + "!").utf8))
+        precondition(try! String(contentsOf: readOnly, encoding: .utf8) == "preserve")
+        precondition(app.document.history(redo: false) != nil && app.document.isDirty)
+        precondition(app.document.history(redo: true) != nil && !app.document.isDirty)
+        precondition(app.document.replace(NSRange(location: app.document.text.utf16.count, length: 0), with: "?"))
+        app.showActiveBuffer()
+        try! app.performSave(alwaysChooseDestination: false) { _ in preconditionFailure("Regular Save must reuse the new destination") }
+        precondition(try! Data(contentsOf: renamed) == Data((fixture + "!?").utf8))
+        precondition(try! Data(contentsOf: original) == Data(fixture.utf8))
+        precondition(app.recovery!.flush(app.session.checkpoint()))
+        let restored = RustSession()
+        precondition(try! restored.restore(from: app.recovery!.fileURL))
+        precondition(restored.fileURL == renamed && RustDocument(session: restored).text == fixture + "!?")
+        print("Save As native smoke passed: menu, cancel/failure, replacement, Unicode/CRLF, selection/history, next save, restart")
     }
 
     static func closeSmokeTest() {

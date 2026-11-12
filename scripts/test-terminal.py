@@ -217,6 +217,60 @@ def main():
             session.finish()
         assert destination.read_text() == "scratch"
 
+        original = directory / "save-as-original.txt"
+        original.write_bytes(expected)
+        renamed = directory / "копия.txt"
+        renamed.write_bytes(b"keep until confirmed")
+        read_only = directory / "save-as-readonly.txt"
+        read_only.write_bytes(b"preserve")
+        read_only.chmod(0o444)
+        alias = directory / "save-as-link.txt"
+        alias.symlink_to(original)
+        save_as_state = directory / "save-as-state"
+        with Session(original, state=save_as_state) as session:
+            session.send(b"!\x1bOS")  # F4 Save As, including an existing file buffer.
+            session.wait_for(b"Save as:")
+            session.send(b"\x1b")
+            session.wait_until(lambda: "Save as:" not in session.screen_text())
+            for target in [directory / "missing" / "file.txt", read_only, alias]:
+                session.send(b"\x1bOS" + str(target).encode() + b"\r")
+                session.wait_until(lambda: "Save as:" not in session.screen_text())
+                if target.exists():
+                    session.wait_until(lambda: "Replace file?" in session.screen_text())
+                    session.send(b"\r")
+                session.wait_until(lambda: "Save failed:" in session.screen_text().splitlines()[-1])
+                session.wait_until(lambda: (data := session.checkpoint()) is not None
+                                   and data["buffers"][0]["path"] == str(original)
+                                   and data["buffers"][0]["dirty"])
+            session.send(b"\x1bOS" + str(renamed).encode() + b"\r")
+            session.wait_until(lambda: "Replace file?" in session.screen_text())
+            assert renamed.read_bytes() == b"keep until confirmed"
+            session.send(b"\x1b")
+            session.wait_until(lambda: "Replace file?" not in session.screen_text())
+            assert renamed.read_bytes() == b"keep until confirmed"
+            session.send(b"\x1bOS" + str(renamed).encode() + b"\r")
+            session.wait_until(lambda: "Replace file?" in session.screen_text())
+            session.send(b"\x7ft")  # Edit the name back to the same value: approval must reset.
+            session.wait_until(lambda: "Save as:" in session.screen_text().splitlines()[-1])
+            session.send(b"\r")
+            session.wait_until(lambda: "Replace file?" in session.screen_text())
+            assert renamed.read_bytes() == b"keep until confirmed"
+            session.send(b"\r")
+            session.wait_until(lambda: session.file_matches(renamed, b"!" + expected))
+            session.send(b"?\x13")
+            session.wait_until(lambda: session.file_matches(renamed, b"!?" + expected))
+            assert original.read_bytes() == expected
+            assert read_only.read_bytes() == b"preserve" and alias.is_symlink()
+            session.send(b"\x11")
+            session.finish()
+            saved = session.checkpoint()["buffers"][0]
+            assert saved["path"] == str(renamed) and not saved["dirty"]
+        read_only.chmod(0o644)
+        with Session(state=save_as_state) as session:
+            session.wait_for("копия.txt".encode())
+            session.wait_for(b"!?")
+            session.send(b"\x11"); session.finish()
+
         state = directory / "two-buffers"
         with Session(state=state) as session:
             session.send(b"first\x0esecond\x1b[17~")
@@ -381,7 +435,8 @@ def main():
         assert (checkpoint / "sentinel").read_text() == "keep"
 
     print(json.dumps({
-        "real_pty_scenarios": 12,
+        "real_pty_scenarios": 13,
+        "save_as_cancel_failure_confirmed_replace_and_restart": "passed",
         "utf8_crlf_bytes": "preserved",
         "terminal_restoration": "passed",
         "session_restart_and_force_stop_recovery": "passed",

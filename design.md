@@ -28,6 +28,9 @@ while progressing through the remaining M2 behavior work.
 - Keep large reading/editing surfaces opaque; translucent system chrome is optional.
 - Avoid onboarding walls, permanent AI chat panels, decorative cards, and dashboards.
 - Scratch buffers get useful generated labels, not mandatory naming dialogs.
+- File → Save As / Shift+Cmd+S chooses a new destination with the current filename
+  and folder prefilled. Native replacement confirmation applies; only a successful
+  write changes the tab's file association.
 
 ## Identity
 
@@ -47,6 +50,8 @@ while progressing through the remaining M2 behavior work.
 - Never require a mouse. Respect terminal capabilities and resize events.
 - Conventional insertion mode, arrows, Ctrl shortcuts; modal Vim behavior is not MVP.
 - Render only the viewport, accounting for wide graphemes, tabs, and horizontal scroll.
+- F4 opens Save As for scratches or files. Existing destinations require a second
+  Enter; Esc cancels. Editing the filename resets replacement confirmation.
 
 ## Editing and AI
 

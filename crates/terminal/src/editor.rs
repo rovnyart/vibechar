@@ -15,6 +15,7 @@ pub struct Editor {
     pub message: String,
     pub recovery_status: &'static str,
     pub save_prompt: Option<String>,
+    overwrite_pending: Option<PathBuf>,
     close_pending: bool,
     private_quit_pending: bool,
 }
@@ -34,6 +35,7 @@ impl Editor {
             message: String::new(),
             recovery_status: "Saving locally…",
             save_prompt: None,
+            overwrite_pending: None,
             close_pending: false,
             private_quit_pending: false,
         }
@@ -43,6 +45,7 @@ impl Editor {
         self.cancel_private_quit();
         if let Some(prompt) = &mut self.save_prompt {
             if !text.contains(['\n', '\r', '\0']) {
+                self.overwrite_pending = None;
                 prompt.push_str(text);
             }
             return;
@@ -89,6 +92,7 @@ impl Editor {
                 self.insert(&ch.to_string())
             }
             KeyCode::Enter => self.insert(self.document().newline()),
+            KeyCode::F(4) => self.save_as(),
             KeyCode::F(6) => self.switch_buffer(if key.modifiers.contains(KeyModifiers::SHIFT) {
                 -1
             } else {
@@ -318,14 +322,24 @@ impl Editor {
 
     fn save(&mut self) {
         if self.session.active().is_private() {
-            self.save_prompt = Some(String::new());
+            self.save_as();
             return;
         }
         let Some(path) = self.session.active().path.clone() else {
-            self.save_prompt = Some(String::new());
+            self.save_as();
             return;
         };
         self.save_to(path);
+    }
+
+    fn save_as(&mut self) {
+        self.save_prompt = Some(String::new());
+        self.overwrite_pending = None;
+        self.message.clear();
+    }
+
+    pub fn confirming_overwrite(&self) -> bool {
+        self.overwrite_pending.is_some()
     }
 
     fn save_to(&mut self, path: PathBuf) {
@@ -343,25 +357,33 @@ impl Editor {
             || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'))
         {
             self.save_prompt = None;
+            self.overwrite_pending = None;
             return;
         }
         if key.code == KeyCode::Enter {
-            let Some(value) = self.save_prompt.take() else {
+            let Some(value) = self.save_prompt.clone() else {
                 return;
             };
             if !value.is_empty() {
                 let target = match std::path::absolute(value) {
                     Ok(path) => path,
                     Err(error) => {
+                        self.save_prompt = None;
+                        self.overwrite_pending = None;
                         self.message = format!("Save failed: {error}");
                         return;
                     }
                 };
-                if target.exists() {
-                    self.message = "Choose a new filename; replacing an existing file needs a later save-as dialog".into();
+                if target.exists() && self.overwrite_pending.as_ref() != Some(&target) {
+                    self.overwrite_pending = Some(target);
                     return;
                 }
+                self.save_prompt = None;
+                self.overwrite_pending = None;
                 self.save_to(target);
+            } else {
+                self.save_prompt = None;
+                self.overwrite_pending = None;
             }
             return;
         }
@@ -370,6 +392,7 @@ impl Editor {
         };
         match key.code {
             KeyCode::Backspace => {
+                self.overwrite_pending = None;
                 if let Some((offset, _)) = value.grapheme_indices(true).next_back() {
                     value.truncate(offset);
                 }
@@ -379,6 +402,7 @@ impl Editor {
                     KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
                 ) =>
             {
+                self.overwrite_pending = None;
                 value.push(ch)
             }
             _ => {}
