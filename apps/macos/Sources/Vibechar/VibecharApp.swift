@@ -38,6 +38,7 @@ struct VibecharApp {
             AppDelegate.closeSmokeTest()
             AppDelegate.saveAsSmokeTest()
             AppDelegate.syntaxSmokeTest()
+            AppDelegate.quietSelectionSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -364,8 +365,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
-        if !textView.isPerformingEdit { document.breakUndoGroup() }
-        scheduleSessionSave()
+        if !textView.isPerformingEdit {
+            document.breakUndoGroup()
+            scheduleSessionSave(quiet: true)
+        }
     }
 
     private func scheduleSyntax() {
@@ -694,15 +697,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    private func scheduleSessionSave() {
+    private func scheduleSessionSave(quiet: Bool = false) {
         guard !closingWindow, recovery != nil else { return }
+        // Capture the latest caret when queued work runs; navigation must not
+        // flash the text-save status or postpone an already pending text write.
+        if quiet && (session.isPrivate || pendingSave != nil || session.selection == textView.selectedRange()) { return }
         saveGeneration &+= 1
         let generation = saveGeneration
         pendingSave?.cancel()
         // Preserve a visible failure until a checkpoint has actually succeeded.
-        if !footer.failed { footer.showStatus("Saving locally…") }
+        if !quiet && !footer.failed { footer.showStatus("Saving locally…") }
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.saveGeneration == generation, let recovery = self.recovery else { return }
+            self.pendingSave = nil
             self.session.rememberSelection(self.textView.selectedRange())
             recovery.save(self.session.checkpoint()) { [weak self] saved in
                 guard let self, self.saveGeneration == generation else { return }
@@ -728,6 +735,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func flushBeforeExit(_ checkpoint: RustCheckpoint, closingLastTab: Bool = false) -> Bool {
         pendingSave?.cancel()
+        pendingSave = nil
         saveGeneration &+= 1
         if let recovery, recovery.flush(checkpoint) { return true }
         footer.showStatus("Couldn't save tabs · Use ⌘S to keep your text", failed: true)
@@ -743,6 +751,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "vibechar", .applicationVersion: "0.1.0 · Preview"])
+    }
+
+    static func quietSelectionSmokeTest() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-selection-\(UUID().uuidString)", isDirectory: true)
+        let app = AppDelegate(clipboard: .withUniqueName())
+        app.recovery = try! SessionRecovery(directory: root)
+        app.makeWindow(restoreFrame: false)
+        defer {
+            app.pendingSave?.cancel(); app.saveGeneration &+= 1
+            app.syntaxWork?.cancel(); app.syntaxTimer?.invalidate()
+            app.window.delegate = nil; app.window.close(); app.recovery = nil
+            app.clipboard.clearContents(); try! FileManager.default.removeItem(at: root)
+        }
+        func wait(_ condition: () -> Bool) {
+            let deadline = Date(timeIntervalSinceNow: 5)
+            while !condition() {
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+                precondition(Date() < deadline, "Selection recovery must finish")
+            }
+        }
+        app.showActiveBuffer()
+        app.textView.insertText("hello 👩‍💻", replacementRange: NSRange(location: NSNotFound, length: 0))
+        wait { app.pendingSave == nil && app.footer.status.stringValue == "Saved locally" }
+        let revision = app.document.revision
+        for range in [NSRange(location: 0, length: 0), NSRange(location: 1, length: 3), NSRange(location: 0, length: 5)] {
+            app.textView.setSelectedRange(range)
+            precondition(app.footer.status.stringValue == "Saved locally", "Selection must not show Saving locally")
+        }
+        let restored = RustSession()
+        wait { (try? restored.restore(from: app.recovery!.fileURL)) == true && restored.selection == NSRange(location: 0, length: 5) }
+        precondition(app.document.revision == revision)
+        let generation = app.saveGeneration
+        app.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification))
+        precondition(app.saveGeneration == generation, "Unchanged selection must not schedule a write")
+
+        app.textView.insertText("world", replacementRange: NSRange(location: NSNotFound, length: 0))
+        precondition(app.footer.status.stringValue == "Saving locally…")
+        let pending = app.pendingSave
+        let editGeneration = app.saveGeneration
+        for index in 0..<4 {
+            app.textView.setSelectedRange(NSRange(location: index, length: 1))
+            precondition(app.pendingSave === pending && app.saveGeneration == editGeneration, "Navigation must not postpone the text write")
+        }
+        wait { app.pendingSave == nil && app.footer.status.stringValue == "Saved locally" }
+        precondition(try! restored.restore(from: app.recovery!.fileURL))
+        precondition(RustDocument(session: restored).text == "world 👩‍💻")
+        precondition(restored.selection == NSRange(location: 3, length: 1))
+
+        // Quiet saves still report real failures, and clear them only after success.
+        let file = app.recovery!.fileURL
+        try! FileManager.default.removeItem(at: file)
+        try! FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+        app.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        wait { app.footer.failed }
+        precondition(app.footer.status.stringValue.contains("Couldn't save tabs"))
+        try! FileManager.default.removeItem(at: file)
+        app.textView.setSelectedRange(NSRange(location: 2, length: 0))
+        precondition(app.footer.failed, "Navigation must preserve an error until saving succeeds")
+        wait { !app.footer.failed && app.footer.status.stringValue == "Saved locally" }
+        app.newPrivateScratch()
+        app.textView.insertText("PRIVATE_SELECTION_FIXTURE", replacementRange: NSRange(location: NSNotFound, length: 0))
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.65))
+        let privateGeneration = app.saveGeneration
+        app.textView.setSelectedRange(NSRange(location: 0, length: 7))
+        precondition(app.saveGeneration == privateGeneration)
+        precondition(!String(decoding: try! Data(contentsOf: file), as: UTF8.self).contains("PRIVATE_SELECTION_FIXTURE"))
+        print("Quiet Mac selection smoke passed: caret/selection, no-op, pending text deadline, restart, failure/recovery, private exclusion")
     }
 
     static func inputSmokeTest() {

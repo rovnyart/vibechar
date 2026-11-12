@@ -482,6 +482,26 @@ EOF, ignored clicks, and typing after a click. No user's terminal, clipboard,
 recovery data or files were opened. Physical trackpad/emulator acceptance remains
 for hands-on feedback; the binary and bundled helper have both been rebuilt.
 
+## Quiet native selection recovery — 2026-11-12
+
+Mac selection notifications previously used the ordinary save scheduler, flashing
+Saving locally on clicks/selection and repeatedly postponing the debounce. They
+now use a quiet path: queued writes capture the latest caret without being
+rescheduled by navigation. Unchanged ranges and private selection changes enqueue
+nothing. Text mutations still show saving, and actual failures stay visible until
+a successful write. Shared text/history/recovery remain in Rust; this fixes the
+AppKit event/status adapter rather than introducing another document engine.
+
+`scripts/build-mac.sh` passed all native checks including a new real NSTextView /
+isolated recovery smoke: cursor and range changes keep Saved locally, ordinary
+selection restores from disk, duplicate notifications enqueue nothing, and clicks
+do not replace an already queued text-write work item. A blocked session.json path
+proves quiet-save failures still surface and remain until a successful retry.
+Private range changes do not schedule recovery or leak the synthetic fixture.
+The initial test read the file before the async write finished; its wait now
+checks persisted selection instead of the in-memory capture. No user window,
+clipboard, recovery or source file was used. The native app was rebuilt/signed.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS

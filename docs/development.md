@@ -104,6 +104,13 @@ and waits for the final save. Explicitly closing an edited tab asks before remov
 it from the saved session. If persisting the last tab's removal fails, Keep Editing
 leaves the original tab intact; Close Anyway can leave an older session on disk.
 
+Mac cursor/selection changes checkpoint quietly, without changing the text-save
+status or postponing a queued text write. Repeated selection notifications with
+the same range schedule nothing; private selection changes schedule no recovery.
+Actual write failures remain visible until a checkpoint succeeds. Shared Rust
+owns text/history/checkpoint filtering; frontend event handlers own scheduling
+and presentation of the local-save status.
+
 The Mac interface follows Pocket: traffic lights, compact tabs, new-tab button,
 and `V_` share a 54 pt header. When tabs overflow, the chevron opens all tabs; the
 active tab stays visible. Long labels truncate with full names available in native
