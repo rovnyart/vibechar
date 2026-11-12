@@ -16,7 +16,7 @@ impl Input {
             self.cursor..self.cursor
         }
     }
-    fn insert(&mut self, text: &str, max: usize) -> bool {
+    pub(super) fn insert(&mut self, text: &str, max: usize) -> bool {
         let range = self.range();
         if self.text.len() - range.len() + text.len() > max {
             return false;
@@ -38,7 +38,7 @@ impl Input {
             .next()
             .map_or(self.cursor, |s| self.cursor + s.len())
     }
-    fn key(&mut self, key: KeyCode) {
+    pub(super) fn key(&mut self, key: KeyCode) {
         match key {
             KeyCode::Home => {
                 self.cursor = 0;

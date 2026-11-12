@@ -43,6 +43,17 @@ int32_t vc_search_apply(const VcSearch *search, VcDocument *document, uint64_t s
                         size_t index, size_t *utf16_start, size_t *utf16_length);
 
 typedef struct VcSession VcSession;
+// Local text tools: commands/queries contain no source text and are never persisted.
+typedef struct VcTool VcTool;
+size_t vc_tool_choices(const uint8_t *query, size_t length, uint8_t *output, size_t capacity);
+// Capture the immutable UTF-16 target, then prepare on a worker. Free to cancel.
+VcTool *vc_tool_start(const VcDocument *document, size_t start, size_t length, uint32_t command);
+void vc_tool_free(VcTool *tool);
+// 0 pending, 1 ready, -1 error. Thread-confined, nonblocking.
+int32_t vc_tool_poll(VcTool *tool);
+size_t vc_tool_error(const VcTool *tool, uint8_t *output, size_t capacity);
+// 1 changed, 2 no-op, 0 stale/invalid. Output selection is UTF-16.
+int32_t vc_tool_apply(VcTool *tool, VcDocument *document, size_t *start, size_t *length);
 typedef struct VcSyntaxFrame VcSyntaxFrame;
 void vc_session_syntax_submit(VcSession *session);
 bool vc_session_syntax_busy(const VcSession *session);

@@ -40,6 +40,11 @@ while progressing through the remaining M2 behavior work.
   tooltip explains the local signal. Click or Control+Cmd+L opens a compact search
   with at most seven suggestions, never an alphabetic wall. Return pins, Escape
   cancels, Auto resets. Preserve text, selection and Undo throughout.
+- Cmd+K opens a small Pocket Text Tools popover with the orange `V_` signature,
+  explicit Selection/Whole tab scope, one search field and at most five commands.
+  Rows pair a clear action with a short semantic hint. Arrows/Enter or a click
+  applies; Escape dismisses and returns focus to the text. Keep this transient,
+  with no recent-query history, permanent sidebar or second confirmation step.
 - Syntax colors belong to Pocket: muted rose keywords, sage strings, ochre
   constants, teal keys and soft purple types. Keep separate light/dark palettes
   and reserve the warm orange chrome accent for actions and the `V_` mark.
@@ -79,6 +84,9 @@ while progressing through the remaining M2 behavior work.
   F3 / Shift+F3 navigates, Alt+C/R toggles case/regex. F5 previews a batch; Enter
   applies and Escape goes back. Fields accept cursor editing and paste; query
   input never edits the document. Closing the panel clears its in-memory query.
+- Ctrl+K opens the same Text Tools catalog in a compact centered panel. Show target,
+  command descriptions and keyboard hints. Keep source selection untouched until
+  application; a tool error stays in the panel, and one Undo reverses a change.
 
 ## Editing and AI
 

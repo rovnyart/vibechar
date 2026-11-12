@@ -167,6 +167,9 @@ impl Editor {
     }
 
     pub fn mouse(&mut self, event: MouseEvent) {
+        if self.tools.is_some() {
+            return;
+        }
         if self.find_mouse(event) {
             return;
         }

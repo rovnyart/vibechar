@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Layout},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -240,7 +240,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     let prompt = editor.save_prompt.as_ref().map_or_else(
         || {
             if editor.message.is_empty() {
-                " ^A all ^C copy ^X cut ^V paste · ^N new ^S save F2 lang F6 next ^G agent ^Q quit"
+                " ^K tools ^F find ^R replace · ^C copy ^V paste · ^S save F2 lang F6 next ^G agent ^Q quit"
                     .into()
             } else {
                 format!(" {}", editor.message)
@@ -329,6 +329,94 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         frame.set_cursor_position((
             body.x + (column - editor.left) as u16,
             body.y + (line - editor.top) as u16,
+        ));
+    }
+    if let Some(palette) = &editor.tools {
+        draw_tools(frame, palette, editor.light_syntax);
+    }
+}
+
+fn draw_tools(frame: &mut Frame, palette: &crate::editor::tools::Palette, light: bool) {
+    let screen = frame.area();
+    let width = screen.width.min(72);
+    let height = screen.height.min(19);
+    let area = ratatui::layout::Rect::new(
+        screen.x + (screen.width - width) / 2,
+        screen.y + (screen.height - height) / 2,
+        width,
+        height,
+    );
+    let base = Style::default()
+        .fg(if light {
+            Color::Rgb(40, 43, 41)
+        } else {
+            Color::Rgb(227, 229, 223)
+        })
+        .bg(if light {
+            Color::Rgb(249, 247, 240)
+        } else {
+            Color::Rgb(31, 34, 31)
+        });
+    let accent = Style::default().fg(Color::Rgb(235, 132, 58));
+    frame.render_widget(Clear, area);
+    let border = Block::default()
+        .title(" V_ Text tools ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .style(base);
+    let inner = border.inner(area);
+    frame.render_widget(border, area);
+    let mut lines = vec![
+        Line::styled(format!(" {}", palette.scope), accent),
+        Line::raw(format!(" > {}", palette.input.display())),
+        Line::raw(""),
+    ];
+    if palette.choices.is_empty() {
+        lines.push(Line::raw(
+            " No tools found. Try json, sort, dedupe or trim.",
+        ));
+    }
+    for (index, command) in palette.choices.iter().enumerate() {
+        lines.push(Line::styled(
+            format!(
+                " {} {}",
+                if index == palette.selected {
+                    "›"
+                } else {
+                    " "
+                },
+                command.title
+            ),
+            if index == palette.selected {
+                selection_style(light)
+            } else {
+                base
+            },
+        ));
+        lines.push(Line::styled(
+            format!("   {}", command.detail),
+            Style::default().fg(if light { Color::DarkGray } else { Color::Gray }),
+        ));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(
+        format!(
+            " {}",
+            if palette.job.is_some() {
+                "Working locally…"
+            } else if !palette.notice.is_empty() {
+                &palette.notice
+            } else {
+                "↑↓ choose · Enter apply · Esc cancel · one Undo"
+            }
+        ),
+        accent,
+    ));
+    frame.render_widget(Paragraph::new(lines), inner);
+    if inner.width > 3 && inner.height > 1 {
+        frame.set_cursor_position((
+            inner.x + 3 + palette.input.column().min(usize::from(inner.width - 4)) as u16,
+            inner.y + 1,
         ));
     }
 }

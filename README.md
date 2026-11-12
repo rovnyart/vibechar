@@ -80,6 +80,14 @@ use **Ctrl+F / Ctrl+R**, **Tab** between fields, **F3 / Shift+F3** for navigatio
 one Undo, and stale previews cannot overwrite subsequent edits. Queries/previews
 stay in memory, including for private tabs. See the [find limits](docs/development.md#find-and-replace).
 
+**Cmd+K** on Mac / **Ctrl+K** in the terminal opens a small searchable Text Tools
+palette: format/minify JSON, sort lines, remove duplicate lines and trim trailing
+whitespace. The visible target is the selection, or the whole tab when nothing is
+selected. Arrows choose, Enter applies, Escape cancels; every change is one Undo.
+Commands run locally on a Rust worker, including in private tabs. JSON retains
+number precision, key order, duplicate keys and string escapes. See the
+[tool semantics and limits](docs/development.md#local-text-tools).
+
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar
 creates a private tab and replaces the clipboard with an instruction for your

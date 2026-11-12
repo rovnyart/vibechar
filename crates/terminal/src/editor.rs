@@ -14,6 +14,8 @@ use crate::files;
 pub(crate) mod find;
 #[path = "selection.rs"]
 mod selection;
+#[path = "tools.rs"]
+pub(crate) mod tools;
 
 pub struct Editor {
     pub session: Session,
@@ -29,6 +31,7 @@ pub struct Editor {
     pub syntax: Option<std::sync::Arc<vibechar_core::syntax::Frame>>,
     pub light_syntax: bool,
     pub find: Option<find::Find>,
+    pub tools: Option<tools::Palette>,
     viewport: Rect,
     reveal_cursor: bool,
     language_choice: usize,
@@ -58,6 +61,7 @@ impl Editor {
             syntax: None,
             light_syntax: std::env::var("VIBECHAR_COLOR_SCHEME").is_ok_and(|s| s == "light"),
             find: None,
+            tools: None,
             viewport: Rect::default(),
             reveal_cursor: true,
             language_choice: 0,
@@ -76,6 +80,9 @@ impl Editor {
 
     fn insert_with_kind(&mut self, text: &str, kind: EditKind) {
         self.cancel_private_quit();
+        if self.tools_insert(text) {
+            return;
+        }
         if self.find_insert(text) {
             return;
         }
@@ -139,6 +146,9 @@ impl Editor {
             key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL);
         if !quitting {
             self.cancel_private_quit();
+        }
+        if self.handle_tools_key(key) {
+            return false;
         }
         if self.handle_find_key(key) {
             return false;
@@ -516,6 +526,7 @@ impl Editor {
 
     fn restore_cursor(&mut self) {
         self.find = None;
+        self.tools = None;
         self.restore_selection();
         self.top = 0;
         self.left = 0;

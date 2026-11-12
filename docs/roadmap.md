@@ -174,7 +174,10 @@ into a child process. Implement the same operation model in Mac and terminal.
 - [x] Shared local literal/regex find and replace, case matching, highlighted hits,
   next/previous navigation, per-match replacement and a batch preview in both clients.
 - [ ] Select all matches for editing and basic multicursor edits.
-- [ ] Local transforms and a keyboard command palette in both clients.
+- [x] Local transforms and a keyboard command palette in both clients: JSON
+  format/minify, sort lines, remove duplicate lines and trim trailing whitespace.
+  Selection/whole-tab scope, background execution and one Undo share the Rust core.
+- [ ] Extend local tools with case conversion and URL encoding/decoding.
 - [x] Shared atomic batch edits as one undo transaction, first used by Replace All.
   Future transforms and multicursor commands can reuse this operation.
 - [ ] Large document mode with explicit budgets for parsing, rendering, and history.

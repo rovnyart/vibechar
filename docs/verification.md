@@ -11,9 +11,8 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 49 Rust tests: 7 document/history/Unicode, 7 grouped-history, 3 session/buffer behavior, 1 bounded
-  Unicode scratch-label test, 7 core recovery, 4 Secret Drop transport/revocation/save,
-  6 C bridge, and 14 terminal model/layout/recovery/output-masking tests.
+- 84 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+  syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
@@ -24,7 +23,8 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Fourteen real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
+- Thirty real PTY scenarios across the baseline, selection, find and local-tool suites,
+  including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
   saved buffers with restart/cursor restoration; background checkpoint + forced
@@ -594,6 +594,41 @@ query history. Removed the QA bundle, registration, synthetic recovery/preferenc
 paste automation restored clipboard contents. No user editor/files/recovery were
 opened. Physical terminal-emulator and Linux acceptance remain open.
 
+## Local text tools increment — 2026-11-12
+
+The complete `scripts/check.sh` passed: formatting, Clippy with warnings as errors,
+84 Rust tests, release builds, 30 PTY scenarios plus the separate Secret Drop
+PTY/helper scenario, and the rebuilt native app's smoke suite. Six new core tests
+exercise token-preserving JSON (large integers/exponents, duplicate keys, strings,
+empty/nested structures), validity/idempotence/output bounds, line endings, exact
+selection, one-step Undo/clean state, no-ops, stale/wrong-document plans, query
+aliases/input bounds and private grant preservation/revocation. One C bridge test
+covers null/overflow/split-surrogate rejection and a UTF-16 selected transaction.
+
+`scripts/test-tools.py` adds four real release PTY scenarios: exact JSON pretty/
+minify bytes, Unicode/CRLF selection with untouched neighbors, sort/dedupe/trim,
+Undo/Redo, no-op Undo preservation, cancellation/quiet recovery, invalid JSON and
+retry, private recovery exclusion and no persisted palette-query marker. Native
+smoke covers the same shared commands through the Swift bridge, selection/Undo,
+errors/staleness/private scope and actual light/dark view geometry. Exported real
+views live under ignored `dist/tools-ui/text-tools-{light,dark}.png`.
+
+An isolated `dev.vibechar.tools-check` app verified Cmd+K, initial whole-tab scope,
+Enter formatting without changing large numbers/duplicate keys, one Cmd+Z back to
+the source, query search by `dedupe`, query-only Undo, Escape/focus return, selected
+scope, invalid JSON with unchanged source and retry, clicking Remove duplicate
+lines, arrow navigation and Enter sorting. Light/dark appearances were inspected.
+The selected row initially drew its description above its title; correcting the
+flipped coordinate system was rebuilt/smoke-tested and confirmed live. Restart
+restored transformed text with no palette/query history. The QA process was quit;
+its bundle, registration, synthetic recovery and preferences were removed.
+
+The tool target is limited to 1 MiB, formatted output to 2 MiB. Computation runs on
+a bounded worker and applies only to the captured document/revision; cancellation
+discards its result. Named reversible tools apply directly on Enter. This is not
+the future AI/recipe preview feature. No network or user credentials were used.
+Terminal-emulator/Linux qualification and general large-document budgets remain open.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS
@@ -633,6 +668,7 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 Native startup and Mac bridge/presentation costs across representative file sizes
 still need measurement. The milestone's baseline checkbox remains open until that
 evidence is recorded. M2 recovery is partial: retention and broader durability
-qualification remain open. M3 smart syntax and find/replace are implemented; transforms,
-multicursor editing and complete large-document mode remain open. M4/M5 AI is not
+qualification remain open. M3 smart syntax, find/replace and five local tools with
+a shared command palette are implemented; additional transforms, multicursor
+editing and complete large-document mode remain open. M4/M5 AI is not
 implemented. The prototype should not hold the only copy of important text.

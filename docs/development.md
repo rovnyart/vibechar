@@ -261,6 +261,44 @@ and its source/selection stays excluded from recovery. Ordinary match selection
 checkpoints quietly, without flashing Saving locally. Dependency notices are
 bundled alongside the existing syntax notices.
 
+## Local text tools
+
+Open **Edit → Text Tools… / Cmd+K** on Mac or **Ctrl+K** in the terminal.
+Search by title or aliases (`json`, `pretty`, `compact`, `sort`, `dedupe`, `trim`).
+At most five commands are shown. Up/Down chooses, Enter applies, Escape cancels;
+Mac rows are clickable. The target is the exact selection, otherwise the whole tab,
+and is stated above the commands. A partial-line selection is not expanded.
+Input stays in the palette while it is open; terminal mouse events cannot edit
+the document behind it. An error leaves the original untouched and allows retry.
+
+| Tool | Behavior |
+| --- | --- |
+| Format JSON | Two-space indentation, document newline convention |
+| Minify JSON | Remove JSON whitespace outside strings |
+| Sort lines | Ascending, case-sensitive Unicode order |
+| Remove duplicate lines | Exact matches, retain first occurrence order |
+| Trim trailing whitespace | Remove spaces/tabs at line ends; preserve indentation |
+
+JSON is validated without serializing through a numeric/value representation:
+original number lexemes (including large integers/exponents), key order, duplicate
+keys and string escapes survive. Invalid JSON shows only line/column metadata,
+never an excerpt. Existing final newlines are retained. Line tools retain the
+original line-ending sequence for retained positions and the final-newline state;
+sorting compares line bodies. They recognize LF and CRLF, not bare CR separators.
+
+Each explicit command snapshots its target and prepares on a Rust worker. The
+target may contain up to **1 MiB UTF-8**; formatted output is bounded at **2 MiB**.
+Select a smaller range in a large document. A ready plan applies only to the same
+document/revision, through one shared Undo transaction. A no-op creates no history,
+dirty state, recovery-write flash or Secret Drop revocation. A real edit revokes
+access like typing. Closing the palette cancels application without blocking the
+UI; a bounded worker may finish its discarded computation in the background.
+
+Tools are entirely local in ordinary and private tabs. Queries, worker plans and
+palette state are not stored in recovery or recent searches. No network/key is
+needed. These named reversible tools apply on Enter; AI/recipe proposals remain
+separate future features with previews.
+
 ## Private scratches
 
 Use File → New Private Scratch / Shift+Cmd+N on Mac, or Ctrl+P in the terminal.

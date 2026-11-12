@@ -5,6 +5,7 @@ pub mod handoff;
 pub mod search;
 pub mod session;
 pub mod syntax;
+pub mod tools;
 
 #[cfg(test)]
 mod history_tests;

@@ -13,6 +13,128 @@ pub struct VcSyntaxFrame(std::sync::Arc<vibechar_core::syntax::Frame>);
 pub struct VcSearch(vibechar_core::search::Engine);
 pub struct VcSearchFrame(std::sync::Arc<vibechar_core::search::Frame>);
 
+pub struct VcTool {
+    job: Option<vibechar_core::tools::Job>,
+    error: Option<String>,
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_tool_choices(
+    query: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        if length > 256 {
+            return 0;
+        }
+        let Some(query) = input(query, length) else {
+            return 0;
+        };
+        let json = serde_json::to_string(&vibechar_core::tools::choices(query)).unwrap_or_default();
+        copy_metadata(&json, output, capacity)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_tool_start(
+    document: *const VcDocument,
+    start: usize,
+    length: usize,
+    command: u32,
+) -> *mut VcTool {
+    guard(|| {
+        let Some(doc) = document.as_ref() else {
+            return ptr::null_mut();
+        };
+        let Some(end) = start.checked_add(length) else {
+            return ptr::null_mut();
+        };
+        let (Ok(start), Ok(end)) = (doc.char_from_utf16(start), doc.char_from_utf16(end)) else {
+            return ptr::null_mut();
+        };
+        let (job, error) = match vibechar_core::tools::Job::start(doc, start..end, command) {
+            Ok(job) => (Some(job), None),
+            Err(error) => (None, Some(error)),
+        };
+        Box::into_raw(Box::new(VcTool { job, error }))
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_tool_free(tool: *mut VcTool) {
+    if !tool.is_null() {
+        guard(|| drop(Box::from_raw(tool)));
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_tool_poll(tool: *mut VcTool) -> i32 {
+    guard(|| {
+        let Some(tool) = tool.as_mut() else {
+            return -1;
+        };
+        if tool.error.is_some() {
+            return -1;
+        }
+        match tool.job.as_mut().and_then(|job| job.poll()) {
+            None => 0,
+            Some(Ok(_)) => 1,
+            Some(Err(error)) => {
+                tool.error = Some(error.clone());
+                -1
+            }
+        }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_tool_error(
+    tool: *const VcTool,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        copy_metadata(
+            tool.as_ref().and_then(|t| t.error.as_deref()).unwrap_or(""),
+            output,
+            capacity,
+        )
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_tool_apply(
+    tool: *mut VcTool,
+    document: *mut VcDocument,
+    start: *mut usize,
+    length: *mut usize,
+) -> i32 {
+    guard(|| {
+        if start.is_null() || length.is_null() {
+            return 0;
+        }
+        let (Some(tool), Some(doc)) = (tool.as_mut(), document.as_mut()) else {
+            return 0;
+        };
+        let Some(Ok(plan)) = tool.job.as_mut().and_then(|job| job.poll()) else {
+            return 0;
+        };
+        let Ok((changed, range)) = plan.apply(doc) else {
+            tool.error = Some("Text changed · run the command again".into());
+            return 0;
+        };
+        let (Ok(from), Ok(to)) = (
+            doc.utf16_from_char(range.start),
+            doc.utf16_from_char(range.end),
+        ) else {
+            return 0;
+        };
+        *start = from;
+        *length = to - from;
+        if changed {
+            1
+        } else {
+            2
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn vc_search_new() -> *mut VcSearch {
     guard(|| {
@@ -786,6 +908,38 @@ pub unsafe extern "C" fn vc_session_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tools_validate_utf16_and_apply_one_revision_bound_transaction() {
+        unsafe {
+            assert!(vc_tool_start(ptr::null(), 0, 0, 1).is_null());
+            assert_eq!(vc_tool_poll(ptr::null_mut()), -1);
+            vc_tool_free(ptr::null_mut());
+            assert_eq!(vc_tool_choices(ptr::null(), 1, ptr::null_mut(), 0), 0);
+            let source = "👩‍💻\nb\na\ntail";
+            let doc = vc_document_new(source.as_ptr(), source.len());
+            assert!(vc_tool_start(doc, 1, 1, 3).is_null());
+            assert!(vc_tool_start(doc, usize::MAX, 2, 3).is_null());
+            let job = vc_tool_start(doc, 6, 3, 3);
+            assert!(!job.is_null());
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while vc_tool_poll(job) == 0 {
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            let (mut start, mut length) = (0, 0);
+            assert_eq!(vc_tool_apply(job, doc, &mut start, &mut length), 1);
+            assert_eq!((start, length), (6, 3));
+            assert_eq!((*doc).text(), "👩‍💻\na\nb\ntail");
+            assert_eq!(vc_tool_apply(job, doc, &mut start, &mut length), 0);
+            assert!(vc_tool_error(job, ptr::null_mut(), 0) > 0);
+            assert!(vc_document_undo(doc, &mut start));
+            assert_eq!((*doc).text(), source);
+            assert!(!vc_document_dirty(doc));
+            vc_tool_free(job);
+            vc_document_free(doc);
+        }
+    }
 
     #[test]
     fn grouped_edits_preserve_utf16_boundaries_and_explicit_breaks() {

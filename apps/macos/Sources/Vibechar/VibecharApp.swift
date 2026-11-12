@@ -40,6 +40,7 @@ struct VibecharApp {
             AppDelegate.syntaxSmokeTest()
             AppDelegate.quietSelectionSmokeTest()
             AppDelegate.findSmokeTest()
+            AppDelegate.toolsSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -99,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private let header = PocketHeader()
     private let footer = PocketFooter()
     private let findBar = FindBar()
+    private var toolPalette: ToolPalette?
     private lazy var findController: FindController = {
         let controller = FindController(bar: findBar,document: document,textView: textView)
         controller.didReplace = { [weak self] selection in
@@ -324,6 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(.separator())
+        addItem("Text Tools…",action:#selector(openTools),key:"k",to:edit)
         addItem("Find…",action:#selector(openFind),key:"f",to:edit)
         let replace = NSMenuItem(title:"Find and Replace…",action:#selector(openReplace),keyEquivalent:"f")
         replace.keyEquivalentModifierMask = [.command,.option]; replace.target=self; edit.addItem(replace)
@@ -390,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func textDidChange(_ notification: Notification) {
+        toolPalette?.close(); toolPalette=nil
         textView.needsDisplay = true
         refreshTitle()
         scheduleSessionSave()
@@ -435,8 +439,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         return busy
     }
     @objc private func syntaxViewportChanged() { paintSyntax(); findController.paint() }
-    @objc private func openFind() { findController.open(replacing:false) }
-    @objc private func openReplace() { findController.open(replacing:true) }
+    @objc private func openFind() { toolPalette?.close(); toolPalette=nil; findController.open(replacing:false) }
+    @objc private func openReplace() { toolPalette?.close(); toolPalette=nil; findController.open(replacing:true) }
+    @objc private func openTools() {
+        toolPalette?.close(); toolPalette=nil
+        languagePopover?.performClose(nil); languagePopover=nil
+        if findController.visible { findController.close() }
+        let selection=textView.selectedRange(); let selected=selection.length>0
+        let target=selected ? selection : NSRange(location:0,length:(textView.string as NSString).length)
+        let scope="\(selected ? "Selection" : "Whole tab") · \(session.isPrivate ? "private · " : "")local text tools"
+        let palette=ToolPalette(document:document,target:target,selectedText:selected,scope:scope,didDismiss:{ [weak self] in
+            self?.toolPalette=nil; self?.window.makeFirstResponder(self?.textView)
+        },didApply:{ [weak self] range,changed in
+            guard let self else { return }
+            self.toolPalette=nil
+            if changed {
+                self.footer.operationError=nil
+                self.textView.string=self.document.text; self.applyTypography()
+                self.textView.setSelectedRange(range); self.textView.scrollRangeToVisible(range)
+                self.refreshTitle(); self.scheduleSessionSave(); self.scheduleSyntax()
+            } else { self.footer.operationError="Already in shape · no changes" }
+            self.window.makeFirstResponder(self.textView)
+        })
+        toolPalette=palette; palette.open(relativeTo:header)
+    }
     @objc private func findNext() { if !findController.visible { openFind() } else { findController.move(1) } }
     @objc private func findPrevious() { if !findController.visible { openFind() } else { findController.move(-1) } }
     private func paintSyntax() {
@@ -460,6 +486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         }
     }
     @objc private func showLanguagePicker() {
+        toolPalette?.close(); toolPalette=nil
         document.breakUndoGroup()
         languagePopover?.performClose(nil)
         let popover = NSPopover(); popover.behavior = .transient; popover.animates = false
@@ -491,11 +518,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func undoEdit() {
-        if let field=window.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.undo(); return }
+        if let field=NSApp.keyWindow?.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.undo(); return }
         applyHistory(redo: false)
     }
     @objc private func redoEdit() {
-        if let field=window.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.redo(); return }
+        if let field=NSApp.keyWindow?.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.redo(); return }
         applyHistory(redo: true)
     }
 
@@ -595,6 +622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func showActiveBuffer() {
+        toolPalette?.close(); toolPalette=nil
         if findController.visible { findController.close() }
         footer.operationError = nil
         syntaxFrame = nil; syntaxSerial = 0
@@ -682,6 +710,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func performSave(alwaysChooseDestination: Bool,
                              chooseDestination: @MainActor (NSSavePanel) -> URL? = { $0.runModal() == .OK ? $0.url : nil }) throws {
+        toolPalette?.close(); toolPalette=nil
         document.breakUndoGroup()
         let wasPrivate = session.isPrivate
         var destination = alwaysChooseDestination || wasPrivate ? nil : fileURL
@@ -740,6 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         closeAllAgentAccess()
         syntaxWork?.cancel(); syntaxTimer?.invalidate()
         findController.close()
+        toolPalette?.close(); toolPalette=nil
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -864,6 +894,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.saveGeneration == privateGeneration)
         precondition(!String(decoding: try! Data(contentsOf: file), as: UTF8.self).contains("PRIVATE_SELECTION_FIXTURE"))
         print("Quiet Mac selection smoke passed: caret/selection, no-op, pending text deadline, restart, failure/recovery, private exclusion")
+    }
+
+    static func toolsSmokeTest() {
+        let app=AppDelegate(clipboard:NSPasteboard(name:NSPasteboard.Name("vibechar-tools-smoke-\(UUID().uuidString)")))
+        app.makeWindow(restoreFrame:false)
+        defer { app.toolPalette?.close(); app.syntaxWork?.cancel(); app.syntaxTimer?.invalidate(); app.window.delegate=nil; app.window.close(); app.clipboard.clearContents() }
+        precondition(app.document.replace(NSRange(location:0,length:0),with:"👩‍💻\nb\r\na\r\ntail"))
+        app.document.markSaved(); app.showActiveBuffer(); app.makeMenus()
+        var applied: (NSRange,Bool)?
+        func palette(_ target:NSRange, selected:Bool=true) -> ToolPalette {
+            applied=nil
+            let palette=ToolPalette(document:app.document,target:target,selectedText:selected,scope:"Selection · private · local text tools",didDismiss:{},didApply:{ applied=($0,$1) })
+            _=palette.view
+            return palette
+        }
+        func run(_ palette:ToolPalette,_ query:String) {
+            palette.search.stringValue=query; palette.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification)); palette.runSelected()
+            let deadline=Date(timeIntervalSinceNow:3)
+            while applied==nil { RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01)); palette.poll(); precondition(Date()<deadline,"Tool must finish") }
+        }
+        let target=NSRange(location:6,length:4)
+        let sort=palette(target)
+        let revision=app.document.revision
+        sort.search.stringValue="sort"; sort.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification))
+        precondition(app.document.revision==revision && !app.document.isDirty)
+        run(sort,"sort")
+        precondition(applied!.1 && applied!.0==target && app.document.text=="👩‍💻\na\r\nb\r\ntail")
+        app.applyHistory(redo:false); precondition(app.document.text=="👩‍💻\nb\r\na\r\ntail" && !app.document.isDirty)
+        run(palette(NSRange(location:0,length:(app.document.text as NSString).length),selected:false),"trim")
+        precondition(!applied!.1 && !app.document.isDirty)
+        let dismissed=palette(target)
+        dismissed.search.stringValue="unknown tool"; dismissed.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification)); dismissed.runSelected()
+        precondition(dismissed.choices.isEmpty && applied==nil)
+        dismissed.close(); precondition(dismissed.search.stringValue.isEmpty && !app.document.isDirty)
+        let output=ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map { URL(fileURLWithPath:$0,isDirectory:true) }
+        for (name,appearance) in [("light",NSAppearance.Name.aqua),("dark",.darkAqua)] {
+            let picker=palette(target); picker.view.appearance=NSAppearance(named:appearance)
+            for subview in picker.view.subviews { precondition(picker.view.bounds.contains(subview.frame)) }
+            if let output {
+                try! FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)
+                picker.view.effectiveAppearance.performAsCurrentDrawingAppearance {
+                    let bitmap=picker.view.bitmapImageRepForCachingDisplay(in:picker.view.bounds)!
+                    picker.view.cacheDisplay(in:picker.view.bounds,to:bitmap)
+                    try! bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("text-tools-\(name).png"))
+                }
+            }
+            picker.close()
+        }
+        app.newPrivateScratch()
+        precondition(app.document.replace(NSRange(location:0,length:0),with:"{\"n\":1e400,\"x\":[]}"))
+        app.textView.string=app.document.text
+        run(palette(NSRange(location:0,length:(app.document.text as NSString).length),selected:false),"format")
+        precondition(app.session.isPrivate && app.document.text.contains("  \"n\": 1e400,"))
+        let invalid=RustTool(app.document,range:NSRange(location:0,length:(app.document.text as NSString).length),command:999)!
+        precondition(invalid.poll() == -1 && !invalid.error.isEmpty)
+        let stale=RustTool(app.document,range:NSRange(location:0,length:(app.document.text as NSString).length),command:2)!
+        precondition(app.document.replace(NSRange(location:0,length:0),with:" "))
+        let deadline=Date(timeIntervalSinceNow:3)
+        while stale.poll()==0 { RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01)); precondition(Date()<deadline) }
+        precondition(stale.apply(app.document)==nil)
+        print("Text tools native smoke passed: command search, UTF-16 selection, exact scope, one Undo, no-op, cancel, private JSON, stale/error rejection, light/dark palette")
     }
 
     static func findSmokeTest() {
