@@ -166,9 +166,11 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     let lines: Vec<_> = (editor.top
         ..(editor.top + usize::from(body.height)).min(editor.document().line_count()))
         .map(|index| {
-            let text = editor.document().line(index);
-            let start = editor.document().line_start(index);
-            let end = start + text.chars().count();
+            let range = editor.document().line_range(index);
+            let (start, end) = (range.start, range.end);
+            let window = editor
+                .document()
+                .line_window(index, editor.left, usize::from(body.width));
             let hits = if multiple {
                 multi_ranges
                     .iter()
@@ -198,11 +200,15 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
             };
             let paint = syntax
                 .and_then(|frame| frame.lines.get(index))
-                .filter(|paint| paint.hash == vibechar_core::syntax::line_hash(&text));
-            styled_line(
-                &text,
-                editor.left,
-                usize::from(body.width),
+                .filter(|paint| {
+                    syntax.is_some_and(|frame| frame.revision == editor.document().revision())
+                        || range.len() <= 8192
+                            && paint.hash
+                                == vibechar_core::syntax::line_hash(&editor.document().line(index))
+                });
+            paint_line(
+                &window.text,
+                (editor.left, usize::from(body.width)),
                 paint.map(|p| p.as_ref()),
                 editor.light_syntax,
                 (
@@ -212,6 +218,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                             || multi_ranges.iter().any(|r| r.start <= end && r.end > end)),
                 ),
                 &hits,
+                (window.character, window.utf16, window.column),
             )
         })
         .collect();
@@ -482,16 +489,35 @@ fn styled_line(
     selected: (std::ops::Range<usize>, bool),
     finds: &[(std::ops::Range<usize>, bool)],
 ) -> Line<'static> {
+    paint_line(
+        text,
+        (left, width),
+        paint,
+        light,
+        selected,
+        finds,
+        (0, 0, 0),
+    )
+}
+
+fn paint_line(
+    text: &str,
+    viewport: (usize, usize),
+    paint: Option<&vibechar_core::syntax::LinePaint>,
+    light: bool,
+    selected: (std::ops::Range<usize>, bool),
+    finds: &[(std::ops::Range<usize>, bool)],
+    origin: (usize, usize, usize),
+) -> Line<'static> {
+    let (left, width) = viewport;
     let (selection, newline) = selected;
     let mut output: Vec<Span<'static>> = Vec::new();
     let mut run = String::new();
     let mut last_style = Style::default();
-    let mut character = 0;
+    let (mut character, mut offset, mut column) = origin;
     let mut find_index = 0;
-    let mut offset = 0;
     let mut span_index = 0;
     let spans = paint.map_or(&[][..], |p| p.spans.as_slice());
-    let mut column = 0;
     for grapheme in text.graphemes(true) {
         while span_index < spans.len()
             && spans[span_index].start + spans[span_index].length <= offset
@@ -636,6 +662,69 @@ fn visible_line(text: &str, left: usize, width: usize) -> String {
 mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn windowed_render_matches_full_lines_for_unicode_selections_and_find() {
+        let source = "a界\t👩‍💻e\u{301}🇦🇲 Z".repeat(600);
+        let document = vibechar_core::Document::new(&source);
+        let hits = [
+            (20..27, false),
+            (60..63, true),
+            (90..90, true),
+            (5000..5004, false),
+        ];
+        for light in [false, true] {
+            for left in [0, 1, 2, 3, 4, 20, 80, 4998, 5001, 8000] {
+                let window = document.line_window(0, left, 27);
+                let full = styled_line(&source, left, 27, None, light, (30..65, false), &hits);
+                let clipped = paint_line(
+                    &window.text,
+                    (left, 27),
+                    None,
+                    light,
+                    (30..65, false),
+                    &hits,
+                    (window.character, window.utf16, window.column),
+                );
+                assert_eq!(clipped, full, "left={left}, light={light}");
+            }
+        }
+    }
+
+    #[test]
+    fn windowed_syntax_keeps_utf16_colors_after_non_bmp_text() {
+        let source = format!(
+            "{{\"head\":\"{}👩‍💻e\u{301}界\",\t\"number\":42}}",
+            "x".repeat(1000)
+        );
+        let mut editor = Editor::new(&source, Some("synthetic.json".into()));
+        editor.session.submit_syntax();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            editor.pump_syntax();
+            if editor.syntax.as_ref().is_some_and(|f| f.complete) {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let paint = editor.syntax.as_ref().unwrap().lines.first().unwrap();
+        assert!(!paint.spans.is_empty());
+        for left in [999, 1007, 1010, 1015, 1020] {
+            let window = editor.document().line_window(0, left, 23);
+            let full = styled_line(&source, left, 23, Some(paint), false, (0..0, false), &[]);
+            let clipped = paint_line(
+                &window.text,
+                (left, 23),
+                Some(paint),
+                false,
+                (0..0, false),
+                &[],
+                (window.character, window.utf16, window.column),
+            );
+            assert_eq!(clipped, full, "left={left}");
+        }
+    }
 
     #[test]
     fn selected_cells_cover_clipped_wide_text_tabs_and_newlines_without_bleeding() {

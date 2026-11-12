@@ -190,8 +190,12 @@ into a child process. Implement the same operation model in Mac and terminal.
   Future transforms and multicursor commands can reuse this operation.
 - [ ] Large document mode with explicit budgets for parsing, rendering, and history.
   History retention now has a shared 32 MiB / 1,024-step budget with a newest-step
-  exception. Large/minified rendering, navigation, bridge-copy and peak-memory
-  qualification remain open; this does not complete large-document mode.
+  exception. Rope-local grapheme movement, bounded sparse cell geometry and TUI
+  viewport reads handle large logical lines without full copies/scans per key.
+  Both clients use this geometry for multicursors; Mac snapshots avoid a temporary
+  byte array. Native AppKit large-file layout, pathological Unicode/word selection,
+  peak-memory and cross-platform qualification remain open; this does not complete
+  large-document mode.
 
 Exit: representative JSON, logs, code, and prose are pleasant to manipulate offline;
 highlighting and commands do not block text input. Terminal styling and width

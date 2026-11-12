@@ -164,14 +164,14 @@ final class PocketTextView: NSTextView {
             let glyphs=layout.glyphRange(forBoundingRect:visibleRect,in:container)
             let visible=layout.characterRange(forGlyphRange:glyphs,actualGlyphRange:nil)
             PocketPalette.accent.setFill()
-            for caret in secondaryCarets where caret.location>=visible.location && caret.location<=NSMaxRange(visible) && caret.location<=(string as NSString).length {
+            for caret in secondaryCarets where caret.location>=visible.location && caret.location<=NSMaxRange(visible) && caret.location<=(textStorage?.length ?? 0) {
                 var rect=convert(window.convertFromScreen(firstRect(forCharacterRange:caret,actualRange:nil)),from:nil)
                 rect.size.width=1.5
                 rect=rect.intersection(visibleRect).intersection(dirtyRect)
                 if !rect.isEmpty {rect.fill()}
             }
         }
-        guard string.isEmpty, !hasMarkedText() else { return }
+        guard (textStorage?.length ?? 0)==0, !hasMarkedText() else { return }
         let x = textContainerInset.width + (textContainer?.lineFragmentPadding ?? 0)
         ("A little room for anything." as NSString).draw(at: NSPoint(x: x, y: 65), withAttributes: [
             .font: NSFont.systemFont(ofSize: 13), .foregroundColor: PocketPalette.secondary,

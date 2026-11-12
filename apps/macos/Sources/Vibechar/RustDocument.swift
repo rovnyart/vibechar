@@ -37,10 +37,12 @@ final class RustDocument {
     var revision: UInt64 { vc_document_revision(handle) }
 
     var text: String {
-        var bytes = [UInt8](repeating: 0, count: vc_document_length(handle))
-        let copied = bytes.withUnsafeMutableBufferPointer { vc_document_copy(handle, $0.baseAddress, $0.count) }
-        precondition(copied, "Document snapshot must match its measured size")
-        return String(decoding: bytes, as: UTF8.self)
+        let count = vc_document_length(handle)
+        return String(unsafeUninitializedCapacity: count) { buffer in
+            precondition(vc_document_copy(handle, buffer.baseAddress, buffer.count),
+                         "Document snapshot must match its measured size")
+            return count
+        }
     }
 
     func replace(_ range: NSRange, with text: String, kind: TextEditKind = .isolated) -> Bool {

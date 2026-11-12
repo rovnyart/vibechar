@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 108 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 116 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -23,7 +23,8 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Forty real PTY scenarios across the baseline, selection, find, tools, multicursor and history suites,
+- Forty-two real PTY scenarios across the baseline, selection, find, tools,
+  multicursor, history and large-text suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -803,6 +804,79 @@ Rope allocations, allocator overhead and UI copies are outside the history charg
 Large/minified viewport and navigation costs, native bridge copies, parsing limits
 under representative workloads and peak-memory qualification remain open. M3
 large-document mode and the M1/M6 performance gates are not complete.
+
+## Long-line navigation, viewport reads and Mac snapshots (2026-11-12)
+
+Left/Right/Backspace previously copied and segmented the whole logical line from
+its start. TUI drawing and column calculations made further full-line copies and
+passes. The shared core now walks Rope chunks near the caret, caches sparse
+scalar/UTF-16/cell checkpoints, and copies only whole graphemes intersecting the
+TUI viewport. Edits/history invalidate only affected geometry suffixes. Both
+clients' multicursors reuse this geometry rather than allocating every grapheme
+boundary. The cache holds at most eight lines × 4,096 points (1 MiB of point
+storage per document); stride coarsening keeps large lines within that budget.
+
+Six new core tests compare chunk navigation at every scalar with full Unicode
+segmentation across varied chunk seams, including flags, emoji, Indic and long
+combining sequences. They check geometry/UTF-16 windows against full-line oracles,
+cache invalidation through edits/batches/Undo/Redo, combining insertion at a cached
+boundary, prefix reuse and coarsening/LRU budgets. Cross-chunk context testing
+found an incorrect split inside an emoji sequence; boundary queries now replay
+contiguous context, growing on demand. Two TUI renderer tests compare clipped and
+full-line selection/Find output and actual syntax colors after non-BMP text.
+
+Two new release PTY scenarios exercise 1/10 MiB files with Unicode tails: composed
+and emoji deletion, grouped Undo/Redo, Shift selection replacement, preserved
+source bytes, cursor recovery/restart and Save. Mac snapshot copy-out now fills
+Swift String storage directly; its smoke case covers empty text, 1 MiB, embedded
+NUL, Unicode, CRLF, changed text and Undo. Native draw/selection metadata uses text
+storage length instead of bridging a full String for emptiness/length checks.
+
+`bash scripts/check.sh` passed: formatting, Clippy with warnings as errors,
+116 Rust tests, release builds, 42 real PTY scenarios plus the separate Secret
+Drop helper scenario, and every native Swift/Rust smoke check. The development
+Mac app was rebuilt and signed locally.
+
+The committed profilers use synthetic data and isolated recovery. The final TUI
+comparison ran the previous `b054947` development helper and the new release binary
+sequentially, with the same profiler and 30 samples per action. Each starts with a
+single valid ASCII JSON line, moves to its end, then repeats Left/Right/typing/
+Backspace. RSS is sampled after the final debounced checkpoint reaches Saved locally.
+On the named hardware above:
+
+| Workload / observation | Before | After |
+| --- | --- | --- |
+| 1 MiB Left, p50 / p95 | 39.910 / 41.233 ms | 0.302 / 0.489 ms |
+| 1 MiB typing, p50 / p95 | 32.878 / 35.153 ms | 0.309 / 0.497 ms |
+| 1 MiB Backspace, p50 / p95 | 40.052 / 40.823 ms | 0.313 / 0.492 ms |
+| 10 MiB first jump to end, single sample | 325.251 ms | 6.077 ms |
+| 10 MiB Left, p50 / p95 | 860.434 / 884.298 ms | 0.393 / 0.541 ms |
+| 10 MiB typing, p50 / p95 | 555.921 / 581.594 ms | 0.390 / 0.546 ms |
+| 10 MiB Backspace, p50 / p95 | 861.155 / 884.705 ms | 0.392 / 0.535 ms |
+| 1 MiB sampled RSS | 12,272 KiB | 8,656 KiB |
+| 10 MiB sampled RSS | 636,272 KiB | 28,736 KiB |
+
+Times include Python/PTY input, process work, output and screen reconstruction;
+they do not measure physical terminal-display latency. RSS observations include
+allocator/recovery behavior and are not peak memory or hard ceilings. Earlier
+samples without waiting for the final checkpoint observed 691,168 → 25,984 KiB
+for 10 MiB; the final comparison adds the same idle checkpoint gate to both sides.
+Single first-frame samples varied substantially (including an 847.526 ms baseline
+1 MiB launch); these runs do not establish startup percentiles or cold-launch wins.
+
+Core-only 30-sample previous/next pairs at the end of a 10 MiB ASCII line observed
+150.792 → 0.000458 ms p50 (151.651 → 0.000500 ms p95). These isolate the removed
+line scan and must not be presented as UI latency. Mac's synthetic snapshot-only
+30-sample 10 MiB + Unicode/NUL case observed p50 2.843 → 2.607 ms and p95 3.096 →
+2.658 ms, with sampled RSS 54,800 → 43,552 KiB. This measures String copy-out,
+not AppKit layout or input-to-display latency. Raw reports remain in ignored
+`dist/{navigation,text,snapshots}-{before,after}.json`. The temporary baseline
+helper was removed after the comparison; no user files or clipboard were used.
+
+Native AppKit large/minified layout, full snapshot replacement on history actions,
+pathological giant grapheme/context work, full-line word double-click, peak-memory
+and Linux/terminal-emulator qualification remain open. This increment does not
+close M3 large-document mode or establish a Sublime performance claim.
 
 ## Initial performance observations
 

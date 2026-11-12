@@ -356,7 +356,9 @@ impl Editor {
                     row.clamp(self.viewport.y, self.viewport.bottom() - 1) - self.viewport.y,
                 ))
             .min(self.document().line_count() - 1);
-            let max_left = display_width(&self.document().line(line))
+            let max_left = self
+                .document()
+                .display_column(self.document().line_range(line).end)
                 .saturating_sub(usize::from(self.viewport.width).saturating_sub(1));
             self.left = self.left.saturating_add(2).min(max_left);
         }

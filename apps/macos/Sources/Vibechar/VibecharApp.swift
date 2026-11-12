@@ -4,7 +4,12 @@ import AppKit
 struct VibecharApp {
     @MainActor
     static func main() {
+        if CommandLine.arguments.contains("--profile-snapshots") {
+            profileSnapshotCopies()
+            return
+        }
         if CommandLine.arguments.contains("--smoke-test") {
+            snapshotCopySmokeTest()
             let document = RustDocument("я🦀\0")
             precondition(!document.replace(NSRange(location: 2, length: 1), with: "x"))
             precondition(document.replace(NSRange(location: 1, length: 2), with: "👩‍💻"))
@@ -512,7 +517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         languagePopover?.performClose(nil); languagePopover=nil
         if findController.visible { findController.close() }
         let selection=textView.selectedRange(); let selected=selection.length>0
-        let target=selected ? selection : NSRange(location:0,length:(textView.string as NSString).length)
+        let target=selected ? selection : NSRange(location:0,length:textView.textStorage?.length ?? 0)
         let scope="\(selected ? "Selection" : "Whole tab") · \(session.isPrivate ? "private · " : "")local text tools"
         let palette=ToolPalette(document:document,target:target,selectedText:selected,scope:scope,didDismiss:{ [weak self] in
             self?.toolPalette=nil; self?.window.makeFirstResponder(self?.textView)

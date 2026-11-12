@@ -3,12 +3,8 @@ use crate::{
     search::{Engine, Query, MAX_QUERY, MAX_SOURCE},
     Document, EditKind, TextEdit,
 };
-use std::{
-    collections::{HashMap, VecDeque},
-    ops::Range,
-};
+use std::{collections::VecDeque, ops::Range};
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 pub const MAX_SELECTIONS: usize = 1_000;
 pub const MAX_BATCH_BYTES: usize = 8 * 1024 * 1024;
@@ -79,7 +75,6 @@ impl Multi {
         if primary >= ranges.len() {
             return self.fail("Invalid primary selection");
         }
-        let mut lines = Lines::new(document);
         for (index, range) in ranges.iter().enumerate() {
             if range.start > range.end
                 || range.end > document.len_chars()
@@ -87,7 +82,9 @@ impl Multi {
             {
                 return self.fail("Invalid or overlapping selections");
             }
-            if !lines.boundary(range.start)? || !lines.boundary(range.end)? {
+            if !document.is_grapheme_boundary(range.start)
+                || !document.is_grapheme_boundary(range.end)
+            {
                 return self.fail("Matches split a composed character · refine Find");
             }
         }
@@ -163,8 +160,9 @@ impl Multi {
             if range.is_empty() {
                 return self.fail("Select text or place the caret in a word");
             }
-            let mut map = Lines::new(document);
-            if !map.boundary(range.start)? || !map.boundary(range.end)? {
+            if !document.is_grapheme_boundary(range.start)
+                || !document.is_grapheme_boundary(range.end)
+            {
                 return self.fail("Select complete characters");
             }
             let needle = document
@@ -377,16 +375,15 @@ impl Multi {
         {
             return self.fail("Multicursor edit exceeds 8 MiB");
         }
-        let mut lines = Lines::new(document);
         let deleting = matches!(kind, EditKind::Backspace | EditKind::DeleteForward);
         let mut targets: Vec<(Range<usize>, bool)> = Vec::new();
         for (index, selection) in self.selections.iter().enumerate() {
             let mut range = selection.range();
             if deleting && range.is_empty() {
                 range = if kind == EditKind::Backspace {
-                    lines.previous(range.start)?..range.end
+                    document.previous_grapheme(range.start)..range.end
                 } else {
-                    range.start..lines.next(range.end)?
+                    range.start..document.next_grapheme(range.end)
                 };
             }
             if deleting {
@@ -517,7 +514,6 @@ impl Multi {
         if self.matching() {
             return self.enqueue(Pending::Move(direction, extend));
         }
-        let mut lines = Lines::new(document);
         let mut selections = self.selections.clone();
         for selection in &mut selections {
             let range = selection.range();
@@ -525,11 +521,17 @@ impl Multi {
             let target = match direction {
                 0 if !extend && !range.is_empty() => range.start,
                 1 if !extend && !range.is_empty() => range.end,
-                0 => lines.previous(head)?,
-                1 => lines.next(head)?,
-                2 | 3 => lines.vertical(head, if direction == 2 { -1 } else { 1 })?,
+                0 => document.previous_grapheme(head),
+                1 => document.next_grapheme(head),
+                2 | 3 => {
+                    let line = document
+                        .line_index(head)
+                        .saturating_add_signed(if direction == 2 { -1 } else { 1 })
+                        .min(document.line_count() - 1);
+                    document.position_at_column(line, document.display_column(head), false)
+                }
                 4 => document.line_start(document.line_index(head)),
-                5 => lines.line_end(head)?,
+                5 => document.line_range(document.line_index(head)).end,
                 6 => 0,
                 7 => document.len_chars(),
                 _ => return Err("Unsupported cursor movement".into()),
@@ -636,105 +638,6 @@ fn word_at(document: &Document, position: usize) -> Result<Range<usize>, String>
     } else {
         range
     })
-}
-
-struct Line {
-    points: Vec<(usize, usize)>,
-    end: usize,
-}
-struct Lines<'a> {
-    document: &'a Document,
-    cache: HashMap<usize, Line>,
-    bytes: usize,
-}
-impl<'a> Lines<'a> {
-    fn new(document: &'a Document) -> Self {
-        Self {
-            document,
-            cache: HashMap::new(),
-            bytes: 0,
-        }
-    }
-    fn line(&mut self, index: usize) -> Result<&Line, String> {
-        if !self.cache.contains_key(&index) {
-            let raw = self.document.text.line(index);
-            self.bytes += raw.len_bytes();
-            if self.bytes > MAX_BATCH_BYTES {
-                return Err("Cursor navigation exceeds 8 MiB · leave multicursor mode".into());
-            }
-            let raw = raw.to_string();
-            let mut position = self.document.line_start(index);
-            let mut column = 0;
-            let mut points = vec![(position, 0)];
-            let mut end = position;
-            for grapheme in raw.graphemes(true) {
-                let newline = grapheme.chars().any(|ch| {
-                    matches!(
-                        ch,
-                        '\r' | '\n' | '\u{b}' | '\u{c}' | '\u{85}' | '\u{2028}' | '\u{2029}'
-                    )
-                });
-                if !newline {
-                    column += if grapheme == "\t" {
-                        4 - column % 4
-                    } else {
-                        UnicodeWidthStr::width(grapheme)
-                    };
-                    end = position + grapheme.chars().count();
-                }
-                position += grapheme.chars().count();
-                points.push((position, column));
-            }
-            self.cache.insert(index, Line { points, end });
-        }
-        Ok(self.cache.get(&index).unwrap())
-    }
-    fn boundary(&mut self, position: usize) -> Result<bool, String> {
-        Ok(self
-            .line(self.document.line_index(position))?
-            .points
-            .binary_search_by_key(&position, |(p, _)| *p)
-            .is_ok())
-    }
-    fn previous(&mut self, position: usize) -> Result<usize, String> {
-        if position == 0 {
-            return Ok(0);
-        }
-        let points = &self.line(self.document.line_index(position - 1))?.points;
-        Ok(points[points
-            .partition_point(|(p, _)| *p < position)
-            .saturating_sub(1)]
-        .0)
-    }
-    fn next(&mut self, position: usize) -> Result<usize, String> {
-        let end = self.document.len_chars();
-        let points = &self.line(self.document.line_index(position))?.points;
-        Ok(points
-            .get(points.partition_point(|(p, _)| *p <= position))
-            .map_or(end, |(p, _)| *p))
-    }
-    fn line_end(&mut self, position: usize) -> Result<usize, String> {
-        Ok(self.line(self.document.line_index(position))?.end)
-    }
-    fn vertical(&mut self, position: usize, direction: isize) -> Result<usize, String> {
-        let index = self.document.line_index(position);
-        let line = self.line(index)?;
-        let column = line.points[line
-            .points
-            .partition_point(|(p, _)| *p <= position)
-            .saturating_sub(1)]
-        .1;
-        let target = index
-            .saturating_add_signed(direction)
-            .min(self.document.line_count() - 1);
-        let line = self.line(target)?;
-        Ok(line
-            .points
-            .iter()
-            .take_while(|(p, c)| *p <= line.end && *c <= column)
-            .last()
-            .map_or(line.end, |(p, _)| *p))
-    }
 }
 
 #[cfg(test)]

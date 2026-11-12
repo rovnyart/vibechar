@@ -5,7 +5,7 @@ use crossterm::event::{
 };
 use ratatui::layout::Rect;
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+pub use vibechar_core::cell_width;
 use vibechar_core::{session::Session, Document, EditKind};
 
 use crate::files;
@@ -513,18 +513,11 @@ impl Editor {
 
     fn line_end(&self) -> usize {
         let line = self.document().line_index(self.cursor);
-        self.document().line_start(line) + self.document().line(line).chars().count()
+        self.document().line_range(line).end
     }
 
     pub fn cursor_column(&self) -> usize {
-        let line = self.document().line_index(self.cursor);
-        let prefix: String = self
-            .document()
-            .line(line)
-            .chars()
-            .take(self.cursor - self.document().line_start(line))
-            .collect();
-        display_width(&prefix)
+        self.document().display_column(self.cursor)
     }
 
     fn vertical(&mut self, direction: isize) {
@@ -539,20 +532,7 @@ impl Editor {
     }
 
     fn position_at_column(&self, line: usize, column: usize, nearest: bool) -> usize {
-        let mut width = 0;
-        let mut offset = 0;
-        for grapheme in self.document().line(line).graphemes(true) {
-            let next_width = width + cell_width(grapheme, width);
-            if next_width > column {
-                if nearest && column - width >= (next_width - width).div_ceil(2) {
-                    offset += grapheme.chars().count();
-                }
-                break;
-            }
-            width = next_width;
-            offset += grapheme.chars().count();
-        }
-        self.document().line_start(line) + offset
+        self.document().position_at_column(line, column, nearest)
     }
 
     pub fn remember_cursor(&mut self) {
@@ -693,16 +673,6 @@ pub struct RecoveryMark {
     private: bool,
     path: Option<PathBuf>,
     language: Option<String>,
-}
-
-pub fn cell_width(grapheme: &str, column: usize) -> usize {
-    if grapheme == "\t" {
-        return 4 - column % 4;
-    }
-    if grapheme.chars().any(char::is_control) {
-        return 1;
-    }
-    UnicodeWidthStr::width(grapheme)
 }
 
 pub fn display_width(text: &str) -> usize {

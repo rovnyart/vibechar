@@ -35,6 +35,22 @@ process RSS with `ps`, then verifies all retained Undo/Redo steps and the save
 point. Run the built example repeatedly for comparisons. These are core-only
 samples, not native/TUI input latency or a process-memory ceiling.
 
+Long-line and snapshot samples:
+
+```sh
+bash scripts/cargo.sh run --release -p vibechar-core --example profile_navigation --locked
+bash scripts/cargo.sh build --release --workspace --locked
+python3 scripts/profile-text.py
+# After building the Mac app:
+dist/Vibechar.app/Contents/MacOS/Vibechar --profile-snapshots
+```
+
+The PTY profiler uses temporary 1/10 MiB JSON files and isolated recovery, takes
+30 samples per action, waits for the final checkpoint before sampling RSS, and
+checks the original files remain unchanged. `--binary PATH` selects an older
+local release binary for comparisons. Snapshot profiling uses only synthetic
+in-memory documents, without launching the editor UI or opening recovery state.
+
 Start the terminal editor:
 
 ```sh
@@ -330,8 +346,10 @@ Initial limits: **4 MiB** source for matching/adoption, **1 KiB** literal seed,
 **1,000** selections, **8 MiB** combined removed/inserted bytes per edit. Oversized
 match sets fail without a partial Select All; use Replace All for larger batches.
 Word-at-caret detection asks for an explicit fragment on lines over 64 KiB.
-Navigation/deletion caches per-line grapheme/column maps with an 8 MiB source
-budget. Rectangular selections, mouse-added independent carets, rich clipboard
+Navigation/deletion uses the same Rope-local grapheme walker and sparse geometry
+as single-caret TUI editing. Geometry stores up to eight lines × 4,096 points
+(1 MiB of point storage per document), coarsening its initial 4 KiB stride as needed.
+Rectangular selections, mouse-added independent carets, rich clipboard
 metadata for arbitrary multiline fragments and persisted sets are not implemented.
 
 ## Local text tools
@@ -541,9 +559,15 @@ Both clients restore their separate sessions after restart. Switching restores
 the cursor/selection and scrolls it into
 view; exact manual scroll positions are not retained. Ordinary adjacent input is
 grouped by the shared engine. Mac history restoration copies the document to the view;
-ordinary edits send only the changed text to Rust. TUI navigation currently scans
-the current line for grapheme boundaries: pathological single-line files need the
-M3 large-document work before a performance claim.
+ordinary edits send only the changed text to Rust. Mac snapshots fill the Swift
+String directly without an intermediate byte array. TUI Left/Right/deletion walks
+Rope chunks, while column/mouse/vertical movement reuses sparse line checkpoints.
+Only visible whole graphemes are copied for painting; selection, Find and syntax
+keep their original scalar/UTF-16 offsets. Edits/history invalidate the affected
+suffix, retaining the preceding checkpoints. A first distant column lookup scans
+its prefix. Giant composed graphemes/context and word double-click can still do
+large work; native AppKit layout, peak memory and cross-platform qualification
+remain open before a general large-document performance claim.
 
 Saves are atomic at the file replacement level, but external-change checks,
 filesystem race handling, durability/permission edge cases, and a unified file

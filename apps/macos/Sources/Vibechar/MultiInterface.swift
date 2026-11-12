@@ -125,7 +125,7 @@ struct MultiState: Decodable {
     }
     func paint() {
         guard let layout=textView.layoutManager,let container=textView.textContainer else {return}
-        let length=(textView.string as NSString).length
+        let length=textView.textStorage?.length ?? 0
         for range in painted {
             let valid=NSIntersectionRange(range,NSRange(location:0,length:length))
             if valid.length>0 {layout.removeTemporaryAttribute(.backgroundColor,forCharacterRange:valid)}

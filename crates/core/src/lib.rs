@@ -6,12 +6,15 @@ pub mod multi;
 pub mod search;
 pub mod session;
 pub mod syntax;
+mod text;
 pub mod tools;
+pub use text::{cell_width, LineWindow};
 
 #[cfg(test)]
 mod history_tests;
 
 use std::{
+    cell::RefCell,
     collections::VecDeque,
     fmt,
     ops::Range,
@@ -21,7 +24,6 @@ use std::{
 static NEXT_DOCUMENT: AtomicU64 = AtomicU64::new(1);
 
 use ropey::Rope;
-use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidPosition;
@@ -87,6 +89,7 @@ const MAX_HISTORY_STEPS: usize = 1024;
 pub struct Document {
     id: u64,
     text: Rope,
+    layout: RefCell<text::Cache>,
     undo: VecDeque<HistoryEntry>,
     redo: Vec<HistoryEntry>,
     history_bytes: usize,
@@ -133,6 +136,7 @@ impl Document {
         Self {
             id: NEXT_DOCUMENT.fetch_add(1, Ordering::Relaxed),
             text: Rope::from_str(text),
+            layout: RefCell::default(),
             undo: VecDeque::new(),
             redo: Vec::new(),
             history_bytes: 0,
@@ -247,6 +251,7 @@ impl Document {
         self.revoke_drop();
         changes.reverse();
         for change in &mut changes {
+            self.invalidate_layout(change.start);
             self.text
                 .remove(change.start..change.start + change.removed_chars);
             self.text.insert(change.start, &change.inserted);
@@ -324,6 +329,7 @@ impl Document {
                     }
             });
         self.revoke_drop();
+        self.invalidate_layout(range.start);
         self.text.remove(range.clone());
         self.text.insert(range.start, inserted);
         let change = Change {
@@ -362,6 +368,7 @@ impl Document {
         let entry = self.undo.pop_back()?;
         self.revoke_drop();
         for change in entry.changes.iter().rev() {
+            self.invalidate_layout(change.start);
             self.text
                 .remove(change.start..change.start + change.inserted_chars);
             self.text.insert(change.start, &change.removed);
@@ -388,6 +395,7 @@ impl Document {
         let entry = self.redo.pop()?;
         self.revoke_drop();
         for change in &entry.changes {
+            self.invalidate_layout(change.start);
             self.text
                 .remove(change.start..change.start + change.removed_chars);
             self.text.insert(change.start, &change.inserted);
@@ -462,18 +470,7 @@ impl Document {
     }
 
     pub fn line(&self, line: usize) -> String {
-        let mut raw = self.text.line(line.min(self.line_count() - 1)).to_string();
-        if raw.ends_with("\r\n") {
-            raw.truncate(raw.len() - 2);
-        } else if let Some(last) = raw.chars().next_back() {
-            if matches!(
-                last,
-                '\r' | '\n' | '\u{b}' | '\u{c}' | '\u{85}' | '\u{2028}' | '\u{2029}'
-            ) {
-                raw.truncate(raw.len() - last.len_utf8());
-            }
-        }
-        raw
+        self.text.slice(self.line_range(line)).to_string()
     }
 
     pub fn newline(&self) -> &'static str {
@@ -504,39 +501,5 @@ impl Document {
             return Err(InvalidPosition);
         }
         Ok(self.text.char_to_utf16_cu(index))
-    }
-
-    pub fn next_grapheme(&self, position: usize) -> usize {
-        let position = position.min(self.len_chars());
-        let line = self.line_index(position);
-        let start = self.line_start(line);
-        let raw = self.text.line(line).to_string();
-        let mut offset = start;
-        for grapheme in raw.graphemes(true) {
-            offset += grapheme.chars().count();
-            if offset > position {
-                return offset;
-            }
-        }
-        self.len_chars()
-    }
-
-    pub fn previous_grapheme(&self, position: usize) -> usize {
-        let position = position.min(self.len_chars());
-        if position == 0 {
-            return 0;
-        }
-        let line = self.line_index(position - 1);
-        let start = self.line_start(line);
-        let raw = self.text.line(line).to_string();
-        let mut offset = start;
-        for grapheme in raw.graphemes(true) {
-            let next = offset + grapheme.chars().count();
-            if next >= position {
-                return offset;
-            }
-            offset = next;
-        }
-        start
     }
 }

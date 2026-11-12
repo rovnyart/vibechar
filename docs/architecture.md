@@ -64,6 +64,38 @@ coalescing. AppKit tracks the outermost editing action so internal `insertText`
 calls cannot turn paste into typing, and distinguishes automatic caret updates
 from user selection changes. The TUI classifies key events versus bracketed paste.
 
+## Logical-line geometry and viewport reads
+
+`text` walks Rope chunks with GraphemeCursor instead of copying/scanning the
+current line from its start for each Left/Right/Backspace. When a boundary needs
+preceding context, it replays with a contiguous window that grows on demand;
+emoji, Indic and regional-indicator rules remain intact across chunk boundaries.
+Printable ASCII runs advance together, leaving their last scalar for normal
+segmentation in case a combining mark follows in another chunk.
+
+Each document has an LRU geometry cache for eight logical lines. Sparse points
+record byte/scalar/UTF-16/cell offsets, initially about every 4 KiB; at 4,096 points
+the line coarsens its stride and retains alternate points. Point storage is thus
+at most 1 MiB per document, plus small container/allocator overhead. The first
+distant column lookup scans its prefix; subsequent reads start at a nearby point.
+Edits, batch edits, Undo and Redo invalidate the affected suffix and later lines,
+preserving only checkpoints strictly before the changed scalar. No-op/invalid
+edits preserve the cache. Cache reads change no revision, recovery state or grant.
+
+The terminal requests only whole graphemes intersecting the visible cell range,
+with original scalar/UTF-16/cell origins for selection, Find and syntax painting.
+It reads logical-line bounds directly from the Rope. Current-revision syntax
+frames need no full-line hash; stale colors are checked only for bounded short
+lines. Multicursor movement/deletion in both clients uses this same geometry,
+replacing the old per-operation array of every grapheme boundary.
+
+This is not a hard execution/allocation limit for pathological Unicode: one
+grapheme, or its required context, can be arbitrarily long. Word double-click
+still uses the full logical line. Native AppKit layout and mirrored history
+restoration remain separate qualification work. Mac snapshot copy-out fills the
+Swift String's UTF-8 storage directly, avoiding an intermediate zeroed byte array;
+ordinary edits still submit deltas.
+
 ## Bridge ownership
 
 Expose opaque document and session handles. The creator frees an owned handle
@@ -241,8 +273,8 @@ payload and apply descending through `Document::replace_many_input`. A history
 entry records batch-step counts separately from individual target changes, so
 bounded typing/deletion runs group without merging with ordinary single-cursor
 input. Undo/Redo replays the complete sequence and returns a valid single caret.
-Per-operation line caches supply whole-grapheme deletion and logical-line/cell
-navigation without rescanning the same line for each caret. Sets are not stored
+The shared sparse line geometry supplies whole-grapheme deletion and logical-line/
+cell navigation without building a point for every character. Sets are not stored
 in session checkpoints; only the primary uses existing quiet recovery.
 Paste is a distinct shared action: it distributes equal-count clipboard lines,
 otherwise replicates the full payload. Both paths use the same atomic edit helper
