@@ -309,3 +309,53 @@ fn grouped_and_batch_allocations_follow_undo_redo_and_branch_invalidation() {
     assert!(!doc.is_dirty());
     assert_history_accounting(&doc);
 }
+
+#[test]
+fn history_observer_replays_grouped_and_batch_changes_against_each_source_state() {
+    let mut doc = Document::new("👩‍💻 я x\r\n");
+    doc.replace_many(&[
+        TextEdit {
+            range: 4..5,
+            text: "🦀".into(),
+        },
+        TextEdit {
+            range: 6..7,
+            text: "ß\0".into(),
+        },
+    ])
+    .unwrap();
+    let now = Instant::now();
+    for text in ["e", "\u{301}", "🇦🇲"] {
+        type_at(&mut doc, text, now)
+    }
+    doc.mark_saved();
+    let final_text = doc.text();
+    let mut mirror = final_text.clone();
+    let mut calls = 0;
+    let mut observe = |before: &Document, range: Range<usize>, inserted: &str| {
+        assert_eq!(before.text(), mirror);
+        let byte = |at| {
+            mirror
+                .char_indices()
+                .nth(at)
+                .map_or(mirror.len(), |(byte, _)| byte)
+        };
+        let bytes = byte(range.start)..byte(range.end);
+        mirror.replace_range(bytes, inserted);
+        calls += 1;
+    };
+    let revision = doc.revision();
+    assert!(doc.undo_with(&mut observe).is_some());
+    assert!(doc.undo_with(&mut observe).is_some());
+    assert!(doc.undo_with(&mut observe).is_none());
+    assert_eq!(doc.revision(), revision + 2);
+    assert!(doc.is_dirty());
+    assert!(doc.redo_with(&mut observe).is_some());
+    assert!(doc.redo_with(&mut observe).is_some());
+    assert!(doc.redo_with(&mut observe).is_none());
+    assert_eq!(calls, 10);
+    assert_eq!(mirror, final_text);
+    assert_eq!(doc.text(), final_text);
+    assert!(!doc.is_dirty());
+    assert_history_accounting(&doc);
+}

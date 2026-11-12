@@ -9,6 +9,7 @@ use std::{
 use vibechar_core::{checkpoint::Checkpoint, session::Session, Document};
 
 pub type VcDocument = Document;
+pub struct VcHistory(String);
 pub struct VcSyntaxFrame(std::sync::Arc<vibechar_core::syntax::Frame>);
 pub struct VcSearch(vibechar_core::search::Engine);
 pub struct VcSearchFrame(std::sync::Arc<vibechar_core::search::Frame>);
@@ -530,6 +531,23 @@ pub unsafe extern "C" fn vc_document_length(document: *const VcDocument) -> usiz
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn vc_document_line_length(
+    document: *const VcDocument,
+    offset: usize,
+) -> usize {
+    guard(|| {
+        let Some(doc) = document.as_ref() else {
+            return usize::MAX;
+        };
+        let Ok(position) = doc.char_from_utf16(offset) else {
+            return usize::MAX;
+        };
+        let range = doc.line_range(doc.line_index(position));
+        doc.utf16_from_char(range.end).unwrap() - doc.utf16_from_char(range.start).unwrap()
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn vc_document_copy(
     document: *const VcDocument,
     output: *mut u8,
@@ -633,6 +651,66 @@ pub unsafe extern "C" fn vc_document_undo(document: *mut VcDocument, cursor: *mu
 #[no_mangle]
 pub unsafe extern "C" fn vc_document_redo(document: *mut VcDocument, cursor: *mut usize) -> bool {
     history(document, cursor, true)
+}
+
+/// Apply history once and return an owned, bounded presentation update.
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_history(
+    document: *mut VcDocument,
+    redo: bool,
+) -> *mut VcHistory {
+    guard(|| {
+        let Some(doc) = document.as_mut() else {
+            return ptr::null_mut();
+        };
+        let source_length = doc.utf16_from_char(doc.len_chars()).unwrap();
+        let mut edits = Some(Vec::new());
+        let mut budget = 1024 * 1024usize - 256; // Reserve the frame header.
+        let mut capture = |doc: &Document, range: std::ops::Range<usize>, text: &str| {
+            let Some(ref mut changes) = edits else { return };
+            // Bound worst-case JSON escaping plus range/record metadata.
+            let cost = text.len().saturating_mul(6).saturating_add(128);
+            if cost > budget || changes.len() >= 4096 {
+                edits = None;
+                return;
+            }
+            budget -= cost;
+            let start = doc.utf16_from_char(range.start).unwrap();
+            let end = doc.utf16_from_char(range.end).unwrap();
+            changes.push(serde_json::json!({"start":start,"length":end-start,"text":text}));
+        };
+        let cursor = if redo {
+            doc.redo_with(&mut capture)
+        } else {
+            doc.undo_with(&mut capture)
+        };
+        let Some(cursor) = cursor else {
+            return ptr::null_mut();
+        };
+        let json=serde_json::json!({"cursor":doc.utf16_from_char(cursor).unwrap(),
+            "source_length":source_length,"target_length":doc.utf16_from_char(doc.len_chars()).unwrap(),"edits":edits}).to_string();
+        Box::into_raw(Box::new(VcHistory(json)))
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_history_json(
+    history: *const VcHistory,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        history
+            .as_ref()
+            .map_or(0, |history| copy_metadata(&history.0, output, capacity))
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_history_free(history: *mut VcHistory) {
+    if !history.is_null() {
+        guard(|| drop(Box::from_raw(history)))
+    }
 }
 
 #[no_mangle]
@@ -1138,6 +1216,119 @@ pub unsafe extern "C" fn vc_session_restore(
 
 #[cfg(test)]
 mod tests {
+    unsafe fn history_json(frame: *mut VcHistory) -> serde_json::Value {
+        assert!(!frame.is_null());
+        let length = vc_history_json(frame, ptr::null_mut(), 0);
+        let mut bytes = vec![0; length];
+        assert_eq!(
+            vc_history_json(frame, bytes.as_mut_ptr(), bytes.len()),
+            length
+        );
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[test]
+    fn history_patches_follow_intermediate_utf16_ranges_and_apply_once() {
+        unsafe {
+            let source = "👩‍💻 я x\r\n";
+            let doc = vc_document_new(source.as_ptr(), source.len());
+            (*doc)
+                .replace_many(&[
+                    vibechar_core::TextEdit {
+                        range: 4..5,
+                        text: "🦀".into(),
+                    },
+                    vibechar_core::TextEdit {
+                        range: 6..7,
+                        text: "ß\0".into(),
+                    },
+                ])
+                .unwrap();
+            let changed = (*doc).text();
+            let mut mirror = changed.clone();
+            for redo in [false, true] {
+                let revision = (*doc).revision();
+                let frame = vc_document_history(doc, redo);
+                let data = history_json(frame);
+                assert_eq!(data["source_length"], mirror.encode_utf16().count());
+                for edit in data["edits"].as_array().unwrap() {
+                    let mut value = Document::new(&mirror);
+                    let start = edit["start"].as_u64().unwrap() as usize;
+                    let end = start + edit["length"].as_u64().unwrap() as usize;
+                    let range =
+                        value.char_from_utf16(start).unwrap()..value.char_from_utf16(end).unwrap();
+                    value
+                        .replace(range, edit["text"].as_str().unwrap())
+                        .unwrap();
+                    mirror = value.text();
+                }
+                assert_eq!(mirror, (*doc).text());
+                assert_eq!(data["target_length"], mirror.encode_utf16().count());
+                assert_eq!((*doc).revision(), revision + 1);
+                vc_history_free(frame);
+            }
+            assert_eq!(mirror, changed);
+            assert!(vc_document_history(doc, true).is_null());
+            vc_document_free(doc);
+        }
+    }
+
+    #[test]
+    fn oversized_history_patches_fall_back_without_partial_replay_or_extra_undo() {
+        unsafe {
+            let doc = vc_document_new(ptr::null(), 0);
+            let large = "x".repeat(200 * 1024);
+            (*doc).replace(0..0, &large).unwrap();
+            let undo = vc_document_history(doc, false);
+            assert!(history_json(undo)["edits"].is_array());
+            vc_history_free(undo);
+            assert_eq!((*doc).len_chars(), 0);
+            let redo = vc_document_history(doc, true);
+            assert!(history_json(redo)["edits"].is_null());
+            vc_history_free(redo);
+            assert_eq!((*doc).text(), large);
+            assert!(vc_document_history(doc, true).is_null());
+            vc_document_free(doc);
+            let source = "x".repeat(5000);
+            let doc = vc_document_new(source.as_ptr(), source.len());
+            let edits = (0..5000)
+                .map(|at| vibechar_core::TextEdit {
+                    range: at..at + 1,
+                    text: "Z".into(),
+                })
+                .collect::<Vec<_>>();
+            (*doc).replace_many(&edits).unwrap();
+            let undo = vc_document_history(doc, false);
+            assert!(history_json(undo)["edits"].is_null());
+            vc_history_free(undo);
+            assert_eq!((*doc).text(), source);
+            assert!(!(*doc).is_dirty());
+            assert!(vc_document_history(doc, false).is_null());
+            vc_document_free(doc);
+        }
+    }
+
+    #[test]
+    fn history_frames_own_their_data_and_copy_guards_do_not_touch_small_buffers() {
+        unsafe {
+            assert!(vc_document_history(ptr::null_mut(), false).is_null());
+            assert_eq!(vc_document_line_length(ptr::null(), 0), usize::MAX);
+            assert_eq!(vc_history_json(ptr::null(), ptr::null_mut(), 0), 0);
+            vc_history_free(ptr::null_mut());
+            let doc = vc_document_new(b"x".as_ptr(), 1);
+            (*doc).replace(0..1, "я\0🦀").unwrap();
+            assert_eq!(vc_document_line_length(doc, 0), 4);
+            assert_eq!(vc_document_line_length(doc, 4), 4);
+            assert_eq!(vc_document_line_length(doc, 3), usize::MAX);
+            let frame = vc_document_history(doc, false);
+            vc_document_free(doc);
+            let mut small = [0xab; 1];
+            assert!(vc_history_json(frame, small.as_mut_ptr(), small.len()) > 1);
+            assert_eq!(small, [0xab]);
+            assert_eq!(history_json(frame)["edits"][0]["text"], "x");
+            vc_history_free(frame);
+        }
+    }
     use super::*;
 
     #[test]

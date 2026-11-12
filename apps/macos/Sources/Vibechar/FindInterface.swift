@@ -124,6 +124,7 @@ struct FindFrame: Decodable {
     var didReplace: ((NSRange) -> Void)?
     var didSelectAll: ((FindFrame,Int)->Void)?
     private var selectingAll=false
+    private var hasPaint=false
     private(set) var frame: FindFrame?
     private(set) var current: Int?
     private var engine: RustSearch?
@@ -230,8 +231,8 @@ struct FindFrame: Decodable {
     }
     func paint() {
         guard let layout=textView.layoutManager, let container=textView.textContainer else { return }
-        let length=(textView.string as NSString).length
-        layout.removeTemporaryAttribute(.backgroundColor,forCharacterRange:NSRange(location:0,length:length))
+        let length=textView.textStorage?.length ?? 0
+        if hasPaint {layout.removeTemporaryAttribute(.backgroundColor,forCharacterRange:NSRange(location:0,length:length));hasPaint=false}
         guard visible, let frame,frame.revision==document.revision else { return }
         let glyphs=layout.glyphRange(forBoundingRect:textView.visibleRect,in:container)
         let visible=layout.characterRange(forGlyphRange:glyphs,actualGlyphRange:nil)
@@ -241,7 +242,7 @@ struct FindFrame: Decodable {
             var range=hit.range
             if range.length==0 && range.location<length { range=(textView.string as NSString).rangeOfComposedCharacterSequence(at:range.location) }
             range=NSIntersectionRange(range,NSRange(location:start,length:max(0,end-start)))
-            if range.length>0 { layout.addTemporaryAttribute(.backgroundColor,value:index==current ? PocketPalette.selection : PocketPalette.hover,forCharacterRange:range) }
+            if range.length>0 { layout.addTemporaryAttribute(.backgroundColor,value:index==current ? PocketPalette.selection : PocketPalette.hover,forCharacterRange:range);hasPaint=true }
         }
     }
 }

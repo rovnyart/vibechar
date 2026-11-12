@@ -43,6 +43,7 @@ bash scripts/cargo.sh build --release --workspace --locked
 python3 scripts/profile-text.py
 # After building the Mac app:
 dist/Vibechar.app/Contents/MacOS/Vibechar --profile-snapshots
+python3 scripts/profile-mac.py
 ```
 
 The PTY profiler uses temporary 1/10 MiB JSON files and isolated recovery, takes
@@ -50,6 +51,11 @@ The PTY profiler uses temporary 1/10 MiB JSON files and isolated recovery, takes
 checks the original files remain unchanged. `--binary PATH` selects an older
 local release binary for comparisons. Snapshot profiling uses only synthetic
 in-memory documents, without launching the editor UI or opening recovery state.
+The AppKit profiler runs four isolated 1/10 MiB log/minified fixtures through the
+real native window, bitmap rendering and history path. It uses unique pasteboards
+and no recovery store. Each child has a timeout; `--samples` controls the 30 input
+samples and `--binary PATH` allows an instrumented pre-change build. Timings are
+CPU/render-work observations, not physical screen latency or cold-launch percentiles.
 
 Start the terminal editor:
 
@@ -558,15 +564,22 @@ Both clients start with one buffer and allow more buffers in the same process.
 Both clients restore their separate sessions after restart. Switching restores
 the cursor/selection and scrolls it into
 view; exact manual scroll positions are not retained. Ordinary adjacent input is
-grouped by the shared engine. Mac history restoration copies the document to the view;
-ordinary edits send only the changed text to Rust. Mac snapshots fill the Swift
+grouped by the shared engine. Mac Undo/Redo normally patches only changed ranges
+in its native presentation. The engine still owns and applies the single history
+operation. Frames cap at 1 MiB estimated encoded JSON / 4,096 edits; oversized
+frames, marked text or a mismatched presentation length use a full snapshot.
+Inserted ranges retain the current font/paragraph settings, including after an
+Undo to empty and subsequent Redo. Ordinary edits send only the changed text to
+Rust. Mac snapshots fill the Swift
 String directly without an intermediate byte array. TUI Left/Right/deletion walks
 Rope chunks, while column/mouse/vertical movement reuses sparse line checkpoints.
 Only visible whole graphemes are copied for painting; selection, Find and syntax
 keep their original scalar/UTF-16 offsets. Edits/history invalidate the affected
 suffix, retaining the preceding checkpoints. A first distant column lookup scans
 its prefix. Giant composed graphemes/context and word double-click can still do
-large work; native AppKit layout, peak memory and cross-platform qualification
+large work. AppKit uses demand-driven layout and selects contiguous versus
+noncontiguous layout from the caret line's length (32,768 UTF-16 units). A giant
+wrapped paragraph still has expensive first layout. Peak memory and cross-platform qualification
 remain open before a general large-document performance claim.
 
 Saves are atomic at the file replacement level, but external-change checks,

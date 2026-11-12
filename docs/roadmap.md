@@ -193,8 +193,10 @@ into a child process. Implement the same operation model in Mac and terminal.
   exception. Rope-local grapheme movement, bounded sparse cell geometry and TUI
   viewport reads handle large logical lines without full copies/scans per key.
   Both clients use this geometry for multicursors; Mac snapshots avoid a temporary
-  byte array. Native AppKit large-file layout, pathological Unicode/word selection,
-  peak-memory and cross-platform qualification remain open; this does not complete
+  byte array. Native 1/10 MiB log/minified layout is measured; bounded history
+  presentation patches and a caret-line layout policy remove full resets and
+  preceding-log layout from common commands. First layout of giant paragraphs,
+  pathological Unicode/word selection, peak-memory and cross-platform qualification remain open; this does not complete
   large-document mode.
 
 Exit: representative JSON, logs, code, and prose are pleasant to manipulate offline;

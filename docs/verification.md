@@ -1,6 +1,6 @@
 # Prototype verification
 
-Started: 2026-11-11. Latest increment: 2026-11-12.
+Started: 2026-11-11. Latest increment: 2026-11-13.
 This records local prototype evidence, not MVP release acceptance.
 
 ## Environment
@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 116 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 120 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -878,6 +878,73 @@ pathological giant grapheme/context work, full-line word double-click, peak-memo
 and Linux/terminal-emulator qualification remain open. This increment does not
 close M3 large-document mode or establish a Sublime performance claim.
 
+## Native AppKit history and layout increment (2026-11-13)
+
+The native profile separated two costs: resetting the complete presentation on
+every Undo/Redo, and contiguous layout of preceding log paragraphs during a jump.
+The editor now patches the native storage from replay-order UTF-16 history edits,
+sets text and uniform typography in one pass for full presentations, and selects
+AppKit's layout mode from the caret line's length. Noncontiguous layout is enabled
+up to 32,768 UTF-16 units; longer lines retain contiguous layout. Enabling it
+unconditionally had doubled giant-paragraph typing cost in an intermediate probe,
+so that setting was not shipped. Background layout is disabled. Syntax/Find avoid
+clearing temporary attributes when they have not painted any.
+
+One new core observer regression covers grouped and batch replay against each
+intermediate source state. Three bridge regressions cover UTF-16 ranges, NUL and
+emoji, frame ownership/null/copy guards, the 1 MiB estimated encoded-size / 4,096
+record budgets and complete fallback without a second history operation. A cheap
+line-length query reads Rope metadata; invalid/split-surrogate offsets fail safely.
+New native smoke verifies incremental edits, empty Redo, current typography after
+zoom, snapshot fallback, stale presentation length, invalid patch rejection,
+marked-text fallback and layout-mode transitions. Broader IME qualification remains
+open. The complete `bash scripts/check.sh` passed 120 Rust tests, 42 PTY scenarios
+plus the independent Secret Drop helper, release builds and every native smoke.
+
+`scripts/profile-mac.py` runs four fresh child processes with synthetic 1/10 MiB
+minified JSON/log text through the actual AppDelegate, PocketTextView, Rust bridge
+and bitmap draw. The pre-change build had the profiler added to the behavior at
+`451bceb`; the final build uses the same fixture and timing code. No recovery
+store, user files or real clipboard are used. Thirty typing/Backspace samples are
+collected per case; show, first draw, jump and Undo/Redo are single observations.
+These include native CPU/layout/bitmap work, not physical presentation latency,
+file I/O, source construction, startup percentiles or a Sublime comparison.
+
+| Observation | Before | After |
+| --- | --- | --- |
+| 1 MiB minified Undo / Redo | 118.105 / 116.516 ms | 4.405 / 3.851 ms |
+| 10 MiB minified Undo / Redo | 1,146.678 / 1,142.097 ms | 16.858 / 16.425 ms |
+| 1 MiB logs jump to end | 106.298 ms | 4.128 ms |
+| 10 MiB logs jump to end | 1,055.919 ms | 4.270 ms |
+| 1 MiB logs Undo / Redo | 104.062 / 104.230 ms | 1.880 / 1.464 ms |
+| 10 MiB logs Undo / Redo | 1,018.693 / 1,020.775 ms | 2.573 / 1.887 ms |
+| 10 MiB minified typing p50 / p95 | 17.454 / 17.677 ms | 18.353 / 18.652 ms |
+| 10 MiB logs typing p50 / p95 | 1.293 / 1.562 ms | 1.462 / 1.728 ms |
+| First native presentation, 10 MiB minified | 1,812.092 ms | 1,896.411 ms |
+
+No steady-state typing speedup is claimed: the final input samples remain near
+the previous cost. First layout of a giant wrapped paragraph is still expensive
+and is not solved by this increment. Raw reports are ignored
+`dist/appkit-{before,after}.json`; the temporary pre-change executable was removed.
+
+An isolated `dev.vibechar.appkit-check-20261113` app opened a synthetic 10 MiB log
+through File → Open. The real window rendered its text and the saved recovery
+contained the correct file. After the file panel closed, CUA window binding
+reported timeouts/no-windows and could not reliably focus or edit the body; a
+rebind yielded the real window screenshot. Live tail-key/Undo acceptance is not
+claimed from this attempt. A one-second diagnostic sample found the app waiting
+for events on its main thread, with the syntax worker waiting, rather than a busy
+layout stack. It reported physical footprint 127.6M and peak 184.2M (as labeled by
+the sampler); this separate large-file observation is not an idle-empty budget
+measurement or a before/after memory comparison. Native editing/rendering/history
+were exercised by the profiler and smoke instead. The fixture remained byte-exact;
+the disposable QA process, bundle, registration, preferences, recovery and file
+were removed. User recovery and clipboard were not changed.
+
+Large-paragraph first layout, retained/peak memory, complete live accessibility/IME
+and multi-platform qualification remain open. M1/M3/M6 performance gates remain
+open; this records a bounded native optimization, not release acceptance.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS
@@ -914,9 +981,9 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 
 ## Remaining M1 evidence
 
-Native startup and Mac bridge/presentation costs across representative file sizes
-still need measurement. The milestone's baseline checkbox remains open until that
-evidence is recorded. M2 recovery is partial: retention and broader durability
+Native snapshots and AppKit presentation now have synthetic 1/10 MiB observations
+above. Native startup percentiles, the full memory matrix and renderer decisions
+still need qualification; M1's baseline checkbox remains open. M2 recovery is partial: retention and broader durability
 qualification remain open. M3 smart syntax, find/replace, nine local tools and
 basic shared multicursor editing are implemented; complete large-document mode
 remains open. M4/M5 AI is not

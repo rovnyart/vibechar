@@ -364,10 +364,24 @@ impl Document {
     }
 
     pub fn undo(&mut self) -> Option<usize> {
+        self.undo_with(|_, _, _| {})
+    }
+
+    /// Observe each replacement against the pre-edit document, in replay order.
+    /// Adapters can update their presentation without taking a full snapshot.
+    pub fn undo_with(
+        &mut self,
+        mut observe: impl FnMut(&Document, Range<usize>, &str),
+    ) -> Option<usize> {
         self.break_undo_group();
         let entry = self.undo.pop_back()?;
         self.revoke_drop();
         for change in entry.changes.iter().rev() {
+            observe(
+                self,
+                change.start..change.start + change.inserted_chars,
+                &change.removed,
+            );
             self.invalidate_layout(change.start);
             self.text
                 .remove(change.start..change.start + change.inserted_chars);
@@ -391,10 +405,22 @@ impl Document {
     }
 
     pub fn redo(&mut self) -> Option<usize> {
+        self.redo_with(|_, _, _| {})
+    }
+
+    pub fn redo_with(
+        &mut self,
+        mut observe: impl FnMut(&Document, Range<usize>, &str),
+    ) -> Option<usize> {
         self.break_undo_group();
         let entry = self.redo.pop()?;
         self.revoke_drop();
         for change in &entry.changes {
+            observe(
+                self,
+                change.start..change.start + change.removed_chars,
+                &change.inserted,
+            );
             self.invalidate_layout(change.start);
             self.text
                 .remove(change.start..change.start + change.removed_chars);

@@ -5,6 +5,11 @@ enum TextEditKind: UInt32 {
     case isolated = 0, typing = 1, backspace = 2, deleteForward = 3
 }
 
+struct HistoryUpdate: Decodable {
+    struct Edit: Decodable {let start:Int;let length:Int;let text:String}
+    let cursor:Int;let source_length:Int;let target_length:Int;let edits:[Edit]?
+}
+
 @MainActor
 final class RustDocument {
     private let ownedHandle: OpaquePointer?
@@ -35,6 +40,7 @@ final class RustDocument {
 
     var isDirty: Bool { vc_document_dirty(handle) }
     var revision: UInt64 { vc_document_revision(handle) }
+    func lineLength(at offset:Int)->Int {vc_document_line_length(handle,offset)}
 
     var text: String {
         let count = vc_document_length(handle)
@@ -58,6 +64,15 @@ final class RustDocument {
         var cursor = 0
         let changed = redo ? vc_document_redo(handle, &cursor) : vc_document_undo(handle, &cursor)
         return changed ? cursor : nil
+    }
+
+    func historyUpdate(redo:Bool)->HistoryUpdate? {
+        guard let update=vc_document_history(handle,redo) else {return nil}
+        defer {vc_history_free(update)}
+        let count=vc_history_json(update,nil,0)
+        var bytes=[UInt8](repeating:0,count:count)
+        precondition(bytes.withUnsafeMutableBufferPointer {vc_history_json(update,$0.baseAddress,$0.count)}==count)
+        return try! JSONDecoder().decode(HistoryUpdate.self,from:Data(bytes))
     }
 
     func markSaved() { vc_document_mark_saved(handle) }

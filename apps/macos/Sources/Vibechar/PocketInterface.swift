@@ -77,6 +77,35 @@ final class PocketTextView: NSTextView {
     var onMultiReady: (()->Bool)?
     var onMultiCanCopy: (()->Bool)?
     var secondaryCarets:[NSRange]=[] {didSet {needsDisplay=true}}
+
+    func setPlainText(_ text:String) {
+        if hasMarkedText() {unmarkText()}
+        guard let storage=textStorage else {string=text;return}
+        storage.setAttributedString(NSAttributedString(string:text,attributes:typingAttributes))
+        let range=NSRange(location:0,length:storage.length)
+        layoutManager?.removeTemporaryAttribute(.foregroundColor,forCharacterRange:range)
+        layoutManager?.removeTemporaryAttribute(.backgroundColor,forCharacterRange:range)
+        needsDisplay=true
+    }
+
+    func applyHistoryUpdate(_ update:HistoryUpdate)->Bool {
+        guard !hasMarkedText(),let storage=textStorage,storage.length==update.source_length,let edits=update.edits else {return false}
+        var length=storage.length
+        for edit in edits {
+            guard edit.start>=0,edit.length>=0,edit.start<=length,edit.length<=length-edit.start else {return false}
+            length+=edit.text.utf16.count-edit.length
+        }
+        guard length==update.target_length else {return false}
+        storage.beginEditing()
+        for edit in edits {
+            storage.replaceCharacters(in:NSRange(location:edit.start,length:edit.length),with:edit.text)
+            let inserted=edit.text.utf16.count
+            if inserted>0 {storage.setAttributes(typingAttributes,range:NSRange(location:edit.start,length:inserted))}
+        }
+        storage.endEditing()
+        needsDisplay=true
+        return true
+    }
     override func cancelOperation(_ sender: Any?) {
         if onEscape?() != true { super.cancelOperation(sender) }
     }

@@ -115,7 +115,7 @@ struct MultiState: Decodable {
     private func sync(changed:Bool) {
         syncing=true;defer {syncing=false}
         state=engine.state(document)
-        if changed {textView.string=document.text;didEdit?()}
+        if changed {textView.setPlainText(document.text);didEdit?()}
         if let current=state.current {
             textView.setSelectedRange(current.range)
             textView.scrollRangeToVisible(NSRange(location:current.head,length:0))

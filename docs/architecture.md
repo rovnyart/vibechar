@@ -64,6 +64,23 @@ coalescing. AppKit tracks the outermost editing action so internal `insertText`
 calls cannot turn paste into typing, and distinguishes automatic caret updates
 from user selection changes. The TUI classifies key events versus bracketed paste.
 
+Mac history presentation uses `Document::undo_with` / `redo_with`: the engine
+replays the existing history and exposes each replacement before mutating its
+source state. The bridge converts that step's coordinates to UTF-16 and returns
+an owned `VcHistory` frame with cursor, source/target lengths and replay-order
+edits. No Swift/AppKit callback runs while Rust holds the document. The frame
+contains at most 1 MiB of conservatively estimated encoded JSON and 4,096 edits;
+if either budget is exceeded, it returns `edits:null` after completing the same
+history operation. Mac then takes a full snapshot without replaying history again.
+The ordinary Rust Undo/Redo APIs use an empty observer and retain their behavior.
+
+AppKit validates the sequence's lengths/ranges before changing text storage,
+applies edits in one storage editing group, and gives inserted ranges the current
+uniform typography. Marked text or a mismatched presentation length also uses the
+snapshot fallback. Full presentations set text and typography together rather
+than assigning text and then restyling the whole buffer. These frames are transient
+presentation data, including in private tabs; they are never logged or persisted.
+
 ## Logical-line geometry and viewport reads
 
 `text` walks Rope chunks with GraphemeCursor instead of copying/scanning the
@@ -91,10 +108,19 @@ replacing the old per-operation array of every grapheme boundary.
 
 This is not a hard execution/allocation limit for pathological Unicode: one
 grapheme, or its required context, can be arbitrarily long. Word double-click
-still uses the full logical line. Native AppKit layout and mirrored history
-restoration remain separate qualification work. Mac snapshot copy-out fills the
+still uses the full logical line. Native AppKit paragraph layout remains separate
+qualification work. Mac snapshot copy-out fills the
 Swift String's UTF-8 storage directly, avoiding an intermediate zeroed byte array;
 ordinary edits still submit deltas.
+
+Mac enables noncontiguous layout for a caret line up to 32,768 UTF-16 units and
+uses contiguous layout for longer lines: the latter avoided a measured typing
+regression for giant wrapped paragraphs. The choice updates from Rope metadata
+on selection, edit, buffer and history changes, without scanning the source.
+Background AppKit layout is disabled; visible requests drive layout. Syntax/Find
+only clear their temporary attributes when they previously painted any. This
+does not change wrapping, truncate text or make first layout of a giant paragraph
+cheap; large-file memory and broader renderer qualification remain open.
 
 ## Bridge ownership
 

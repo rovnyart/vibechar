@@ -4,6 +4,10 @@ import AppKit
 struct VibecharApp {
     @MainActor
     static func main() {
+        if CommandLine.arguments.contains("--profile-appkit") {
+            AppDelegate.profileNativeEditing()
+            return
+        }
         if CommandLine.arguments.contains("--profile-snapshots") {
             profileSnapshotCopies()
             return
@@ -41,6 +45,7 @@ struct VibecharApp {
             pocketInterfaceSmokeTest()
             AppDelegate.interfaceSmokeTest()
             AppDelegate.inputSmokeTest()
+            AppDelegate.presentationHistorySmokeTest()
             AppDelegate.closeSmokeTest()
             AppDelegate.saveAsSmokeTest()
             AppDelegate.syntaxSmokeTest()
@@ -133,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         let controller=MultiController(document:document,textView:textView,clipboard:clipboard)
         controller.didEdit={ [weak self] in
             guard let self else {return}
-            self.applyTypography();self.refreshTitle();self.scheduleSessionSave();self.scheduleSyntax()
+            self.refreshTitle();self.scheduleSessionSave();self.scheduleSyntax()
         }
         controller.didUpdate={ [weak self] state in
             guard let self else {return}
@@ -149,8 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         let controller = FindController(bar: findBar,document: document,textView: textView)
         controller.didReplace = { [weak self] selection in
             guard let self else { return }
-            self.textView.string = self.document.text
-            self.applyTypography(); self.textView.setSelectedRange(selection)
+            self.textView.setPlainText(self.document.text)
+            self.textView.setSelectedRange(selection)
             self.textView.scrollRangeToVisible(selection)
             self.window.makeFirstResponder(self.textView)
             self.refreshTitle(); self.scheduleSessionSave(); self.scheduleSyntax()
@@ -171,9 +176,111 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private var syntaxTimer: Timer?
     private var syntaxWork: DispatchWorkItem?
     private var syntaxFrame: SyntaxFrame?
+    private var hasSyntaxPaint=false
     private var syntaxSerial: UInt64 = 0
     private var syntaxGeneration: UInt64 = 0
     private var languagePopover: NSPopover?
+
+    static func profileNativeEditing() {
+        _ = NSApplication.shared
+        func option(_ name:String,_ fallback:String)->String {
+            guard let index=CommandLine.arguments.firstIndex(of:name),index+1<CommandLine.arguments.count else {return fallback}
+            return CommandLine.arguments[index+1]
+        }
+        let mib=Int(option("--mib","1"))!, samples=Int(option("--samples","30"))!
+        let kind=option("--kind","minified")
+        precondition((1...10).contains(mib) && (1...30).contains(samples))
+        let line="2026-11-12T00:00:00Z INFO synthetic request completed status=200 duration=12ms\n"
+        let source=kind=="logs" ? String(repeating:line,count:mib*1024*1024/line.utf8.count) : "{\"data\":\""+String(repeating:"x",count:mib*1024*1024-11)+"\"}"
+        let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false)
+        defer {
+            app.syntaxWork?.cancel();app.syntaxGeneration &+= 1;app.syntaxTimer?.invalidate()
+            app.pendingSave?.cancel();app.multiController.cancel();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()
+        }
+        func phase(_ name:String) {FileHandle.standardError.write(Data("native-profile: \(name)\n".utf8))}
+        func timed(_ action:()->Void)->Double {
+            let start=ContinuousClock.now;action();let elapsed=start.duration(to:.now)
+            return Double(elapsed.components.seconds)*1000+Double(elapsed.components.attoseconds)/1e15
+        }
+        app.session.open(source,url:URL(fileURLWithPath:kind=="logs" ? "/synthetic.log" : "/synthetic.json"))
+        phase("show")
+        let show=timed {app.showActiveBuffer();app.window.contentView!.layoutSubtreeIfNeeded()}
+        app.syntaxWork?.cancel();app.syntaxGeneration &+= 1
+        let surface=app.window.contentView!
+        let bitmap=surface.bitmapImageRepForCachingDisplay(in:surface.bounds)!
+        func draw() {surface.cacheDisplay(in:surface.bounds,to:bitmap)}
+        phase("first-draw")
+        let first=timed {draw()}
+        phase("jump-to-end")
+        let end=(source as NSString).length
+        let jump=timed {app.textView.setSelectedRange(NSRange(location:end,length:0));app.textView.scrollRangeToVisible(app.textView.selectedRange());draw()}
+        var typing:[Double]=[],deletion:[Double]=[]
+        for index in 0..<samples {
+            phase("edit \(index+1)/\(samples)")
+            typing.append(timed {app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));draw()})
+            deletion.append(timed {app.textView.deleteBackward(nil);draw()})
+        }
+        precondition(app.document.text==source && app.textView.string==source)
+        phase("undo-redo")
+        let undo=timed {app.applyHistory(redo:false);draw()}
+        precondition(app.document.text==source+"!")
+        let redo=timed {app.applyHistory(redo:true);draw()}
+        precondition(app.document.text==source && app.textView.string==source)
+        typing.sort();deletion.sort()
+        let data:[String:Any]=["kind":kind,"bytes":source.utf8.count,"samples":samples,
+            "show_ms":show,"first_draw_ms":first,"jump_ms":jump,
+            "typing_p50_ms":typing[samples/2],"typing_p95_ms":typing[min(samples-1,samples*95/100)],
+            "backspace_p50_ms":deletion[samples/2],"backspace_p95_ms":deletion[min(samples-1,samples*95/100)],
+            "undo_ms":undo,"redo_ms":redo]
+        print(String(decoding:try! JSONSerialization.data(withJSONObject:data,options:[.prettyPrinted,.sortedKeys]),as:UTF8.self))
+    }
+
+    static func presentationHistorySmokeTest() {
+        let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false)
+        defer {app.syntaxWork?.cancel();app.syntaxGeneration &+= 1;app.syntaxTimer?.invalidate();app.multiController.cancel();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()}
+        func check(_ expected:String) {
+            precondition(app.document.text==expected && app.textView.string==expected)
+            guard let storage=app.textView.textStorage,storage.length>0 else {return}
+            for at in Set([0,storage.length/2,storage.length-1]) {
+                let font=storage.attribute(.font,at:at,effectiveRange:nil) as? NSFont
+                let paragraph=storage.attribute(.paragraphStyle,at:at,effectiveRange:nil) as? NSParagraphStyle
+                precondition(font?.pointSize==app.fontSize && paragraph?.lineSpacing==6)
+            }
+        }
+        for source in ["","я👩‍💻e\u{301}\0\r\n"] {
+            app.session.open(source);app.showActiveBuffer()
+            app.textView.setSelectedRange(NSRange(location:(source as NSString).length,length:0))
+            app.textView.insertText("🦀",replacementRange:NSRange(location:NSNotFound,length:0));check(source+"🦀")
+            app.fontSize=18;app.applyTypography()
+            app.applyHistory(redo:false);check(source)
+            app.applyHistory(redo:true);check(source+"🦀")
+        }
+        app.session.open();app.showActiveBuffer()
+        let large=String(repeating:"Q",count:200*1024)
+        app.textView.insertText(large,replacementRange:NSRange(location:NSNotFound,length:0));check(large)
+        app.applyHistory(redo:false);check("")
+        app.applyHistory(redo:true);check(large) // Large replacement uses the bounded snapshot fallback.
+        app.textView.setPlainText("stale presentation")
+        app.applyHistory(redo:false);check("")
+        let invalid=HistoryUpdate(cursor:0,source_length:0,target_length:0,edits:[.init(start:1,length:0,text:"x")])
+        precondition(!app.textView.applyHistoryUpdate(invalid) && app.textView.string.isEmpty)
+        app.textView.setMarkedText("日本",selectedRange:NSRange(location:2,length:0),replacementRange:NSRange(location:NSNotFound,length:0))
+        precondition(app.textView.hasMarkedText())
+        app.applyHistory(redo:false)
+        precondition(!app.textView.hasMarkedText() && app.document.text==app.textView.string)
+        let line=String(repeating:"x",count:32769)
+        app.session.open(line+"\nshort");app.showActiveBuffer()
+        precondition(app.textView.layoutManager?.allowsNonContiguousLayout==false)
+        app.textView.setSelectedRange(NSRange(location:(line as NSString).length+1,length:0))
+        precondition(app.textView.layoutManager?.allowsNonContiguousLayout==true)
+        app.textView.setSelectedRange(NSRange(location:0,length:0))
+        precondition(app.textView.layoutManager?.allowsNonContiguousLayout==false)
+        app.textView.selectAll(nil);app.textView.insertText("short",replacementRange:NSRange(location:NSNotFound,length:0));check("short")
+        precondition(app.textView.layoutManager?.allowsNonContiguousLayout==true)
+        app.applyHistory(redo:false);check(line+"\nshort")
+        precondition(app.textView.layoutManager?.backgroundLayoutEnabled==false)
+        print("Presentation history native smoke passed: incremental edits, UTF-16, empty Redo, typography, fallback, marked text and layout policy")
+    }
 
     init(clipboard: NSPasteboard = .general) {
         let session = RustSession()
@@ -245,6 +352,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.allowsUndo = false
+        textView.layoutManager?.allowsNonContiguousLayout = true
+        textView.layoutManager?.backgroundLayoutEnabled = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -443,6 +552,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
         guard let replacementString else { return true }
         let accepted = document.replace(affectedCharRange, with: replacementString, kind: self.textView.editKind)
+        if accepted {updateLayoutPolicy(at:affectedCharRange.location+replacementString.utf16.count)}
         if !accepted { NSSound.beep() }
         return accepted
     }
@@ -458,10 +568,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        updateLayoutPolicy(at:textView.selectedRange().location)
         multiController.selectionChanged()
         if !textView.isPerformingEdit && !multiController.syncing {
             document.breakUndoGroup()
             scheduleSessionSave(quiet: true)
+        }
+    }
+
+    private func updateLayoutPolicy(at position:Int) {
+        let length=document.lineLength(at:position)
+        // AppKit's noncontiguous layout helps short paragraphs but makes editing
+        // a giant wrapped paragraph slower. Choose from Rope metadata, not a scan.
+        let partial=length>=0 && length<=32768
+        if textView.layoutManager?.allowsNonContiguousLayout != partial {
+            textView.layoutManager?.allowsNonContiguousLayout=partial
         }
     }
 
@@ -526,7 +647,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             self.toolPalette=nil
             if changed {
                 self.footer.operationError=nil
-                self.textView.string=self.document.text; self.applyTypography()
+                self.textView.setPlainText(self.document.text)
                 self.textView.setSelectedRange(range); self.textView.scrollRangeToVisible(range)
                 self.refreshTitle(); self.scheduleSessionSave(); self.scheduleSyntax()
             } else { self.footer.operationError="Already in shape · no changes" }
@@ -538,12 +659,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     @objc private func findPrevious() { if !findController.visible { openFind() } else { findController.move(-1) } }
     private func paintSyntax() {
         guard let layout = textView.layoutManager, let storage = textView.textStorage else { return }
-        guard let frame = syntaxFrame else {
+        if hasSyntaxPaint {
             layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: NSRange(location: 0, length: storage.length))
-            return
+            hasSyntaxPaint=false
         }
+        guard let frame = syntaxFrame else {return}
         guard frame.revision == document.revision else { return }
-        layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: NSRange(location: 0, length: storage.length))
         guard !frame.spans.isEmpty, let container = textView.textContainer else { return }
         let glyphs = layout.glyphRange(forBoundingRect: textView.visibleRect, in: container)
         let visible = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
@@ -553,7 +674,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         for span in frame.spans {
             if span.start >= end { break }
             let range = NSIntersectionRange(window, NSRange(location: span.start, length: span.length))
-            if range.length > 0 { layout.addTemporaryAttribute(.foregroundColor, value: SyntaxColors.color(span.role), forCharacterRange: range) }
+            if range.length > 0 { layout.addTemporaryAttribute(.foregroundColor, value: SyntaxColors.color(span.role), forCharacterRange: range);hasSyntaxPaint=true }
         }
     }
     @objc private func showLanguagePicker() {
@@ -602,10 +723,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private func applyHistory(redo: Bool) {
         guard multipleInputReady() else {return}
         multiController.cancel()
-        guard let cursor = document.history(redo: redo) else { return }
-        textView.string = document.text
-        applyTypography()
-        textView.setSelectedRange(NSRange(location: cursor, length: 0))
+        guard let update = document.historyUpdate(redo: redo) else { return }
+        updateLayoutPolicy(at:update.cursor)
+        if !textView.applyHistoryUpdate(update) {
+            textView.setPlainText(document.text)
+        }
+        textView.setSelectedRange(NSRange(location: update.cursor, length: 0))
         textView.scrollRangeToVisible(textView.selectedRange())
         refreshTitle()
         scheduleSessionSave()
@@ -708,8 +831,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         footer.operationError = nil
         syntaxFrame = nil; syntaxSerial = 0
         footer.showSyntax(session.language.isEmpty ? "Text" : session.language, automatic: session.language.isEmpty, reason: session.language.isEmpty ? "Detects file names and pasted text locally" : "Pinned for this tab", limited: false)
-        textView.string = document.text
-        applyTypography()
+        updateLayoutPolicy(at:session.selection.location)
+        textView.setPlainText(document.text)
         textView.setSelectedRange(session.selection)
         textView.scrollRangeToVisible(textView.selectedRange())
         window.makeFirstResponder(textView)

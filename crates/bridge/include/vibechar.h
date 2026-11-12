@@ -12,6 +12,8 @@ typedef struct VcDocument VcDocument;
 VcDocument *vc_document_new(const uint8_t *text, size_t length);
 void vc_document_free(VcDocument *document);
 size_t vc_document_length(const VcDocument *document);
+// Logical line content length in UTF-16 units at a UTF-16 offset. SIZE_MAX if invalid.
+size_t vc_document_line_length(const VcDocument *document, size_t utf16_offset);
 // Caller owns the output buffer. Returns false if capacity is insufficient.
 bool vc_document_copy(const VcDocument *document, uint8_t *output, size_t capacity);
 bool vc_document_replace(VcDocument *document, size_t utf16_start, size_t utf16_length,
@@ -22,6 +24,13 @@ bool vc_document_edit(VcDocument *document, size_t utf16_start, size_t utf16_len
 void vc_document_break_undo_group(VcDocument *document);
 bool vc_document_undo(VcDocument *document, size_t *utf16_cursor);
 bool vc_document_redo(VcDocument *document, size_t *utf16_cursor);
+typedef struct VcHistory VcHistory;
+// Apply exactly once; own the result until free. Null means no history/invalid handle.
+// UTF-16 replay-order edits are bounded to 1 MiB estimated JSON / 4,096 records.
+// edits:null requests a full snapshot fallback; the history operation is already applied.
+VcHistory *vc_document_history(VcDocument *document, bool redo);
+size_t vc_history_json(const VcHistory *history, uint8_t *output, size_t capacity);
+void vc_history_free(VcHistory *history);
 bool vc_document_dirty(const VcDocument *document);
 uint64_t vc_document_revision(const VcDocument *document);
 void vc_document_mark_saved(VcDocument *document);
