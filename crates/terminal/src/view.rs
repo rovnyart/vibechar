@@ -10,13 +10,110 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::editor::{cell_width, Editor};
 
 pub fn draw(frame: &mut Frame, editor: &mut Editor) {
-    let [header, body, status, footer] = Layout::vertical([
+    let find_height = editor.find.as_ref().map_or(0, |find| {
+        1 + u16::from(find.replacing)
+            + if find.preview.is_some() {
+                find.frame
+                    .as_ref()
+                    .map_or(1, |f| f.examples.len() as u16 + 1)
+            } else {
+                0
+            }
+    });
+    let [header, find_area, body, status, footer] = Layout::vertical([
         Constraint::Length(1),
+        Constraint::Length(find_height),
         Constraint::Min(1),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(frame.area());
+    if let Some(find) = &mut editor.find {
+        find.find_rect = ratatui::layout::Rect::new(
+            find_area.x,
+            find_area.y,
+            find_area.width,
+            u16::from(find_area.height > 0),
+        );
+        find.replace_rect = ratatui::layout::Rect::new(
+            find_area.x,
+            find_area.y + 1,
+            find_area.width,
+            u16::from(find.replacing && find_area.height > 1),
+        );
+        let render_input = |frame: &mut Frame,
+                            input: &crate::editor::find::Input,
+                            label: &str,
+                            area: ratatui::layout::Rect,
+                            focused: bool| {
+            if area.is_empty() {
+                return;
+            }
+            let prefix = format!(" {label}: ");
+            let prefix_width = prefix.len();
+            let width = usize::from(area.width).saturating_sub(prefix_width);
+            let left = input.column().saturating_sub(width.saturating_sub(1));
+            let mut line = styled_line(
+                &input.display(),
+                left,
+                width,
+                None,
+                false,
+                (0..0, false),
+                &[],
+            );
+            line.spans.insert(0, Span::raw(prefix));
+            frame.render_widget(
+                Paragraph::new(line).style(if focused && input.all_selected {
+                    selection_style(editor.light_syntax)
+                } else {
+                    Style::default().fg(Color::Rgb(245, 158, 66))
+                }),
+                area,
+            );
+        };
+        render_input(
+            frame,
+            &find.needle,
+            "Find",
+            find.find_rect,
+            find.focused && !find.replace_focus,
+        );
+        if find.replacing {
+            render_input(
+                frame,
+                &find.replacement,
+                "With",
+                find.replace_rect,
+                find.focused && find.replace_focus,
+            );
+        }
+        if find.preview.is_some() {
+            if let Some(result) = &find.frame {
+                let lines = std::iter::once(Line::raw(format!(
+                    " Replace {} matches? Enter applies · Esc goes back",
+                    result.changed
+                )))
+                .chain(
+                    result
+                        .examples
+                        .iter()
+                        .map(|ex| Line::raw(format!(" {} → {}", ex.before, ex.after))),
+                )
+                .collect::<Vec<_>>();
+                let y = find_area.y + 1 + u16::from(find.replacing);
+                frame.render_widget(
+                    Paragraph::new(lines).style(Style::default().fg(Color::Rgb(245, 158, 66))),
+                    ratatui::layout::Rect::new(
+                        find_area.x,
+                        y,
+                        find_area.width,
+                        find_area.bottom().saturating_sub(y),
+                    ),
+                );
+            }
+        }
+    }
     editor.update_viewport(body);
     let line = editor.document().line_index(editor.cursor);
     let column = editor.cursor_column();
@@ -50,12 +147,31 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         .as_ref()
         .filter(|frame| frame.document == editor.document().id());
     let selection = editor.selection();
+    let find_frame = editor
+        .find
+        .as_ref()
+        .and_then(|f| f.frame.as_ref())
+        .filter(|f| f.revision == editor.document().revision());
     let lines: Vec<_> = (editor.top
         ..(editor.top + usize::from(body.height)).min(editor.document().line_count()))
         .map(|index| {
             let text = editor.document().line(index);
             let start = editor.document().line_start(index);
             let end = start + text.chars().count();
+            let hits = find_frame.map_or_else(Vec::new, |f| {
+                f.matches
+                    .iter()
+                    .enumerate()
+                    .skip_while(|(_, h)| h.end < start)
+                    .take_while(|(_, h)| h.start <= end)
+                    .map(|(i, h)| {
+                        (
+                            h.start.saturating_sub(start)..h.end.saturating_sub(start),
+                            editor.find.as_ref().and_then(|f| f.current) == Some(i),
+                        )
+                    })
+                    .collect()
+            });
             let paint = syntax
                 .and_then(|frame| frame.lines.get(index))
                 .filter(|paint| paint.hash == vibechar_core::syntax::line_hash(&text));
@@ -65,10 +181,13 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 usize::from(body.width),
                 paint.map(|p| p.as_ref()),
                 editor.light_syntax,
-                selection.start.saturating_sub(start)..selection.end.saturating_sub(start),
-                index + 1 < editor.document().line_count()
-                    && selection.start <= end
-                    && selection.end > end,
+                (
+                    selection.start.saturating_sub(start)..selection.end.saturating_sub(start),
+                    index + 1 < editor.document().line_count()
+                        && selection.start <= end
+                        && selection.end > end,
+                ),
+                &hits,
             )
         })
         .collect();
@@ -142,7 +261,25 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
             }
         },
     );
-    let prompt = if let Some(query) = &editor.language_prompt {
+    let prompt = if let Some(find) = editor
+        .find
+        .as_ref()
+        .filter(|_| editor.save_prompt.is_none() && editor.language_prompt.is_none())
+    {
+        format!(
+            " {} · {} {} · {} · F3 next · F5 all · Esc",
+            find.status(),
+            if find.regex { "regex" } else { "text" },
+            if find.sensitive { "Aa" } else { "aa" },
+            if !find.focused {
+                "Ctrl+F/R fields"
+            } else if find.replace_focus {
+                "Enter replace · Tab fields · Alt+C/R"
+            } else {
+                "Enter next · Tab fields · Alt+C/R"
+            }
+        )
+    } else if let Some(query) = &editor.language_prompt {
         let choices = editor.language_options();
         format!(
             " Language: {}  [{}] · Enter choose · Esc cancel",
@@ -165,7 +302,24 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         Paragraph::new(prompt).style(Style::default().fg(Color::Rgb(245, 158, 66))),
         footer,
     );
-    if editor.save_prompt.is_none()
+    if let Some(find) = editor.find.as_ref().filter(|f| f.focused) {
+        let input = if find.replace_focus {
+            &find.replacement
+        } else {
+            &find.needle
+        };
+        let area = if find.replace_focus {
+            find.replace_rect
+        } else {
+            find.find_rect
+        };
+        if !area.is_empty() {
+            frame.set_cursor_position((
+                area.x + (7 + input.column()).min(usize::from(area.width).saturating_sub(1)) as u16,
+                area.y,
+            ));
+        }
+    } else if editor.save_prompt.is_none()
         && !body.is_empty()
         && line >= editor.top
         && line < editor.top + usize::from(body.height)
@@ -185,13 +339,15 @@ fn styled_line(
     width: usize,
     paint: Option<&vibechar_core::syntax::LinePaint>,
     light: bool,
-    selection: std::ops::Range<usize>,
-    newline: bool,
+    selected: (std::ops::Range<usize>, bool),
+    finds: &[(std::ops::Range<usize>, bool)],
 ) -> Line<'static> {
+    let (selection, newline) = selected;
     let mut output: Vec<Span<'static>> = Vec::new();
     let mut run = String::new();
     let mut last_style = Style::default();
     let mut character = 0;
+    let mut find_index = 0;
     let mut offset = 0;
     let mut span_index = 0;
     let spans = paint.map_or(&[][..], |p| p.spans.as_slice());
@@ -206,8 +362,20 @@ fn styled_line(
             .get(span_index)
             .filter(|span| span.start <= offset)
             .map_or(0, |span| span.role);
+        while find_index < finds.len()
+            && finds[find_index].0.end <= character
+            && !(finds[find_index].0.is_empty() && finds[find_index].0.start == character)
+        {
+            find_index += 1;
+        }
+        let found = finds.get(find_index).filter(|(r, _)| {
+            r.start < character + grapheme.chars().count()
+                && (r.end > character || r.is_empty() && r.start == character)
+        });
         let style = if selection.contains(&character) {
             selection_style(light)
+        } else if let Some((_, active)) = found {
+            find_style(light, *active)
         } else {
             syntax_style(role, light)
         };
@@ -237,10 +405,34 @@ fn styled_line(
     if !run.is_empty() {
         output.push(Span::styled(run, last_style));
     }
-    if newline && column >= left && column < left + width {
-        output.push(Span::styled(" ", selection_style(light)));
+    let found_end = finds
+        .iter()
+        .find(|(r, _)| r.is_empty() && r.start == character);
+    if (newline || found_end.is_some()) && column >= left && column < left + width {
+        output.push(Span::styled(
+            " ",
+            if newline {
+                selection_style(light)
+            } else {
+                find_style(light, found_end.unwrap().1)
+            },
+        ));
     }
     Line::from(output)
+}
+
+fn find_style(light: bool, active: bool) -> Style {
+    if active {
+        selection_style(light)
+    } else if light {
+        Style::default()
+            .fg(Color::Rgb(0x28, 0x2B, 0x29))
+            .bg(Color::Rgb(0xE6, 0xE5, 0xDF))
+    } else {
+        Style::default()
+            .fg(Color::Rgb(0xE3, 0xE5, 0xDF))
+            .bg(Color::Rgb(0x35, 0x37, 0x30))
+    }
 }
 
 fn selection_style(light: bool) -> Style {
@@ -293,7 +485,7 @@ fn syntax_style(role: u8, light: bool) -> Style {
 }
 #[cfg(test)]
 fn visible_line(text: &str, left: usize, width: usize) -> String {
-    styled_line(text, left, width, None, false, 0..0, false)
+    styled_line(text, left, width, None, false, (0..0, false), &[])
         .spans
         .iter()
         .map(|s| s.content.as_ref())
@@ -308,7 +500,7 @@ mod tests {
     #[test]
     fn selected_cells_cover_clipped_wide_text_tabs_and_newlines_without_bleeding() {
         for light in [true, false] {
-            let line = styled_line("界\tZ", 1, 4, None, light, 0..2, false);
+            let line = styled_line("界\tZ", 1, 4, None, light, (0..2, false), &[]);
             assert_eq!(
                 line.spans
                     .iter()
@@ -319,7 +511,7 @@ mod tests {
             assert_eq!(line.spans[0].style, selection_style(light));
             assert_eq!(line.spans[0].content, "   ");
             assert_eq!(line.spans.last().unwrap().style, Style::default());
-            let blank = styled_line("", 0, 4, None, light, 0..1, true);
+            let blank = styled_line("", 0, 4, None, light, (0..1, true), &[]);
             assert_eq!(blank.spans[0].content, " ");
             assert_eq!(blank.spans[0].style, selection_style(light));
         }

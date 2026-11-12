@@ -8,6 +8,7 @@ bash scripts/cargo.sh test --workspace --locked
 bash scripts/cargo.sh build --release --workspace --locked
 python3 scripts/test-terminal.py
 python3 scripts/test-selection.py
+python3 scripts/test-find.py
 python3 scripts/test-handoff.py
 if [[ "$(uname -s)" == "Darwin" ]]; then
   bash scripts/build-mac.sh

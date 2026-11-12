@@ -171,9 +171,12 @@ into a child process. Implement the same operation model in Mac and terminal.
   Primary paste cases, incremental invalidation, large/minified limits, recovery,
   native rendering and real PTY behavior are verified. Full latency/memory targets
   and multiple terminal emulators remain open; see verification.
-- [ ] Literal/regex search, replace preview, select matches, basic multicursor edits.
+- [x] Shared local literal/regex find and replace, case matching, highlighted hits,
+  next/previous navigation, per-match replacement and a batch preview in both clients.
+- [ ] Select all matches for editing and basic multicursor edits.
 - [ ] Local transforms and a keyboard command palette in both clients.
-- [ ] Coalesce a transformation or multi-edit into one undo transaction.
+- [x] Shared atomic batch edits as one undo transaction, first used by Replace All.
+  Future transforms and multicursor commands can reuse this operation.
 - [ ] Large document mode with explicit budgets for parsing, rendering, and history.
 
 Exit: representative JSON, logs, code, and prose are pleasant to manipulate offline;

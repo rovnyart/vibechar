@@ -72,6 +72,14 @@ trackpad scrolling moves the viewport independently of the caret and does not
 write recovery; selection/caret navigation checkpoints quietly without flashing
 Saving locally in both clients.
 
+Find/replace now shares a local Rust worker in both clients: literal or regex,
+case matching, highlighted results and wraparound navigation. On Mac use **Cmd+F**
+or **Option+Cmd+F** for replacement, then **All…** to preview a batch. In the TUI
+use **Ctrl+F / Ctrl+R**, **Tab** between fields, **F3 / Shift+F3** for navigation and
+**F5** for the batch preview; Enter confirms it and Escape cancels. Replace All is
+one Undo, and stale previews cannot overwrite subsequent edits. Queries/previews
+stay in memory, including for private tabs. See the [find limits](docs/development.md#find-and-replace).
+
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar
 creates a private tab and replaces the clipboard with an instruction for your

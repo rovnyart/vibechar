@@ -546,6 +546,54 @@ providers and temporary files are cleaned up. The user's actual clipboard and
 running editor are untouched. Physical emulator/trackpad, Linux clipboard and
 remote-terminal clipboard acceptance remain platform qualification work.
 
+## Shared find/replace increment — 2026-11-12
+
+Both clients now use one local Rust literal/regex worker with case options,
+wraparound navigation, scalar/UTF-16 hit ranges, per-match replacement and a batch
+preview. It operates on an immutable rope snapshot with a latest-wins slot and
+bounded compiled-regex/capture expansion. Query/preview state stays outside session
+checkpoints. Search and no-op batches preserve text state and live Secret Drop
+grants; real replacement batches revoke the document grant. Input/output/match and
+cooperative scan limits are explicit in development; this does not qualify large
+documents or guarantee a hard per-regex wall-clock bound.
+
+`Document::replace_many` validates every range before mutation and applies sorted
+edits in reverse source order as one history transaction/revision. Tests prove
+Unicode/UTF-16 positions, literal metacharacters, case folding, named/numbered
+capture expansion, escaped dollars, zero-width matches, invalid patterns/groups,
+match caps, stale revision/query/document rejection, no-op state preservation,
+batch overlap rejection and byte-exact Undo/redo across CRLF. A private-grant test
+checks successful fetch after search/no-op, rejection after a real batch and no
+grant resurrection after Undo. The bridge checks owned frame stability after
+mutation, UTF-16 output selection, one revision and malformed input handling.
+
+Full `scripts/check.sh` passed: **77 Rust tests**, formatting/Clippy, release builds,
+**19 base + 4 selection + 3 find PTY scenarios**, Secret Drop integration and all
+native smoke checks. The new PTY tests exercise live counts, preview/cancel/apply,
+fast Enter queued before a worker result, literal/regex/case toggles, capture
+replacement, zero-width multiline insertion, one-step Undo/clean-state restoration,
+private source exclusion and an unmatched query absent from recovery. Escape and
+the following CSI key are sent as distinct actions to avoid an ambiguous doubled
+Escape/Alt prefix in the test stream.
+
+Native smoke covers counts/navigation, unchanged dirty/revision/status on search
+or a no-op batch, actual text-view mirroring, one-step Undo, stale/error rejection,
+private replacement, Escape and 420/880 pt control geometry in both appearances.
+The real views are exported under ignored `dist/find-ui/find-{light,dark}-{420,880}.png`.
+Live QA caught a drawing-region bug that painted over the tabs; clipping the new
+bar to its bounds fixed it and was verified on screen. The field-editor Undo
+manager is separate from document Undo and is cleared on closing Find.
+
+An isolated `dev.vibechar.find-check` app verified Cmd+F, selected-text query
+seeding, Cmd+G, Option+Cmd+F, entering replacement text, All… preview, applying all
+three matches and restoring the source with one Cmd+Z. Undo within the query field
+restored its query without changing source. Case/regex toggles, a visibly invalid
+regex, disabled match actions, Escape, preserved tabs/brand mark, and a live Dark
+appearance were also checked. Closing/relaunching did not restore a find bar or
+query history. Removed the QA bundle, registration, synthetic recovery/preferences;
+paste automation restored clipboard contents. No user editor/files/recovery were
+opened. Physical terminal-emulator and Linux acceptance remain open.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS
@@ -585,6 +633,6 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 Native startup and Mac bridge/presentation costs across representative file sizes
 still need measurement. The milestone's baseline checkbox remains open until that
 evidence is recorded. M2 recovery is partial: retention and broader durability
-qualification remain open. M3 smart syntax is implemented; search, transforms,
+qualification remain open. M3 smart syntax and find/replace are implemented; transforms,
 multicursor editing and complete large-document mode remain open. M4/M5 AI is not
 implemented. The prototype should not hold the only copy of important text.

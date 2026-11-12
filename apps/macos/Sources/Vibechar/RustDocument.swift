@@ -9,7 +9,7 @@ enum TextEditKind: UInt32 {
 final class RustDocument {
     private let ownedHandle: OpaquePointer?
     private let session: RustSession?
-    private var handle: OpaquePointer {
+    var handle: OpaquePointer {
         if let ownedHandle { return ownedHandle }
         guard let session, let active = vc_session_document(session.handle) else {
             preconditionFailure("The editing session must have an active document")

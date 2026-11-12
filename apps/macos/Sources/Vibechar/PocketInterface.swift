@@ -68,6 +68,10 @@ final class PocketTextView: NSTextView {
     private var editDepth = 0
     var isPerformingEdit: Bool { editDepth > 0 }
     var onBreakUndoGroup: (() -> Void)?
+    var onEscape: (() -> Bool)?
+    override func cancelOperation(_ sender: Any?) {
+        if onEscape?() != true { super.cancelOperation(sender) }
+    }
 
     // The outer action wins: a paste may internally call insertText.
     private func performEdit<T>(_ kind: TextEditKind, _ operation: () -> T) -> T {

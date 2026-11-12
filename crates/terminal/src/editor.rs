@@ -10,6 +10,8 @@ use vibechar_core::{session::Session, Document, EditKind};
 
 use crate::files;
 
+#[path = "find.rs"]
+pub(crate) mod find;
 #[path = "selection.rs"]
 mod selection;
 
@@ -26,6 +28,7 @@ pub struct Editor {
     pub language_prompt: Option<String>,
     pub syntax: Option<std::sync::Arc<vibechar_core::syntax::Frame>>,
     pub light_syntax: bool,
+    pub find: Option<find::Find>,
     viewport: Rect,
     reveal_cursor: bool,
     language_choice: usize,
@@ -54,6 +57,7 @@ impl Editor {
             language_prompt: None,
             syntax: None,
             light_syntax: std::env::var("VIBECHAR_COLOR_SCHEME").is_ok_and(|s| s == "light"),
+            find: None,
             viewport: Rect::default(),
             reveal_cursor: true,
             language_choice: 0,
@@ -72,6 +76,9 @@ impl Editor {
 
     fn insert_with_kind(&mut self, text: &str, kind: EditKind) {
         self.cancel_private_quit();
+        if self.find_insert(text) {
+            return;
+        }
         if let Some(prompt) = &mut self.language_prompt {
             if !text.contains(['\n', '\r', '\0']) && prompt.len() + text.len() <= 128 {
                 prompt.push_str(text);
@@ -132,6 +139,9 @@ impl Editor {
             key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL);
         if !quitting {
             self.cancel_private_quit();
+        }
+        if self.handle_find_key(key) {
+            return false;
         }
         if (key.code == KeyCode::Char('v') && key.modifiers.contains(KeyModifiers::CONTROL))
             || (key.code == KeyCode::Insert && key.modifiers.contains(KeyModifiers::SHIFT))
@@ -505,6 +515,7 @@ impl Editor {
     }
 
     fn restore_cursor(&mut self) {
+        self.find = None;
         self.restore_selection();
         self.top = 0;
         self.left = 0;

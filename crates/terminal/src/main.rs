@@ -125,6 +125,16 @@ fn edit(
     let mut quit_failed = false;
     let mut drag_deadline = None;
     loop {
+        let find_before = editor.recovery_mark();
+        if editor.pump_find() {
+            deadline.get_or_insert(Instant::now() + Duration::from_millis(500));
+        }
+        if editor.recovery_mark() != find_before {
+            deadline = Some(Instant::now() + Duration::from_millis(500));
+            syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
+            editor.recovery_status = "Saving locally…";
+        }
+        let find_busy = editor.find_busy();
         if editor.drag_scrolling() {
             let now = Instant::now();
             let next = drag_deadline.get_or_insert(now + Duration::from_millis(80));
@@ -163,6 +173,11 @@ fn edit(
         terminal.draw(|frame| view::draw(frame, editor))?;
         let mut timeout =
             deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        if find_busy {
+            timeout = Some(timeout.map_or(Duration::from_millis(25), |value| {
+                value.min(Duration::from_millis(25))
+            }));
+        }
         if let Some(drag) = drag_deadline {
             let delay = drag.saturating_duration_since(Instant::now());
             timeout = Some(timeout.map_or(delay, |value| value.min(delay)));

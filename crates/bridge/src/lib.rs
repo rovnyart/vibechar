@@ -10,6 +10,136 @@ use vibechar_core::{checkpoint::Checkpoint, session::Session, Document};
 
 pub type VcDocument = Document;
 pub struct VcSyntaxFrame(std::sync::Arc<vibechar_core::syntax::Frame>);
+pub struct VcSearch(vibechar_core::search::Engine);
+pub struct VcSearchFrame(std::sync::Arc<vibechar_core::search::Frame>);
+
+#[no_mangle]
+pub extern "C" fn vc_search_new() -> *mut VcSearch {
+    guard(|| {
+        vibechar_core::search::Engine::new().map_or(ptr::null_mut(), |engine| {
+            Box::into_raw(Box::new(VcSearch(engine)))
+        })
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_search_free(search: *mut VcSearch) {
+    if !search.is_null() {
+        guard(|| drop(Box::from_raw(search)));
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_search_submit(
+    search: *mut VcSearch,
+    document: *const VcDocument,
+    needle: *const u8,
+    needle_length: usize,
+    replacement: *const u8,
+    replacement_length: usize,
+    flags: u32,
+) -> bool {
+    guard(|| {
+        let Some(search) = search.as_mut() else {
+            return false;
+        };
+        if flags & !7 != 0 || needle_length > 64 * 1024 || replacement_length > 64 * 1024 {
+            search.0.clear();
+            return false;
+        }
+        let (Some(doc), Some(needle), Some(replacement)) = (
+            document.as_ref(),
+            input(needle, needle_length),
+            input(replacement, replacement_length),
+        ) else {
+            search.0.clear();
+            return false;
+        };
+        search.0.submit(
+            doc,
+            vibechar_core::search::Query {
+                needle: needle.into(),
+                replacement: (flags & 4 != 0).then(|| replacement.into()),
+                regex: flags & 1 != 0,
+                case_sensitive: flags & 2 != 0,
+            },
+        );
+        true
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_search_busy(search: *const VcSearch) -> bool {
+    guard(|| search.as_ref().is_some_and(|s| s.0.busy()))
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_search_frame(
+    search: *const VcSearch,
+    document: *const VcDocument,
+    after: u64,
+) -> *mut VcSearchFrame {
+    guard(|| {
+        let (Some(search), Some(doc)) = (search.as_ref(), document.as_ref()) else {
+            return ptr::null_mut();
+        };
+        search.0.frame(doc, after).map_or(ptr::null_mut(), |frame| {
+            Box::into_raw(Box::new(VcSearchFrame(frame)))
+        })
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_search_frame_free(frame: *mut VcSearchFrame) {
+    if !frame.is_null() {
+        guard(|| drop(Box::from_raw(frame)));
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_search_frame_json(
+    frame: *const VcSearchFrame,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        frame.as_ref().map_or(0, |f| {
+            copy_metadata(str::from_utf8(&f.0.encoded).unwrap_or(""), output, capacity)
+        })
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_search_apply(
+    search: *const VcSearch,
+    document: *mut VcDocument,
+    serial: u64,
+    index: usize,
+    start: *mut usize,
+    length: *mut usize,
+) -> i32 {
+    guard(|| {
+        if start.is_null() || length.is_null() {
+            return 0;
+        }
+        let (Some(search), Some(doc)) = (search.as_ref(), document.as_mut()) else {
+            return 0;
+        };
+        let Ok((changed, range)) =
+            search
+                .0
+                .apply(doc, serial, (index != usize::MAX).then_some(index))
+        else {
+            return 0;
+        };
+        let (Ok(from), Ok(to)) = (
+            doc.utf16_from_char(range.start),
+            doc.utf16_from_char(range.end),
+        ) else {
+            return 0;
+        };
+        *start = from;
+        *length = to - from;
+        if changed {
+            1
+        } else {
+            2
+        }
+    })
+}
 
 fn guard<T: Default>(operation: impl FnOnce() -> T) -> T {
     catch_unwind(AssertUnwindSafe(operation)).unwrap_or_default()
@@ -790,6 +920,85 @@ mod tests {
             assert_eq!(vc_syntax_choices([0xff].as_ptr(), 1, ptr::null_mut(), 0), 0);
             assert_eq!(vc_syntax_choices(ptr::null(), 129, ptr::null_mut(), 0), 0);
             assert!(!vc_session_set_language(ptr::null_mut(), ptr::null(), 0));
+            assert!(!vc_search_busy(ptr::null()));
+            assert!(vc_search_frame(ptr::null(), ptr::null(), 0).is_null());
+            vc_search_free(ptr::null_mut());
+            vc_search_frame_free(ptr::null_mut());
+            assert_eq!(vc_search_frame_json(ptr::null(), ptr::null_mut(), 0), 0);
+        }
+    }
+
+    #[test]
+    fn find_bridge_keeps_immutable_frames_and_applies_utf16_batch_once() {
+        unsafe {
+            let source = "👩‍💻 one one";
+            let document = vc_document_new(source.as_ptr(), source.len());
+            let search = vc_search_new();
+            assert!(!search.is_null());
+            assert!(vc_search_submit(
+                search,
+                document,
+                b"one".as_ptr(),
+                3,
+                b"two".as_ptr(),
+                3,
+                4
+            ));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let frame = loop {
+                let f = vc_search_frame(search, document, 0);
+                if !f.is_null() {
+                    break f;
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            };
+            let size = vc_search_frame_json(frame, ptr::null_mut(), 0);
+            let mut bytes = vec![0; size];
+            assert_eq!(vc_search_frame_json(frame, bytes.as_mut_ptr(), size), size);
+            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value["matches"][0]["utf16_start"], 6);
+            let serial = value["serial"].as_u64().unwrap();
+            let (mut start, mut length) = (0, 0);
+            assert_eq!(
+                vc_search_apply(
+                    search,
+                    document,
+                    serial,
+                    usize::MAX,
+                    &mut start,
+                    &mut length
+                ),
+                1
+            );
+            assert_eq!((start, length), (6, 3));
+            assert_eq!(vc_document_revision(document), 1);
+            let mut copied = vec![0; size];
+            vc_search_frame_json(frame, copied.as_mut_ptr(), size);
+            assert_eq!(bytes, copied);
+            assert_eq!(
+                vc_search_apply(
+                    search,
+                    document,
+                    serial,
+                    usize::MAX,
+                    &mut start,
+                    &mut length
+                ),
+                0
+            );
+            assert!(!vc_search_submit(
+                search,
+                document,
+                [0xff].as_ptr(),
+                1,
+                ptr::null(),
+                0,
+                0
+            ));
+            vc_search_frame_free(frame);
+            vc_search_free(search);
+            vc_document_free(document);
         }
     }
 

@@ -2,6 +2,7 @@
 
 pub mod checkpoint;
 pub mod handoff;
+pub mod search;
 pub mod session;
 pub mod syntax;
 
@@ -38,6 +39,12 @@ struct Change {
     after: u64,
     removed_chars: usize,
     inserted_chars: usize,
+}
+
+#[derive(Clone)]
+pub struct TextEdit {
+    pub range: Range<usize>,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,6 +149,60 @@ impl Document {
 
     pub fn break_undo_group(&mut self) {
         self.last_edit = None;
+    }
+
+    /// Apply sorted, nonoverlapping edits atomically as a single history entry.
+    pub fn replace_many(&mut self, edits: &[TextEdit]) -> Result<bool, InvalidPosition> {
+        let mut previous: Option<&Range<usize>> = None;
+        let mut changes = Vec::new();
+        let mut bytes = 0;
+        for edit in edits {
+            if edit.range.start > edit.range.end
+                || edit.range.end > self.len_chars()
+                || previous
+                    .is_some_and(|p| p.end > edit.range.start || p.is_empty() && *p == edit.range)
+            {
+                return Err(InvalidPosition);
+            }
+            previous = Some(&edit.range);
+            let removed = self.text.slice(edit.range.clone()).to_string();
+            if removed == edit.text {
+                continue;
+            }
+            bytes += removed.len() + edit.text.len();
+            changes.push(Change {
+                start: edit.range.start,
+                removed_chars: edit.range.len(),
+                inserted_chars: edit.text.chars().count(),
+                removed,
+                inserted: edit.text.clone(),
+                before: 0,
+                after: 0,
+            });
+        }
+        if changes.is_empty() {
+            return Ok(false);
+        }
+        self.break_undo_group();
+        self.revoke_drop();
+        changes.reverse();
+        for change in &mut changes {
+            self.text
+                .remove(change.start..change.start + change.removed_chars);
+            self.text.insert(change.start, &change.inserted);
+            change.before = self.state;
+            change.after = self.next_state;
+            self.state = self.next_state;
+            self.next_state += 1;
+        }
+        self.revision += 1;
+        self.undo.push(HistoryEntry {
+            changes,
+            kind: EditKind::Isolated,
+            bytes,
+        });
+        self.redo.clear();
+        Ok(true)
     }
 
     fn edit_at(

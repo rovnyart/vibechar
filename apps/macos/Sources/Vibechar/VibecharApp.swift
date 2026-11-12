@@ -39,6 +39,7 @@ struct VibecharApp {
             AppDelegate.saveAsSmokeTest()
             AppDelegate.syntaxSmokeTest()
             AppDelegate.quietSelectionSmokeTest()
+            AppDelegate.findSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -97,6 +98,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private let textView = PocketTextView()
     private let header = PocketHeader()
     private let footer = PocketFooter()
+    private let findBar = FindBar()
+    private lazy var findController: FindController = {
+        let controller = FindController(bar: findBar,document: document,textView: textView)
+        controller.didReplace = { [weak self] selection in
+            guard let self else { return }
+            self.textView.string = self.document.text
+            self.applyTypography(); self.textView.setSelectedRange(selection)
+            self.textView.scrollRangeToVisible(selection)
+            self.window.makeFirstResponder(self.textView)
+            self.refreshTitle(); self.scheduleSessionSave(); self.scheduleSyntax()
+        }
+        return controller
+    }()
     private var fontSize: CGFloat = 15
     private var closingWindow = false
     private var recovery: SessionRecovery?
@@ -208,6 +222,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         footer.onLanguage = { [weak self] in self?.showLanguagePicker() }
         content.appearanceChanged = { [weak self] in self?.applyTypography() }
         content.addSubview(header)
+        findBar.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(findBar)
         content.addSubview(scroll)
         content.addSubview(footer)
         NSLayoutConstraint.activate([
@@ -215,7 +231,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             header.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             header.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: 54),
-            scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+            findBar.topAnchor.constraint(equalTo: header.bottomAnchor),
+            findBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            findBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            findBar.height,
+            scroll.topAnchor.constraint(equalTo: findBar.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
@@ -227,6 +247,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displayOptionsChanged),
             name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         refreshTitle()
+        _ = findController
+        textView.onEscape = { [weak self] in
+            guard let self, self.findController.visible else { return false }
+            self.findController.close(); return true
+        }
     }
 
     private func applyTypography() {
@@ -298,6 +323,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(.separator())
+        addItem("Find…",action:#selector(openFind),key:"f",to:edit)
+        let replace = NSMenuItem(title:"Find and Replace…",action:#selector(openReplace),keyEquivalent:"f")
+        replace.keyEquivalentModifierMask = [.command,.option]; replace.target=self; edit.addItem(replace)
+        addItem("Find Next",action:#selector(findNext),key:"g",to:edit)
+        let previousMatchItem = NSMenuItem(title:"Find Previous",action:#selector(findPrevious),keyEquivalent:"g")
+        previousMatchItem.keyEquivalentModifierMask = [.command,.shift]; previousMatchItem.target=self; edit.addItem(previousMatchItem)
         addMenu("Edit", submenu: edit, to: menu)
         let view = NSMenu(title: "View")
         let language = NSMenuItem(title: "Choose Language…", action: #selector(showLanguagePicker), keyEquivalent: "l")
@@ -362,6 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         refreshTitle()
         scheduleSessionSave()
         scheduleSyntax()
+        findController.sourceChanged()
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -401,7 +434,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         if !busy { syntaxTimer?.invalidate(); syntaxTimer = nil }
         return busy
     }
-    @objc private func syntaxViewportChanged() { paintSyntax() }
+    @objc private func syntaxViewportChanged() { paintSyntax(); findController.paint() }
+    @objc private func openFind() { findController.open(replacing:false) }
+    @objc private func openReplace() { findController.open(replacing:true) }
+    @objc private func findNext() { if !findController.visible { openFind() } else { findController.move(1) } }
+    @objc private func findPrevious() { if !findController.visible { openFind() } else { findController.move(-1) } }
     private func paintSyntax() {
         guard let layout = textView.layoutManager, let storage = textView.textStorage else { return }
         guard let frame = syntaxFrame else {
@@ -453,8 +490,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         refreshDropStatus()
     }
 
-    @objc private func undoEdit() { applyHistory(redo: false) }
-    @objc private func redoEdit() { applyHistory(redo: true) }
+    @objc private func undoEdit() {
+        if let field=window.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.undo(); return }
+        applyHistory(redo: false)
+    }
+    @objc private func redoEdit() {
+        if let field=window.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.redo(); return }
+        applyHistory(redo: true)
+    }
 
     private func applyHistory(redo: Bool) {
         guard let cursor = document.history(redo: redo) else { return }
@@ -465,6 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         refreshTitle()
         scheduleSessionSave()
         scheduleSyntax()
+        findController.sourceChanged()
     }
 
     @objc private func newScratch() {
@@ -551,6 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func showActiveBuffer() {
+        if findController.visible { findController.close() }
         footer.operationError = nil
         syntaxFrame = nil; syntaxSerial = 0
         footer.showSyntax(session.language.isEmpty ? "Text" : session.language, automatic: session.language.isEmpty, reason: session.language.isEmpty ? "Detects file names and pasted text locally" : "Pinned for this tab", limited: false)
@@ -694,6 +739,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         // AppKit terminates the process without guaranteeing Swift/Rust deinit.
         closeAllAgentAccess()
         syntaxWork?.cancel(); syntaxTimer?.invalidate()
+        findController.close()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -818,6 +864,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.saveGeneration == privateGeneration)
         precondition(!String(decoding: try! Data(contentsOf: file), as: UTF8.self).contains("PRIVATE_SELECTION_FIXTURE"))
         print("Quiet Mac selection smoke passed: caret/selection, no-op, pending text deadline, restart, failure/recovery, private exclusion")
+    }
+
+    static func findSmokeTest() {
+        let app=AppDelegate(clipboard:.withUniqueName())
+        app.makeWindow(restoreFrame:false)
+        defer { app.findController.close(); app.syntaxWork?.cancel(); app.syntaxTimer?.invalidate(); app.window.delegate=nil; app.window.close(); app.clipboard.clearContents() }
+        let sample="{\n  \"service\": \"pocket\",\n  \"host\": \"pocket.local\",\n  \"message\": \"Hello 👩‍💻 from Pocket\"\n}\r\n"
+        precondition(app.document.replace(NSRange(location:0,length:0),with:sample))
+        app.document.markSaved(); app.showActiveBuffer(); app.makeMenus(); app.openReplace()
+        func query(_ needle:String,_ replacement:String,regex:Bool=false) {
+            app.findBar.find.stringValue=needle; app.findBar.replacement.stringValue=replacement; app.findBar.regex.state=regex ? .on : .off
+            app.findController.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification))
+            let deadline=Date(timeIntervalSinceNow:5)
+            while app.findController.frame == nil {
+                RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01)); app.findController.poll()
+                precondition(Date()<deadline,"Find worker must finish")
+            }
+        }
+        query("service","service")
+        let unchangedRevision=app.document.revision
+        app.findController.apply(index:nil)
+        precondition(app.document.revision==unchangedRevision && !app.document.isDirty && app.footer.status.stringValue=="Saved locally")
+        query("pocket","vibechar")
+        precondition(app.findController.frame!.matches.count==3 && app.findController.frame!.changed==3)
+        precondition(app.document.text==sample && !app.document.isDirty)
+        precondition(app.footer.status.stringValue=="Saved locally")
+        let syntaxDeadline=Date(timeIntervalSinceNow:5)
+        while app.syntaxFrame?.language != "JSON" {
+            RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.pollSyntax()
+            precondition(Date()<syntaxDeadline)
+        }
+        app.findController.move(1)
+        precondition(app.textView.selectedRange()==app.findController.frame!.matches[1].range)
+        let output=ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map {URL(fileURLWithPath:$0,isDirectory:true)}
+        for (name,appearance) in [("light",NSAppearance.Name.aqua),("dark",.darkAqua)] {
+            app.window.appearance=NSAppearance(named:appearance)
+            for width in [420,880] {
+                app.window.setContentSize(NSSize(width:width,height:600)); app.window.layoutIfNeeded();app.header.needsLayout=true;app.header.needsDisplay=true; app.window.contentView!.layoutSubtreeIfNeeded(); app.findBar.layoutSubtreeIfNeeded(); app.findController.paint()
+                let controls=app.findBar.subviews.compactMap {$0 as? NSControl}.filter {!$0.isHidden}
+                for (i,control) in controls.enumerated() {
+                    precondition(app.findBar.bounds.contains(control.frame),"Find controls must fit")
+                    for other in controls.dropFirst(i+1) { precondition(!control.frame.intersects(other.frame),"Find controls must not overlap") }
+                }
+                if let output {
+                    let view=app.window.contentView!
+                    app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds)!
+                        view.cacheDisplay(in:view.bounds,to:bitmap)
+                        try! bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("find-\(name)-\(width).png"))
+                    }
+                }
+            }
+        }
+        let serial=app.findController.frame!.serial
+        app.findController.apply(index:nil,serial:serial)
+        let replaced=sample.replacingOccurrences(of:"pocket",with:"vibechar",options:.caseInsensitive)
+        precondition(app.document.text==replaced && app.textView.string==replaced && app.document.isDirty)
+        app.undoEdit(); precondition(app.document.text==sample && !app.document.isDirty)
+        app.redoEdit(); precondition(app.document.text==replaced)
+        query("[","x",regex:true); precondition(app.findController.frame!.error != nil && !app.findBar.all.isEnabled)
+        query("vibechar","$0!",regex:true)
+        let stale=app.findController.frame!.serial
+        app.textView.insertText("!",replacementRange:NSRange(location:0,length:0))
+        let afterEdit=app.document.text
+        app.findController.apply(index:nil,serial:stale); precondition(app.document.text==afterEdit)
+        app.newPrivateScratch(); precondition(!app.findController.visible)
+        app.textView.insertText("PRIVATE_FIND_FIXTURE x x",replacementRange:NSRange(location:NSNotFound,length:0))
+        app.openReplace(); app.findBar.sensitive.state = .on; query("x","y"); app.findController.apply(index:nil)
+        precondition(app.document.text=="PRIVATE_FIND_FIXTURE y y")
+        app.undoEdit(); precondition(app.document.text=="PRIVATE_FIND_FIXTURE x x")
+        app.textView.cancelOperation(nil); precondition(!app.findController.visible)
+        print("Find/replace native smoke passed: local matching, counts, navigation, preview plan, one Undo, stale/error rejection, private, light/dark narrow/wide layout")
     }
 
     static func inputSmokeTest() {

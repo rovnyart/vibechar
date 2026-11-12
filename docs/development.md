@@ -203,6 +203,64 @@ output. Dependency notices are in
 [syntax-licenses.md](syntax-licenses.md), included in the Mac bundle's Resources,
 and available through `vibechar --syntax-licenses`.
 
+## Find and replace
+
+Both clients use the same background Rust find/replace engine. Search starts in
+case-insensitive literal mode; enable Match Case (`Aa`) or Regex (`.*`) explicitly.
+The current selection seeds a bounded query. Matches are nonoverlapping and
+navigation wraps. Search and preview do not change source, dirty state or Secret
+Drop access; actual replacements use the shared document/history and revoke a
+private tab's grant. No-op replacements create no history and keep grants valid.
+
+On Mac use Edit → Find / **Cmd+F**, or Find and Replace / **Option+Cmd+F**. The
+compact Pocket bar shows the query, count, previous/next arrows and toggles. Use
+**Cmd+G / Shift+Cmd+G**, or Enter/Shift+Enter in the Find field, to navigate. The
+replacement row has **Replace** for the current hit and **All…** for a preview of
+up to three changes and the affected count. Its Replace All button applies the
+reviewed plan. Escape closes the popover/bar; clicking the canvas returns to editing.
+Undo in a native query field edits the query; applying a replacement returns
+focus to the document, where Cmd+Z undoes it.
+
+In the TUI use **Ctrl+F / Ctrl+R**, **Tab** between Find/With, **Alt+C** for case,
+**Alt+R** for regex, and **F3 / Shift+F3** to navigate. Enter in Find moves to the
+next hit; Enter in With replaces the current hit. **F5** opens a batch preview;
+Enter confirms and Escape returns to the fields. Another Escape closes the bar.
+Fields support Unicode-safe cursor movement/deletion, Ctrl+A and clipboard paste;
+query-only input never reaches the document. A canvas click lets you edit while
+the panel remains open. Successful replacements return editing focus to the canvas.
+File/language prompts retain their own input and footer. Some terminals consume
+Alt/modified keys; multi-emulator qualification remains open.
+
+Regex syntax follows the pinned [Rust regex library](https://docs.rs/regex/1.13.1/regex/).
+Multiline `^`/`$` respect CRLF; use `(?s)` when dot should cross lines. Lookaround
+and pattern backreferences are unsupported. Regex replacement accepts **$0**, **$1**,
+**${name}** and **$$**; unknown groups show an error. In literal mode dollar signs
+are ordinary replacement text. Empty Find produces no matches; a valid zero-width
+regex is supported. Find/replace does not normalize source line endings.
+
+Batch preview is bound to the document identity, revision and current query/options.
+Editing, Undo or changing the query invalidates it; a stale plan cannot apply.
+Replace All validates every edit before mutation and records one revision/history
+transaction. **One Undo** restores the original bytes and saved-state flag. Regex
+errors, limits, cancelled previews and no-op replacements leave text unchanged.
+
+Search currently accepts documents up to **4 MiB**, queries up to **1 KiB**, and
+replacement fields up to **64 KiB**. Results cap at **10,000 matches**; limited or
+failed results cannot be replaced as a partial batch. Expanded output caps at
+**8 MiB**, including group expansion. Compiled regex/DFA limits are 1 MiB each,
+with nesting limited to 64. A cooperative one-second scan budget is checked
+between matches; compilation or a single iterator search can outlast it. This is
+not a hard wall-clock deadline or large-document qualification. Parsing, capture
+expansion and preview construction run in a latest-wins worker, not on input threads.
+
+Queries and previews are not automatically written to recovery, preferences,
+clipboard, history files or diagnostics. Explicit field copy still copies the
+selected query. Native recent-search persistence is disabled. Closing the
+bar or changing tabs releases the query/plan. Private search/replace remains local
+and its source/selection stays excluded from recovery. Ordinary match selection
+checkpoints quietly, without flashing Saving locally. Dependency notices are
+bundled alongside the existing syntax notices.
+
 ## Private scratches
 
 Use File → New Private Scratch / Shift+Cmd+N on Mac, or Ctrl+P in the terminal.
@@ -329,7 +387,7 @@ docs/              roadmap, architecture, development, verification evidence
 ## M1 limitations
 
 The app is an early prototype. AI,
-multicursors, global hotkeys, and search are later
+multicursors and global hotkeys are later
 milestones. TUI selection/clipboard is implemented; acceptance across terminal
 emulators/Linux and native IME composition qualification remain pending. No
 dedicated settings window exists; recovery uses a versioned JSON checkpoint.

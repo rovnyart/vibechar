@@ -167,6 +167,9 @@ impl Editor {
     }
 
     pub fn mouse(&mut self, event: MouseEvent) {
+        if self.find_mouse(event) {
+            return;
+        }
         self.mouse_at(event, Instant::now());
     }
     fn mouse_at(&mut self, event: MouseEvent, now: Instant) {

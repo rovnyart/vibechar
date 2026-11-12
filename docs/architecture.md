@@ -211,6 +211,24 @@ agent runtime, or per-agent MCP setup is involved. See the
 
 ## Commands, transforms, proposals
 
+The find/replace worker owns a latest-wins request slot, a compiled-regex cache
+and an immutable rope snapshot. It is created on opening Find and sleeps when idle;
+closing Find or changing tabs releases it. The key includes document identity,
+revision, literal/regex and case options, query and replacement. Requests invalidate
+old frames immediately. Normal find frames expose scalar/UTF-16 ranges; replacement
+frames additionally expose bounded before/after examples, while full edits remain
+private to the engine. The C bridge owns stable Arc-backed frame handles for
+two-pass copy-out. Query/preview state never enters session checkpoints.
+
+`Document::replace_many` validates sorted, nonoverlapping ranges and builds removed
+payloads before changing text. It applies in descending source order, then pushes
+one shared history entry, advances revision once and clears redo. Undo reverses
+that ordered transaction; redo replays it. No-op batches advance no state and do
+not revoke Secret Drop. A real batch revokes the document's grant once, like any
+other edit. Find applies only when the engine request/serial, document and revision
+still match the preview. Error/limited results are not partially applied. Search
+budgets and replacement-group expansion bounds are documented in development.
+
 Common operations are commands, not UI callbacks. A local transform returns edits
 for a specified selection. A proposal is bound to document identity, source revision,
 and an explicit target. Acceptance validates the unchanged source and protected spans,

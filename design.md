@@ -31,6 +31,11 @@ while progressing through the remaining M2 behavior work.
 - File → Save As / Shift+Cmd+S chooses a new destination with the current filename
   and folder prefilled. Native replacement confirmation applies; only a successful
   write changes the tab's file association.
+- Find opens below the tabs, leaving the canvas dominant. Cmd+F finds, Option+Cmd+F
+  reveals replacement; Cmd+G / Shift+Cmd+G navigate. Show count, case and regex
+  toggles without a settings dialog. Reflow controls at narrow widths. All… shows
+  a small before/after preview and a deliberate Replace All action; one Undo restores
+  the batch. Escape closes find and restores editing focus.
 - Syntax starts in Auto. A quiet footer badge states the detected language; its
   tooltip explains the local signal. Click or Control+Cmd+L opens a compact search
   with at most seven suggestions, never an alphabetic wall. Return pins, Escape
@@ -70,6 +75,10 @@ while progressing through the remaining M2 behavior work.
 - F2 opens the same local language search; arrows select, Return pins, Escape
   cancels. Auto is the default. Colors follow the dark Pocket palette unless
   `VIBECHAR_COLOR_SCHEME=light` is selected for a light terminal background.
+- Ctrl+F / Ctrl+R opens compact find/replacement rows. Tab switches fields,
+  F3 / Shift+F3 navigates, Alt+C/R toggles case/regex. F5 previews a batch; Enter
+  applies and Escape goes back. Fields accept cursor editing and paste; query
+  input never edits the document. Closing the panel clears its in-memory query.
 
 ## Editing and AI
 

@@ -26,6 +26,22 @@ bool vc_document_dirty(const VcDocument *document);
 uint64_t vc_document_revision(const VcDocument *document);
 void vc_document_mark_saved(VcDocument *document);
 
+typedef struct VcSearch VcSearch;
+typedef struct VcSearchFrame VcSearchFrame;
+VcSearch *vc_search_new(void);
+void vc_search_free(VcSearch *search);
+// flags: 1 regex, 2 case sensitive, 4 replacement enabled. No search data is persisted.
+bool vc_search_submit(VcSearch *search, const VcDocument *document,
+                      const uint8_t *needle, size_t needle_length,
+                      const uint8_t *replacement, size_t replacement_length, uint32_t flags);
+bool vc_search_busy(const VcSearch *search);
+VcSearchFrame *vc_search_frame(const VcSearch *search, const VcDocument *document, uint64_t after_serial);
+size_t vc_search_frame_json(const VcSearchFrame *frame, uint8_t *output, size_t capacity);
+void vc_search_frame_free(VcSearchFrame *frame);
+// index SIZE_MAX = all. 1 changed, 2 no-op, 0 stale/invalid. Output selection is UTF-16.
+int32_t vc_search_apply(const VcSearch *search, VcDocument *document, uint64_t serial,
+                        size_t index, size_t *utf16_start, size_t *utf16_length);
+
 typedef struct VcSession VcSession;
 typedef struct VcSyntaxFrame VcSyntaxFrame;
 void vc_session_syntax_submit(VcSession *session);
