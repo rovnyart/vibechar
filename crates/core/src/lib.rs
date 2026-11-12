@@ -298,6 +298,13 @@ impl Document {
         self.text.to_string()
     }
 
+    pub fn text_range(&self, range: Range<usize>) -> Result<String, InvalidPosition> {
+        if range.start > range.end || range.end > self.len_chars() {
+            return Err(InvalidPosition);
+        }
+        Ok(self.text.slice(range).to_string())
+    }
+
     pub fn len_chars(&self) -> usize {
         self.text.len_chars()
     }

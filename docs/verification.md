@@ -502,6 +502,50 @@ The initial test read the file before the async write finished; its wait now
 checks persisted selection instead of the in-memory capture. No user window,
 clipboard, recovery or source file was used. The native app was rebuilt/signed.
 
+## Terminal selection and clipboard — 2026-11-12
+
+TUI now supports Shift+arrows/Home/End, Ctrl+Shift+Home/End, Ctrl+A, Escape,
+Left/Right collapse, drag selection, Shift+click, Unicode word/segment double
+click and word drag. Holding a drag beyond the text area scrolls on an 80 ms
+timer that stops on release; ordinary idle sessions gain no polling timer.
+Selection uses Pocket's warm light/dark background, with whole tab/wide-glyph
+cells and a marker for selected line breaks. Rendering remains viewport-only.
+
+Ctrl+C/X/V and Ctrl+Insert / Shift+Delete/Insert use explicit clipboard adapters.
+Cut mutates only after a successful copy. Ordinary paste accepts up to 8 MiB of
+UTF-8, independently from Secret Drop's 64 KiB limit. Failed copy/cut/paste keeps
+source and selection. Selection replacements/deletions use isolated shared Rust
+history; Undo restores exact source text and returns the caret. Copy/navigation
+does not change document revision or revoke Secret Drop; real edits still do.
+
+Shared buffer/checkpoint metadata now includes an optional selection_head endpoint
+beside the normalized range. Direction survives tab changes and restart; older
+version 1 snapshots remain compatible and invalid endpoints are rejected. Private
+buffers, including their selection metadata, are still filtered before capture.
+The native bridge clears this direction metadata when setting an AppKit NSRange.
+Selection-only changes in both interfaces checkpoint quietly; the Mac fix remains
+in the separate preceding commit.
+
+Full `scripts/check.sh` passed: **67 Rust tests**, formatting/Clippy, release builds,
+**19 existing + 4 selection PTY scenarios**, Secret Drop integration and all native
+checks, including quiet Mac selection recovery. New unit/render tests cover
+forward/backward selection across ZWJ/combining/CRLF, range collapse, isolated
+replacement/deletion Undo, per-tab direction, word drag, edge autoscroll/release,
+and clipped tabs/wide text/line-break highlighting in both palettes. A regression
+also covers deleting after shrinking a selection to zero, preventing a stale
+anchor outside the edited document.
+
+`scripts/test-selection.py` injects actual modified-key and SGR mouse sequences
+through the release parser with isolated synthetic clipboard providers. It proves
+selected-background ANSI output, exact Unicode/CRLF copy/cut, failed cut preserving
+text, invalid UTF-8 and oversized paste preserving selection, successful 70 KiB
+paste, replacement/Undo, backward-selection recovery/extension, multi-line drag,
+double click, Shift+click and drag autoscroll. Private selection copy is an explicit
+export; replacement/Undo still leaves its fixture absent from recovery. All PTYs,
+providers and temporary files are cleaned up. The user's actual clipboard and
+running editor are untouched. Physical emulator/trackpad, Linux clipboard and
+remote-terminal clipboard acceptance remain platform qualification work.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS

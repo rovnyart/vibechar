@@ -45,6 +45,23 @@ that confirmation. If the ordinary-tab flush fails, the editor stays open;
 a second Ctrl+Q allows quitting without the latest changes. Escape
 cancels the save prompt. Bracketed paste is one undo step. No mouse is required.
 
+Shift+arrows/Home/End extends a selection; Ctrl+Shift+Home/End extends to the
+document boundary. Ctrl+A selects all; Escape clears selection. Plain Left/Right
+collapses it to the corresponding edge. Ctrl+C copies, Ctrl+X cuts after a
+successful copy, and Ctrl+V pastes over the selection. Ctrl+Insert / Shift+Delete /
+Shift+Insert provide alternate copy/cut/paste keys. Terminal shortcuts such as
+Cmd+C may be intercepted by the emulator; use the editor's Ctrl shortcuts for its
+own selection. Pasting into Save As/language prompts is supported too.
+
+Typing, bracketed paste, Backspace/Delete and cut replace/delete the selected
+range through the shared Rust history. A selection replacement or deletion is an
+isolated undo step; Undo restores the text and caret. Copy does not change text,
+dirty state or Secret Drop access. Failed copy/cut/paste preserves the selection
+and source. Ordinary clipboard reads accept UTF-8 up to 8 MiB, preserving line
+endings; Secret Drop retains its independent 64 KiB limit. Providers are the same
+pbcopy/pbpaste, wl-copy/wl-paste or xclip adapters. Clipboard access is explicit,
+including when copying a private selection; there is no automatic copying.
+
 Mouse reporting is enabled while the TUI is running. Wheel/trackpad scroll moves
 the document viewport by three lines per reported wheel event and keeps the caret
 in place. An offscreen caret is hidden; typing or keyboard navigation reveals it
@@ -52,10 +69,15 @@ again. A left click inside the text area places the caret at the nearest graphem
 boundary, accounting for tabs, wide characters, emoji, and the scrolled viewport.
 Clicks beyond a line/document clamp to its end; header/footer clicks and mouse
 events while a Save As/language prompt is open do not move the editing caret.
-Drag selection is still pending. Terminal-owned selection/copy depends on the
-emulator's mouse-reporting override (often Shift).
+Drag selects text; holding a drag beyond the text area autoscrolls until release.
+Double click selects a Unicode word/segment and subsequent drag extends by words.
+Shift+click extends the current anchor when the emulator delivers that modifier.
+The selection background uses the Pocket light/dark palette, including tabs,
+wide glyphs and a marker for selected line breaks. Terminal-owned selection/copy
+depends on the emulator's mouse-reporting override (often Shift).
 
-Viewport scrolling does not write recovery or trigger syntax parsing. Cursor-only
+Viewport scrolling does not write recovery or trigger syntax parsing. Selection/
+cursor-only
 navigation is checkpointed quietly, without a Saving locally flash or postponing
 an already pending text write. Content/tab/language/file-state changes still show
 the recovery save status. Mouse reporting and bracketed paste are disabled on
@@ -287,6 +309,12 @@ Tests set `VIBECHAR_STATE_DIR` to a private temporary directory. This override c
 also isolate a separate terminal session; it does not alter the GUI's storage.
 Linux path selection is implemented; Linux runtime acceptance remains the M6 gate.
 
+Ordinary TUI selections retain their anchor and active end across tab switches
+and restart, including backward selections. Recovery uses the existing normalized
+range plus an optional selection_head endpoint, compatible with version 1
+checkpoints. Older ranges default to their end as the active caret. Private
+selection metadata is filtered with the rest of the private buffer.
+
 ## Layout
 
 ```text
@@ -302,8 +330,9 @@ docs/              roadmap, architecture, development, verification evidence
 
 The app is an early prototype. AI,
 multicursors, global hotkeys, and search are later
-milestones. TUI selection/clipboard and native IME composition qualification are
-also pending. No dedicated settings window exists; recovery uses a versioned JSON checkpoint.
+milestones. TUI selection/clipboard is implemented; acceptance across terminal
+emulators/Linux and native IME composition qualification remain pending. No
+dedicated settings window exists; recovery uses a versioned JSON checkpoint.
 
 Adjacent typing and repeated backspace/forward delete undo as runs in both clients.
 A pause of at least one second, cursor/selection movement, newline, paste/cut,

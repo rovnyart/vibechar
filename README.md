@@ -65,9 +65,12 @@ Parsing runs in a background worker; ordinary pins survive restart and private
 ones are excluded from recovery. Large/minified input uses an explicit uncolored
 fallback; see [syntax limits](docs/development.md#smart-syntax).
 
-The terminal also supports click-to-edit and wheel/trackpad scrolling. Scrolling
-moves the viewport independently of the caret and does not write recovery; caret
-navigation is recovered quietly without flashing Saving locally.
+The terminal supports click-to-edit, Shift-navigation and drag selection, word
+double click, edge autoscroll, Ctrl+A/C/X/V, and selection replacement/Undo.
+Ordinary selections preserve their direction across tabs and restart. Wheel/
+trackpad scrolling moves the viewport independently of the caret and does not
+write recovery; selection/caret navigation checkpoints quietly without flashing
+Saving locally in both clients.
 
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar

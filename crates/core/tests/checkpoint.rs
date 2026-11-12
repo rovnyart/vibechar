@@ -8,6 +8,25 @@ use vibechar_core::{checkpoint::Checkpoint, session::Session};
 static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
+fn backward_selection_head_round_trips_and_invalid_heads_are_rejected() {
+    let directory = TemporaryDirectory::new();
+    let mut session = Session::new("hello 👩‍💻", None);
+    session.active_mut().selection = 1..5;
+    session.active_mut().selection_head = Some(1);
+    Checkpoint::capture(&session)
+        .save(&directory.file())
+        .unwrap();
+    let restored = Checkpoint::load(&directory.file()).unwrap().unwrap();
+    assert_eq!(restored.active().selection, 1..5);
+    assert_eq!(restored.active().selection_head, Some(1));
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.file()).unwrap()).unwrap();
+    json["buffers"][0]["selection_head"] = serde_json::json!(3);
+    fs::write(directory.file(), serde_json::to_vec(&json).unwrap()).unwrap();
+    assert!(Checkpoint::load(&directory.file()).is_err());
+}
+
+#[test]
 fn language_pins_restore_without_marking_text_dirty_and_private_pins_are_excluded() {
     let directory = TemporaryDirectory::new();
     let mut session = Session::new("a fragment", None);

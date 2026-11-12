@@ -48,7 +48,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .first()
         .is_some_and(|arg| arg == "--help" || arg == "-h")
     {
-        println!("vibechar [FILE]\nvibechar run <reference> --env NAME -- <program> [args...]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+G / F7 Copy for Agent · F8 Paste Secret for Agent · F9 Close All Agent Access\nCtrl+S save file · F4 Save As · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\nF2 language search · Auto detects file names and pasted text locally\nSave As: Enter submits a filename; Enter again confirms replacement; Esc cancels.\n\nSecret Drop works with local agents on the same host. Keep the editor open.\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Successful file saving ends private mode and closes that tab's agent access. AI rewrites are still in development.");
+        println!("vibechar [FILE]\nvibechar run <reference> --env NAME -- <program> [args...]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+G / F7 Copy for Agent · F8 Paste Secret for Agent · F9 Close All Agent Access\nCtrl+S save file · F4 Save As · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\nF2 language search · Auto detects file names and pasted text locally\nShift+arrows/Home/End select · Ctrl+A select all · Esc clear selection\nMouse: click places caret · drag selects · double click selects word · wheel scrolls\nCtrl+C/X/V copy/cut/paste (also Ctrl+Insert, Shift+Delete/Insert)\nSave As: Enter submits a filename; Enter again confirms replacement; Esc cancels.\n\nSecret Drop works with local agents on the same host. Keep the editor open.\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Successful file saving ends private mode and closes that tab's agent access. AI rewrites are still in development.");
         return Ok(());
     }
     if args.first().is_some_and(|arg| arg == "--version") {
@@ -123,7 +123,22 @@ fn edit(
     let mut latest = 0;
     let mut syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
     let mut quit_failed = false;
+    let mut drag_deadline = None;
     loop {
+        if editor.drag_scrolling() {
+            let now = Instant::now();
+            let next = drag_deadline.get_or_insert(now + Duration::from_millis(80));
+            if now >= *next {
+                let selection = editor.selection_state();
+                editor.tick_drag();
+                if editor.selection_state() != selection {
+                    deadline.get_or_insert(now + Duration::from_millis(500));
+                }
+                *next = now + Duration::from_millis(80);
+            }
+        } else {
+            drag_deadline = None;
+        }
         if syntax_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             editor.session.submit_syntax();
             syntax_deadline = None;
@@ -148,6 +163,10 @@ fn edit(
         terminal.draw(|frame| view::draw(frame, editor))?;
         let mut timeout =
             deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        if let Some(drag) = drag_deadline {
+            let delay = drag.saturating_duration_since(Instant::now());
+            timeout = Some(timeout.map_or(delay, |value| value.min(delay)));
+        }
         if let Some(syntax) = syntax_deadline {
             let delay = syntax.saturating_duration_since(Instant::now());
             timeout = Some(timeout.map_or(delay, |current| current.min(delay)));
@@ -175,7 +194,7 @@ fn edit(
             }
         }
         let before = editor.recovery_mark();
-        let cursor_before = editor.cursor;
+        let selection_before = editor.selection_state();
         match event::read()? {
             Event::Key(key) if key.kind != KeyEventKind::Release => {
                 let quitting =
@@ -225,7 +244,7 @@ fn edit(
             deadline = Some(Instant::now() + Duration::from_millis(500));
             syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
             editor.recovery_status = "Saving locally…";
-        } else if editor.cursor != cursor_before {
+        } else if editor.selection_state() != selection_before {
             // Preserve the caret on restart without flashing saving or delaying text writes.
             deadline.get_or_insert(Instant::now() + Duration::from_millis(500));
         }

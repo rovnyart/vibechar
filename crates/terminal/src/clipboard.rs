@@ -39,6 +39,14 @@ fn unavailable() -> io::Error {
     )
 }
 pub fn read() -> io::Result<String> {
+    read_limited(MAX_SECRET)
+}
+
+pub fn read_text() -> io::Result<String> {
+    read_limited(8 * 1024 * 1024)
+}
+
+fn read_limited(limit: usize) -> io::Result<String> {
     let mut child = program(true)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -50,15 +58,15 @@ pub fn read() -> io::Result<String> {
         .stdout
         .take()
         .unwrap()
-        .take((MAX_SECRET + 1) as u64)
+        .take((limit + 1) as u64)
         .read_to_end(&mut bytes);
     // A too-large producer may still be writing: close the pipe and stop it.
-    if result.is_err() || bytes.len() > MAX_SECRET {
+    if result.is_err() || bytes.len() > limit {
         let _ = child.kill();
     }
     let status = child.wait()?;
     result?;
-    if !status.success() || bytes.len() > MAX_SECRET {
+    if !status.success() || bytes.len() > limit {
         return Err(unavailable());
     }
     String::from_utf8(bytes).map_err(|_| unavailable())

@@ -61,6 +61,10 @@ while progressing through the remaining M2 behavior work.
   offscreen caret and reveal it on keyboard editing/navigation. A left click places
   it at the nearest whole grapheme. Scrolling never flashes a recovery-save status;
   cursor-only checkpoint updates are quiet.
+- Shift-navigation and drag share one selection model; double click selects a
+  word/segment. Use Pocket's warm selection background, including selected tabs
+  and line-break markers. Cut changes text only after copying succeeds, typing
+  replaces the selection, and replacement/deletion stays one undo step.
 - F4 opens Save As for scratches or files. Existing destinations require a second
   Enter; Esc cancels. Editing the filename resets replacement confirmation.
 - F2 opens the same local language search; arrows select, Return pins, Escape

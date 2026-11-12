@@ -49,10 +49,13 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         .syntax
         .as_ref()
         .filter(|frame| frame.document == editor.document().id());
+    let selection = editor.selection();
     let lines: Vec<_> = (editor.top
         ..(editor.top + usize::from(body.height)).min(editor.document().line_count()))
         .map(|index| {
             let text = editor.document().line(index);
+            let start = editor.document().line_start(index);
+            let end = start + text.chars().count();
             let paint = syntax
                 .and_then(|frame| frame.lines.get(index))
                 .filter(|paint| paint.hash == vibechar_core::syntax::line_hash(&text));
@@ -62,6 +65,10 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 usize::from(body.width),
                 paint.map(|p| p.as_ref()),
                 editor.light_syntax,
+                selection.start.saturating_sub(start)..selection.end.saturating_sub(start),
+                index + 1 < editor.document().line_count()
+                    && selection.start <= end
+                    && selection.end > end,
             )
         })
         .collect();
@@ -97,10 +104,15 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     );
     frame.render_widget(
         Paragraph::new(format!(
-            " {}  · {}:{}  {}",
+            " {}  · {}:{}{}  {}",
             recovery,
             line + 1,
             column + 1,
+            if selection.is_empty() {
+                ""
+            } else {
+                " · selected"
+            },
             language,
         ))
         .style(Style::default().fg(Color::DarkGray)),
@@ -109,7 +121,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     let prompt = editor.save_prompt.as_ref().map_or_else(
         || {
             if editor.message.is_empty() {
-                " ^N new ^P private ^S save F2 lang F4 as F6 next ^G agent F8 paste F9 stop ^Q quit"
+                " ^A all ^C copy ^X cut ^V paste · ^N new ^S save F2 lang F6 next ^G agent ^Q quit"
                     .into()
             } else {
                 format!(" {}", editor.message)
@@ -173,10 +185,13 @@ fn styled_line(
     width: usize,
     paint: Option<&vibechar_core::syntax::LinePaint>,
     light: bool,
+    selection: std::ops::Range<usize>,
+    newline: bool,
 ) -> Line<'static> {
     let mut output: Vec<Span<'static>> = Vec::new();
     let mut run = String::new();
-    let mut last_role = 0;
+    let mut last_style = Style::default();
+    let mut character = 0;
     let mut offset = 0;
     let mut span_index = 0;
     let spans = paint.map_or(&[][..], |p| p.spans.as_slice());
@@ -191,13 +206,15 @@ fn styled_line(
             .get(span_index)
             .filter(|span| span.start <= offset)
             .map_or(0, |span| span.role);
-        if role != last_role && !run.is_empty() {
-            output.push(Span::styled(
-                std::mem::take(&mut run),
-                syntax_style(last_role, light),
-            ));
+        let style = if selection.contains(&character) {
+            selection_style(light)
+        } else {
+            syntax_style(role, light)
+        };
+        if style != last_style && !run.is_empty() {
+            output.push(Span::styled(std::mem::take(&mut run), last_style));
         }
-        last_role = role;
+        last_style = style;
         let size = cell_width(grapheme, column);
         let end = column + size;
         if column >= left + width {
@@ -215,11 +232,27 @@ fn styled_line(
         }
         column = end;
         offset += grapheme.encode_utf16().count();
+        character += grapheme.chars().count();
     }
     if !run.is_empty() {
-        output.push(Span::styled(run, syntax_style(last_role, light)));
+        output.push(Span::styled(run, last_style));
+    }
+    if newline && column >= left && column < left + width {
+        output.push(Span::styled(" ", selection_style(light)));
     }
     Line::from(output)
+}
+
+fn selection_style(light: bool) -> Style {
+    if light {
+        Style::default()
+            .fg(Color::Rgb(0x28, 0x2B, 0x29))
+            .bg(Color::Rgb(0xF3, 0xDC, 0xCD))
+    } else {
+        Style::default()
+            .fg(Color::Rgb(0xE3, 0xE5, 0xDF))
+            .bg(Color::Rgb(0x59, 0x40, 0x2E))
+    }
 }
 
 fn syntax_style(role: u8, light: bool) -> Style {
@@ -260,7 +293,7 @@ fn syntax_style(role: u8, light: bool) -> Style {
 }
 #[cfg(test)]
 fn visible_line(text: &str, left: usize, width: usize) -> String {
-    styled_line(text, left, width, None, false)
+    styled_line(text, left, width, None, false, 0..0, false)
         .spans
         .iter()
         .map(|s| s.content.as_ref())
@@ -271,6 +304,26 @@ fn visible_line(text: &str, left: usize, width: usize) -> String {
 mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn selected_cells_cover_clipped_wide_text_tabs_and_newlines_without_bleeding() {
+        for light in [true, false] {
+            let line = styled_line("界\tZ", 1, 4, None, light, 0..2, false);
+            assert_eq!(
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>(),
+                "   Z"
+            );
+            assert_eq!(line.spans[0].style, selection_style(light));
+            assert_eq!(line.spans[0].content, "   ");
+            assert_eq!(line.spans.last().unwrap().style, Style::default());
+            let blank = styled_line("", 0, 4, None, light, 0..1, true);
+            assert_eq!(blank.spans[0].content, " ");
+            assert_eq!(blank.spans[0].style, selection_style(light));
+        }
+    }
 
     #[test]
     fn redraw_keeps_the_wheel_viewport_and_click_then_typing_edits_the_clicked_row() {

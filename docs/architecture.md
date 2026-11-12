@@ -85,6 +85,16 @@ restart selects the preceding ordinary tab (or the first if none precedes it).
 A private-only session checkpoints a fresh empty ordinary scratch. The format
 remains version 1 and all restored buffers are ordinary.
 
+Terminal selection is an anchor plus active caret in Unicode scalar positions.
+The client normalizes its range when storing session metadata, with an optional
+selection_head endpoint to preserve direction. The checkpoint validates this
+endpoint and accepts older snapshots without it. The Mac adapter clears terminal
+direction metadata when setting its native NSRange. Selection-only checkpoint
+updates are quiet in both interfaces; they never mutate source/history. TUI
+rendering maps whole graphemes to cells and applies the Pocket selection style
+over syntax; mouse hit testing uses the inverse mapping. Selection edits use the
+same isolated Document transaction as native replacements, with no second history.
+
 The Mac window disables AppKit window-state preservation and snapshot restoration
 at construction. The filtered Rust checkpoint is the sole document recovery path;
 window-frame preferences still store only geometry. See Apple's

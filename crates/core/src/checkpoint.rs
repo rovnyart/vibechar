@@ -32,6 +32,8 @@ struct StoredBuffer {
     text: StoredText,
     path: Option<PathBuf>,
     selection: Range<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selection_head: Option<usize>,
     scratch_number: usize,
     dirty: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,6 +91,9 @@ impl Checkpoint {
                         text: StoredText(buffer.document.checkpoint_text()),
                         path: buffer.path.clone(),
                         selection: start..end,
+                        selection_head: buffer
+                            .selection_head
+                            .filter(|&head| head == start || head == end),
                         scratch_number: buffer.scratch_number,
                         dirty: buffer.document.is_dirty(),
                         language: buffer.language.clone(),
@@ -156,6 +161,9 @@ impl Checkpoint {
             .map(|buffer| {
                 if buffer.selection.start > buffer.selection.end
                     || buffer.selection.end > buffer.text.0.len_chars()
+                    || buffer.selection_head.is_some_and(|head| {
+                        head != buffer.selection.start && head != buffer.selection.end
+                    })
                     || buffer
                         .language
                         .as_ref()
@@ -167,6 +175,7 @@ impl Checkpoint {
                     document: Document::restore(buffer.text.0, buffer.dirty),
                     path: buffer.path,
                     selection: buffer.selection,
+                    selection_head: buffer.selection_head,
                     scratch_number: buffer.scratch_number,
                     private: false,
                     language: buffer.language,

@@ -571,6 +571,7 @@ pub unsafe extern "C" fn vc_session_set_selection(
             return false;
         };
         buffer.selection = start..end;
+        buffer.selection_head = None;
         true
     })
 }

@@ -79,4 +79,6 @@ fn crlf_is_one_navigation_unit_and_line_content_excludes_its_ending() {
     assert_eq!(doc.line_start(1), 4);
     assert_eq!(doc.newline(), "\r\n");
     assert_eq!(doc.text(), "ab\r\nя\r\n");
+    assert_eq!(doc.text_range(2..5).unwrap(), "\r\nя");
+    assert!(doc.text_range(0..100).is_err());
 }

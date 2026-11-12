@@ -119,7 +119,10 @@ are measured with larger documents.
   when actions, diagnostics, and AI are introduced.
 - [x] Group adjacent typing/backspace/forward-delete into shared undo steps, with
   pause, navigation, paste, save and tab boundaries in Mac and terminal.
-- [ ] Selection, clipboard, word navigation and indentation improvements.
+- [x] TUI keyboard/mouse selections, word double click, drag autoscroll, clipboard,
+  selection replacement/deletion and per-tab/restart direction preservation.
+- [ ] Word navigation and indentation improvements; qualify selection/clipboard
+  across terminal emulators and Linux.
 - [ ] IME composition, accessibility, keyboard layout, and UTF-16/grapheme tests.
 - [x] Decide same-machine simultaneous editing: separate sessions in MVP; no silent
   cross-process sharing or overwriting of another session's scratch recovery.

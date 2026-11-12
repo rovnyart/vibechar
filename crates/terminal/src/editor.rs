@@ -10,9 +10,14 @@ use vibechar_core::{session::Session, Document, EditKind};
 
 use crate::files;
 
+#[path = "selection.rs"]
+mod selection;
+
 pub struct Editor {
     pub session: Session,
     pub cursor: usize,
+    anchor: Option<usize>,
+    pointer: selection::Pointer,
     pub top: usize,
     pub left: usize,
     pub message: String,
@@ -36,9 +41,11 @@ impl Editor {
 
     pub fn from_session(session: Session) -> Self {
         let cursor = session.active().selection.start;
-        Self {
+        let mut editor = Self {
             session,
             cursor,
+            anchor: None,
+            pointer: selection::Pointer::default(),
             top: 0,
             left: 0,
             message: String::new(),
@@ -53,7 +60,9 @@ impl Editor {
             overwrite_pending: None,
             close_pending: false,
             private_quit_pending: false,
-        }
+        };
+        editor.restore_selection();
+        editor
     }
 
     pub fn insert(&mut self, text: &str) {
@@ -77,14 +86,26 @@ impl Editor {
             }
             return;
         }
+        if text.is_empty() {
+            return;
+        }
+        let range = self.selection();
+        let start = range.start;
+        let kind = if range.is_empty() {
+            kind
+        } else {
+            EditKind::Isolated
+        };
         if self
             .session
             .active_mut()
             .document
-            .edit(self.cursor..self.cursor, text, kind)
+            .edit(range, text, kind)
             .is_ok()
         {
-            self.cursor += text.chars().count();
+            self.cursor = start + text.chars().count();
+            self.anchor = None;
+            self.pointer = selection::Pointer::default();
             self.reveal_cursor = true;
         }
         self.close_pending = false;
@@ -112,6 +133,12 @@ impl Editor {
         if !quitting {
             self.cancel_private_quit();
         }
+        if (key.code == KeyCode::Char('v') && key.modifiers.contains(KeyModifiers::CONTROL))
+            || (key.code == KeyCode::Insert && key.modifiers.contains(KeyModifiers::SHIFT))
+        {
+            self.paste_clipboard();
+            return false;
+        }
         if self.language_prompt.is_some() {
             self.language_key(key);
             return false;
@@ -121,6 +148,19 @@ impl Editor {
             return false;
         }
         self.reveal_cursor = true;
+        self.pointer = selection::Pointer::default();
+        if self.navigate_selection(key) {
+            self.close_pending = false;
+            return false;
+        }
+        if key.code == KeyCode::Insert && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.copy_selection(false);
+            return false;
+        }
+        if key.code == KeyCode::Delete && key.modifiers.contains(KeyModifiers::SHIFT) {
+            self.copy_selection(true);
+            return false;
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             return self.control(key.code);
         }
@@ -152,17 +192,11 @@ impl Editor {
                 self.message = "All agent access closed in this editor.".into();
             }
             KeyCode::Tab => self.insert("    "),
-            KeyCode::Left => self.cursor = self.document().previous_grapheme(self.cursor),
-            KeyCode::Right => self.cursor = self.document().next_grapheme(self.cursor),
-            KeyCode::Up => self.vertical(-1),
-            KeyCode::Down => self.vertical(1),
-            KeyCode::Home => {
-                self.cursor = self
-                    .document()
-                    .line_start(self.document().line_index(self.cursor))
-            }
-            KeyCode::End => self.cursor = self.line_end(),
             KeyCode::Backspace => {
+                if self.delete_selection() {
+                    return false;
+                }
+                self.anchor = None;
                 let start = self.document().previous_grapheme(self.cursor);
                 if self
                     .session
@@ -175,6 +209,10 @@ impl Editor {
                 }
             }
             KeyCode::Delete => {
+                if self.delete_selection() {
+                    return false;
+                }
+                self.anchor = None;
                 let end = self.document().next_grapheme(self.cursor);
                 let _ = self.session.active_mut().document.edit(
                     self.cursor..end,
@@ -185,48 +223,6 @@ impl Editor {
             _ => {}
         }
         false
-    }
-
-    pub fn mouse(&mut self, event: MouseEvent) {
-        if self.save_prompt.is_some()
-            || self.language_prompt.is_some()
-            || !self.viewport.contains((event.column, event.row).into())
-        {
-            return;
-        }
-        match event.kind {
-            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                self.cancel_private_quit();
-                self.close_pending = false;
-                let max_top = self
-                    .document()
-                    .line_count()
-                    .saturating_sub(usize::from(self.viewport.height));
-                self.top = if event.kind == MouseEventKind::ScrollUp {
-                    self.top.saturating_sub(3)
-                } else {
-                    self.top.saturating_add(3).min(max_top)
-                };
-                self.reveal_cursor = false;
-            }
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.cancel_private_quit();
-                self.close_pending = false;
-                self.session.active_mut().document.break_undo_group();
-                let line = self.top + usize::from(event.row - self.viewport.y);
-                self.cursor = if line >= self.document().line_count() {
-                    self.document().len_chars()
-                } else {
-                    self.position_at_column(
-                        line,
-                        self.left + usize::from(event.column - self.viewport.x),
-                        true,
-                    )
-                };
-                self.reveal_cursor = true;
-            }
-            _ => {}
-        }
     }
 
     pub fn update_viewport(&mut self, body: Rect) {
@@ -307,6 +303,12 @@ impl Editor {
         }
         self.close_pending = false;
         match code {
+            KeyCode::Char('a') => {
+                self.anchor = Some(0);
+                self.cursor = self.document().len_chars();
+            }
+            KeyCode::Char('c') => self.copy_selection(false),
+            KeyCode::Char('x') => self.copy_selection(true),
             KeyCode::Char('s') => self.save(),
             KeyCode::Char('g') => self.give_to_agent(),
             KeyCode::Char('n') => {
@@ -322,15 +324,15 @@ impl Editor {
             KeyCode::Char('z') => {
                 if let Some(cursor) = self.session.active_mut().document.undo() {
                     self.cursor = cursor;
+                    self.anchor = None;
                 }
             }
             KeyCode::Char('y') => {
                 if let Some(cursor) = self.session.active_mut().document.redo() {
                     self.cursor = cursor;
+                    self.anchor = None;
                 }
             }
-            KeyCode::Home => self.cursor = 0,
-            KeyCode::End => self.cursor = self.document().len_chars(),
             _ => {}
         }
         false
@@ -497,11 +499,13 @@ impl Editor {
     }
 
     pub fn remember_cursor(&mut self) {
-        self.session.active_mut().selection = self.cursor..self.cursor;
+        let range = self.selection();
+        self.session.active_mut().selection_head = (!range.is_empty()).then_some(self.cursor);
+        self.session.active_mut().selection = range;
     }
 
     fn restore_cursor(&mut self) {
-        self.cursor = self.session.active().selection.start;
+        self.restore_selection();
         self.top = 0;
         self.left = 0;
         self.reveal_cursor = true;
