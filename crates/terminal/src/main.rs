@@ -241,7 +241,7 @@ fn edit(
                     editor.message.clear();
                     quit_failed = false;
                 }
-                editor.insert(&text);
+                editor.paste(&text);
             }
             Event::Mouse(mouse) => {
                 if quit_failed

@@ -297,3 +297,78 @@ fn rejected_all_matches_does_not_apply_queued_text_to_only_the_seed() {
     assert!(!multi.has_queued_input());
     assert!(multi.message.as_ref().unwrap().contains("1,000"));
 }
+
+#[test]
+fn copied_lines_spread_to_moved_carets_without_duplication() {
+    for newline in ["\n", "\r\n"] {
+        let source = format!("foo{newline}{newline}foo{newline}{newline}");
+        let mut document = Document::new(&source);
+        let mut multi = all(&document, 0..3);
+        let clipboard = multi.copy_text(&document).unwrap().unwrap();
+        assert_eq!(clipboard, "foo\nfoo");
+        multi.navigate(&document, 3, false).unwrap();
+        assert!(multi.paste(&mut document, &clipboard).unwrap());
+        assert_eq!(
+            document.text(),
+            format!("foo{newline}foo{newline}foo{newline}foo{newline}")
+        );
+        assert_eq!(multi.selections().len(), 2);
+        document.undo();
+        assert_eq!(document.text(), source);
+        assert!(!document.is_dirty());
+    }
+}
+
+#[test]
+fn paste_preserves_fragments_unicode_empty_lines_and_explicit_newlines() {
+    let mut document = Document::new("👩‍💻 x / x");
+    let mut multi = all(&document, 4..5);
+    multi.paste(&mut document, "я🦀\r\nß\n").unwrap();
+    assert_eq!(document.text(), "👩‍💻 я🦀 / ß");
+    assert_eq!(
+        multi
+            .selections()
+            .iter()
+            .map(|s| s.head)
+            .collect::<Vec<_>>(),
+        vec![6, 10]
+    );
+    document.undo();
+    let mut multi = all(&document, 4..5);
+    let selections = multi.selections().to_vec();
+    assert!(!multi.paste(&mut document, "").unwrap());
+    assert_eq!(multi.selections(), selections);
+    multi.paste(&mut document, "\n\n").unwrap();
+    assert_eq!(document.text(), "👩‍💻  / ");
+    document.undo();
+    let mut multi = all(&document, 4..5);
+    multi.edit(&mut document, "\n", EditKind::Isolated).unwrap();
+    assert_eq!(document.text(), "👩‍💻 \n / \n");
+    document.undo();
+    let mut multi = all(&document, 4..5);
+    multi.paste(&mut document, "a\nb\nc").unwrap();
+    assert_eq!(document.text(), "👩‍💻 a\nb\nc / a\nb\nc");
+    let mut document = Document::new("x");
+    let mut multi = all(&document, 0..1);
+    multi.paste(&mut document, "one\r\ntwo\r\n").unwrap();
+    assert_eq!(document.text(), "one\r\ntwo\r\n");
+}
+
+#[test]
+fn queued_paste_distributes_after_the_match_count_is_known() {
+    let mut document = Document::new("x x");
+    let mut multi = Multi::default();
+    multi.request(&document, 0..0, true).unwrap();
+    multi.paste(&mut document, "left\nright").unwrap();
+    assert_eq!(document.text(), "x x");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while multi.busy() {
+        multi.pump(&mut document);
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(document.text(), "left right");
+    document.undo();
+    assert_eq!(document.text(), "x x");
+    assert!(!document.is_dirty());
+}

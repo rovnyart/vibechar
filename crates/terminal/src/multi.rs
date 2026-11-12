@@ -26,6 +26,15 @@ impl Editor {
             Err(error) => self.message = error,
         }
     }
+    pub(super) fn multi_paste(&mut self, text: &str) {
+        match self
+            .multi
+            .paste(&mut self.session.active_mut().document, text)
+        {
+            Ok(_) => self.sync_multi(),
+            Err(error) => self.message = error,
+        }
+    }
     pub(super) fn handle_multi_key(&mut self, key: KeyEvent) -> bool {
         self.pump_multi();
         let control = key.modifiers.contains(KeyModifiers::CONTROL);

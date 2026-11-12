@@ -79,10 +79,14 @@ impl Editor {
 
     pub fn insert(&mut self, text: &str) {
         self.session.active_mut().document.break_undo_group();
-        self.insert_with_kind(text, EditKind::Isolated);
+        self.insert_with_kind(text, EditKind::Isolated, false);
+    }
+    pub fn paste(&mut self, text: &str) {
+        self.session.active_mut().document.break_undo_group();
+        self.insert_with_kind(text, EditKind::Isolated, true);
     }
 
-    fn insert_with_kind(&mut self, text: &str, kind: EditKind) {
+    fn insert_with_kind(&mut self, text: &str, kind: EditKind, paste: bool) {
         self.cancel_private_quit();
         if self.tools_insert(text) {
             return;
@@ -108,7 +112,11 @@ impl Editor {
             return;
         }
         if self.multi.active(self.document()) {
-            self.multi_edit(text, kind);
+            if paste {
+                self.multi_paste(text)
+            } else {
+                self.multi_edit(text, kind)
+            };
             return;
         }
         let range = self.selection();
@@ -216,7 +224,7 @@ impl Editor {
                     .modifiers
                     .intersects(KeyModifiers::ALT | KeyModifiers::SUPER) =>
             {
-                self.insert_with_kind(&ch.to_string(), EditKind::Typing)
+                self.insert_with_kind(&ch.to_string(), EditKind::Typing, false)
             }
             KeyCode::Enter => self.insert(self.document().newline()),
             KeyCode::F(4) => self.save_as(),

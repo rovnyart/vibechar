@@ -280,8 +280,13 @@ its actual results, respecting regex/case options and supporting zero-width hits
 A request made before Find completes waits for its current frame. Matches that
 split a composed character are rejected; normal occurrence matching filters them.
 
-Typing, Backspace/Delete, newline/tab insertion and paste apply to every range.
-The same complete pasted text goes to each range, without splitting it into rows.
+Typing, Backspace/Delete and newline/tab insertion apply to every range. Paste
+distributes **N clipboard lines over N carets/selections**, one line per target in
+document order. LF/CRLF separators and one final line ending are omitted during
+distribution; intentional empty lines remain empty fragments. If the counts differ,
+the complete clipboard text goes to every target. A single caret always receives
+the original payload, including its line endings. Empty clipboard text is a no-op.
+This also applies to terminal bracketed paste; Enter remains a newline at each caret.
 Copy joins nonempty selections in document order with LF separators; cut edits
 only after a successful copy. Clipboard failures leave source and selections.
 Caret deletion consumes whole graphemes/CRLF. Overlapping selections and colliding
@@ -315,8 +320,8 @@ Initial limits: **4 MiB** source for matching/adoption, **1 KiB** literal seed,
 match sets fail without a partial Select All; use Replace All for larger batches.
 Word-at-caret detection asks for an explicit fragment on lines over 64 KiB.
 Navigation/deletion caches per-line grapheme/column maps with an 8 MiB source
-budget. Rectangular selections, mouse-added independent carets, per-selection paste
-distribution and persisted multicursor sets are not implemented in this increment.
+budget. Rectangular selections, mouse-added independent carets, rich clipboard
+metadata for arbitrary multiline fragments and persisted sets are not implemented.
 
 ## Local text tools
 

@@ -100,6 +100,21 @@ def main():
             assert "2 selections" not in editor.screen_text()
             editor.send(b"\x11");editor.finish()
 
+        source="foo\n\nfoo\n\n";path=root/"paste-spread.txt";path.write_bytes(source.encode())
+        with Session(path,state=root/"paste-spread",extra_env=env) as editor:
+            saved(editor,source,False)
+            editor.send(b"\x04\x04");count(editor,2)
+            editor.send(b"\x03");editor.wait_until(lambda:clipboard.read_bytes()==b"foo\nfoo")
+            editor.send(b"\x1b[B\x16");saved(editor,"foo\nfoo\nfoo\nfoo\n",True);count(editor,2,"carets")
+            editor.send(b"\x1a");saved(editor,source,False)
+            all_matches(editor);count(editor,2);editor.send(b"\x1b[B\x1b[200~left\r\nright\r\n\x1b[201~")
+            saved(editor,"foo\nleft\nfoo\nright\n",True)
+            editor.send(b"\x1a");saved(editor,source,False)
+            all_matches(editor);count(editor,2);editor.send(b"\x1b[B\r")  # Enter still inserts a newline at each caret.
+            saved(editor,"foo\n\n\nfoo\n\n\n",True)
+            editor.send(b"\x1a");saved(editor,source,False)
+            editor.send(b"\x11");editor.finish();assert path.read_bytes()==source.encode()
+
         private="PRIVATE_MULTI_FIXTURE x x"
         with Session(state=root/"private",extra_env=env) as editor:
             editor.send(b"public\x10\x1b[200~"+private.encode()+b"\x1b[201~\x1b[1;5F\x04\x0c")
@@ -109,6 +124,6 @@ def main():
             editor.send(b"\x11\x11");editor.finish()
             assert "PRIVATE_MULTI_FIXTURE" not in (root/"private/session.json").read_text()
             assert editor.checkpoint()["buffers"][0]["text"]=="public"
-    print(json.dumps({"multi_real_pty_scenarios":6,"next_all_regex_queued_typing_undo_clipboard_failures_graphemes_crlf_navigation_escape_tabs_private":"passed"}))
+    print(json.dumps({"multi_real_pty_scenarios":7,"next_all_regex_queued_typing_undo_clipboard_failures_graphemes_crlf_navigation_escape_tabs_private_spread_paste":"passed"}))
 
 if __name__=="__main__":main()

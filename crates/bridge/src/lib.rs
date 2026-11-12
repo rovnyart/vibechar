@@ -171,6 +171,16 @@ pub unsafe extern "C" fn vc_multi_edit(
         let Some(text) = input(text, length) else {
             return 0;
         };
+        if kind == 5 {
+            return match multi.0.paste(doc, text) {
+                Ok(true) => 1,
+                Ok(false) => 2,
+                Err(error) => {
+                    multi.0.report_error(error);
+                    0
+                }
+            };
+        }
         let newline = kind == 4;
         let kind = match kind {
             0 | 4 => vibechar_core::EditKind::Isolated,
@@ -1168,6 +1178,22 @@ mod tests {
             let initial = state(multi, doc);
             assert_eq!(initial["selections"].as_array().unwrap().len(), 2);
             assert_eq!(initial["selections"][1]["start"], 8);
+            let paste = "я🦀\nß\n";
+            assert_eq!(vc_multi_edit(multi, doc, paste.as_ptr(), paste.len(), 5), 1);
+            assert_eq!((*doc).text(), "👩‍💻 я🦀 ß\r\n");
+            let spread = state(multi, doc);
+            assert_eq!(spread["selections"][0]["head"], 9);
+            assert_eq!(spread["selections"][1]["head"], 11);
+            let mut restored = 0;
+            assert!(vc_document_undo(doc, &mut restored));
+            assert_eq!((*doc).text(), source);
+            vc_multi_clear(multi);
+            assert!(vc_multi_request(multi, doc, 6, 1, true));
+            while (*multi).0.busy() {
+                vc_multi_poll(multi, doc);
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
             assert_eq!(vc_multi_edit(multi, doc, b"AB".as_ptr(), 2, 0), 1);
             assert_eq!((*doc).text(), "👩‍💻 AB AB\r\n");
             let current = state(multi, doc);

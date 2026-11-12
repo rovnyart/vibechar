@@ -232,6 +232,12 @@ input. Undo/Redo replays the complete sequence and returns a valid single caret.
 Per-operation line caches supply whole-grapheme deletion and logical-line/cell
 navigation without rescanning the same line for each caret. Sets are not stored
 in session checkpoints; only the primary uses existing quiet recovery.
+Paste is a distinct shared action: it distributes equal-count clipboard lines,
+otherwise replicates the full payload. Both paths use the same atomic edit helper
+and map each resulting caret by its own inserted length. Queued paste determines
+distribution only after the matching frame establishes the actual target count.
+Typed/newline input never uses clipboard distribution. No clipboard cache or
+platform-specific provenance data is retained.
 
 Mac keeps one native primary selection and paints secondary ranges/carets; AppKit
 does not expose multiple empty selectedRanges. PocketTextView routes supported

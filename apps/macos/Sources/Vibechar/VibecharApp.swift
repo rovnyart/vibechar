@@ -41,6 +41,7 @@ struct VibecharApp {
             AppDelegate.quietSelectionSmokeTest()
             AppDelegate.findSmokeTest()
             AppDelegate.toolsSmokeTest()
+            AppDelegate.multicursorPasteSmokeTest()
             AppDelegate.multiSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
@@ -953,6 +954,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.saveGeneration == privateGeneration)
         precondition(!String(decoding: try! Data(contentsOf: file), as: UTF8.self).contains("PRIVATE_SELECTION_FIXTURE"))
         print("Quiet Mac selection smoke passed: caret/selection, no-op, pending text deadline, restart, failure/recovery, private exclusion")
+    }
+
+    static func multicursorPasteSmokeTest() {
+        let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false)
+        defer {app.multiController.cancel();app.syntaxWork?.cancel();app.syntaxTimer?.invalidate();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()}
+        let source="foo\n\nfoo\n\n"
+        precondition(app.document.replace(NSRange(location:0,length:0),with:source));app.document.markSaved();app.showActiveBuffer()
+        app.addNextOccurrence();app.addNextOccurrence()
+        let deadline=Date(timeIntervalSinceNow:3)
+        while app.multiController.state.busy {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.multiController.poll();precondition(Date()<deadline)}
+        precondition(app.multiController.state.selections.count==2)
+        app.textView.copy(nil);precondition(app.clipboard.string(forType:.string)=="foo\nfoo")
+        app.textView.doCommand(by:#selector(NSResponder.moveDown(_:)));app.textView.paste(nil)
+        precondition(app.document.text=="foo\nfoo\nfoo\nfoo\n" && app.textView.string==app.document.text)
+        precondition(app.multiController.state.selections.count==2 && app.multiController.state.selections.allSatisfy {$0.length==0})
+        app.applyHistory(redo:false);precondition(app.document.text==source && !app.document.isDirty)
+        print("Multicursor paste native regression passed: Cmd+D twice, Copy, Down, Paste spreads once per caret, native mirror and one Undo")
     }
 
     static func multiSmokeTest() {

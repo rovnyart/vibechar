@@ -54,6 +54,7 @@ struct MultiState: Decodable {
     init(document:RustDocument,textView:PocketTextView,clipboard:NSPasteboard) {
         self.document=document; self.textView=textView; self.clipboard=clipboard; state=engine.state(document)
         textView.onMultiInsert={ [weak self] text,kind in self?.insert(text,kind:kind) ?? false }
+        textView.onMultiPaste={ [weak self] text in self?.insert(text,kind:5) ?? false }
         textView.onMultiClipboard={ [weak self] action in self?.clipboardAction(action) ?? false }
         textView.onMultiMove={ [weak self] direction,extend in self?.move(direction,extend:extend) ?? false }
         textView.onMultiCancel={ [weak self] in self?.cancel() ?? true }
@@ -103,7 +104,7 @@ struct MultiState: Decodable {
         guard active else {return false}
         if action==2 {
             guard let text=clipboard.string(forType:.string),text.utf8.count<=8*1024*1024 else {NSSound.beep();return true}
-            document.breakUndoGroup();return insert(text,kind:0)
+            document.breakUndoGroup();return insert(text,kind:5)
         }
         guard let text=engine.copy(document) else {NSSound.beep();return true}
         clipboard.clearContents()

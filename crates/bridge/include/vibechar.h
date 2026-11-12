@@ -55,7 +55,7 @@ bool vc_multi_adopt(VcMulti *multi, VcDocument *document, uint64_t document_id, 
                      const size_t *starts, const size_t *lengths, size_t count, size_t primary);
 // Transient metadata only: selections, primary, busy, message. No source text.
 size_t vc_multi_state(const VcMulti *multi, const VcDocument *document, uint8_t *output, size_t capacity);
-// kind 0 isolated, 1 typing, 2 backspace, 3 delete forward, 4 newline.
+// kind 0 isolated, 1 typing, 2 backspace, 3 delete forward, 4 newline, 5 smart paste.
 // 1 changed, 2 no-op, 0 invalid/stale/limited. All targets share one undo transaction.
 int32_t vc_multi_edit(VcMulti *multi, VcDocument *document, const uint8_t *text, size_t length, uint32_t kind);
 // Directions: 0 left, 1 right, 2 up, 3 down, 4 line start, 5 line end, 6/7 document bounds.

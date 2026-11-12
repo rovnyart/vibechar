@@ -176,6 +176,7 @@ into a child process. Implement the same operation model in Mac and terminal.
 - [x] Select next/all occurrences and current Find hits for editing in both clients.
   Shared bounded selections/carets, Unicode navigation/deletion, typing, paste,
   copy/cut and grouped Undo; visible count, Escape and quiet selection recovery.
+  Paste spreads N clipboard lines over N targets, with full-payload fallback.
   Rectangular selection and arbitrary mouse-added carets remain outside this increment.
 - [x] Local transforms and a keyboard command palette in both clients: JSON
   format/minify, sort lines, remove duplicate lines and trim trailing whitespace.

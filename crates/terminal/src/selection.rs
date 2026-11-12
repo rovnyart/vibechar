@@ -180,7 +180,7 @@ impl Editor {
     }
     pub(super) fn paste_clipboard(&mut self) {
         match crate::clipboard::read_text() {
-            Ok(text) => self.insert(&text),
+            Ok(text) => self.paste(&text),
             Err(_) => {
                 self.message = "Clipboard unavailable or text exceeds 8 MiB · selection kept".into()
             }

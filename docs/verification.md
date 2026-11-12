@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 101 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 104 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -23,7 +23,7 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Thirty-eight real PTY scenarios across the baseline, selection, find, tools and multicursor suites,
+- Thirty-nine real PTY scenarios across the baseline, selection, find, tools and multicursor suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -720,9 +720,37 @@ smoke-fixture directories were removed.
 Limits are documented in development: 4 MiB matching source, 1 KiB literal seed,
 1,000 selections, 8 MiB edit payload and a 512-action / 8 MiB pending-input queue.
 Sets are transient and only the primary enters ordinary recovery. Arbitrary
-mouse-added carets, rectangles, per-selection paste distribution, visual-wrap
+mouse-added carets, rectangles, rich multiline-fragment clipboard metadata, visual-wrap
 vertical navigation, broad IME qualification and cross-emulator/Linux checks
 remain outside this increment. Complete large-document mode and M4/M5 AI remain open.
+
+## Multicursor paste distribution correction (2026-11-12)
+
+The reported sequence exposed full-payload replication: copying two `foo`
+selections produced `foo\nfoo`, which was then inserted at both moved carets.
+Paste now distributes equal-count clipboard lines in document order through the
+shared core; differing counts retain full-payload replication. LF/CRLF separators
+and a final line ending are omitted only during distribution. Single-caret paste
+retains the exact payload; Enter remains a separate newline operation.
+
+Three new core regressions cover the exact copy/move/paste sequence, CRLF,
+Unicode fragments with different lengths and resulting caret offsets, intentional
+empty lines, empty clipboard no-op, count mismatch, single-caret fidelity,
+explicit newline insertion and paste queued before matching completes. Bridge
+coverage checks UTF-16 offsets. Native smoke performs Cmd+D twice, actual copy
+through a unique pasteboard, Down and Paste against the native mirror, then one
+Undo back to the clean source. A seventh multicursor PTY scenario covers both
+clipboard-provider and bracketed paste, one Undo and unchanged Enter behavior.
+
+`bash scripts/check.sh` passed: formatting, Clippy, 104 Rust tests, release builds,
+39 PTY scenarios plus the separate Secret Drop helper scenario, and all native
+Swift/Rust smoke checks. An isolated `dev.vibechar.paste-spread-check` app also
+verified live Cmd+D twice, Down and insertion of the synthetic copied payload:
+exactly four `foo` rows and two carets, with one Undo restoring the source.
+`left\r\nright\r\n` similarly produced one fragment at each caret and one Undo
+restored the source. Live paste restored the user's previous clipboard; actual
+copy was tested with the unique-pasteboard native smoke. The QA app was quit and
+its bundle, registration, recovery and preferences removed.
 
 ## Initial performance observations
 

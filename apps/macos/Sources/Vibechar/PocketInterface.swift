@@ -70,6 +70,7 @@ final class PocketTextView: NSTextView {
     var onBreakUndoGroup: (() -> Void)?
     var onEscape: (() -> Bool)?
     var onMultiInsert: ((String,UInt32)->Bool)?
+    var onMultiPaste: ((String)->Bool)?
     var onMultiClipboard: ((Int)->Bool)?
     var onMultiMove: ((UInt32,Bool)->Bool)?
     var onMultiCancel: (()->Bool)?
@@ -118,7 +119,7 @@ final class PocketTextView: NSTextView {
         performEdit(.isolated) { super.pasteAsRichText(sender) }
     }
     override func readSelection(from pboard: NSPasteboard) -> Bool {
-        if let text=pboard.string(forType:.string), onMultiInsert?(text,0)==true {return true}
+        if let text=pboard.string(forType:.string), onMultiPaste?(text)==true {return true}
         return performEdit(.isolated) { super.readSelection(from: pboard) }
     }
     override func cut(_ sender: Any?) {

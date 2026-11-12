@@ -14,6 +14,7 @@ pub const MAX_SELECTIONS: usize = 1_000;
 pub const MAX_BATCH_BYTES: usize = 8 * 1024 * 1024;
 enum Pending {
     Edit(String, EditKind),
+    Paste(String),
     Move(u32, bool),
 }
 
@@ -295,6 +296,10 @@ impl Multi {
                     self.edit(document, &text, kind).map(|_| ())
                 }
                 Pending::Move(direction, extend) => self.navigate(document, direction, extend),
+                Pending::Paste(text) => {
+                    self.queued_bytes -= text.len();
+                    self.paste(document, &text).map(|_| ())
+                }
             };
             if let Err(error) = result {
                 self.report_error(error);
@@ -307,7 +312,7 @@ impl Multi {
     }
     fn enqueue(&mut self, action: Pending) -> Result<(), String> {
         let bytes = match &action {
-            Pending::Edit(text, _) => text.len(),
+            Pending::Edit(text, _) | Pending::Paste(text) => text.len(),
             _ => 0,
         };
         if self.queued.len() >= 512 || self.queued_bytes + bytes > MAX_BATCH_BYTES {
@@ -396,30 +401,89 @@ impl Multi {
             targets.push((range, index == self.primary));
         }
         let inserted = if deleting { "" } else { text };
+        self.apply_targets(document, &targets, &[inserted], kind)
+    }
+    /// Spread N clipboard lines over N selections; otherwise repeat the full payload.
+    pub fn paste(&mut self, document: &mut Document, text: &str) -> Result<bool, String> {
+        self.valid(document)?;
+        if text.is_empty() {
+            return Ok(false);
+        }
+        if text.len() > MAX_BATCH_BYTES {
+            return self.fail("Multicursor paste exceeds 8 MiB");
+        }
+        if self.matching() {
+            self.enqueue(Pending::Paste(text.into()))?;
+            return Ok(false);
+        }
+        let count = self.selections.len();
+        if count > 1 {
+            let mut fragments = Vec::with_capacity(count);
+            for line in text.split_inclusive('\n') {
+                if fragments.len() == count {
+                    return self.edit(document, text, EditKind::Isolated);
+                }
+                let fragment = if let Some(body) = line.strip_suffix('\n') {
+                    body.strip_suffix('\r').unwrap_or(body)
+                } else {
+                    line
+                };
+                fragments.push(fragment);
+            }
+            if fragments.len() == count {
+                let targets = self
+                    .selections
+                    .iter()
+                    .enumerate()
+                    .map(|(index, selection)| (selection.range(), index == self.primary))
+                    .collect::<Vec<_>>();
+                return self.apply_targets(document, &targets, &fragments, EditKind::Isolated);
+            }
+        }
+        self.edit(document, text, EditKind::Isolated)
+    }
+    fn apply_targets(
+        &mut self,
+        document: &mut Document,
+        targets: &[(Range<usize>, bool)],
+        fragments: &[&str],
+        kind: EditKind,
+    ) -> Result<bool, String> {
+        let fragment = |index: usize| {
+            if fragments.len() == 1 {
+                fragments[0]
+            } else {
+                fragments[index]
+            }
+        };
         let bytes = targets
             .iter()
-            .map(|(range, _)| document.text.slice(range.clone()).len_bytes() + inserted.len())
+            .enumerate()
+            .map(|(index, (range, _))| {
+                document.text.slice(range.clone()).len_bytes() + fragment(index).len()
+            })
             .sum::<usize>();
         if bytes > MAX_BATCH_BYTES {
             return self.fail("Multicursor edit exceeds 8 MiB");
         }
         let edits = targets
             .iter()
-            .map(|(range, _)| TextEdit {
+            .enumerate()
+            .map(|(index, (range, _))| TextEdit {
                 range: range.clone(),
-                text: inserted.into(),
+                text: fragment(index).into(),
             })
             .collect::<Vec<_>>();
         let old_count = self.selections.len();
         let changed = document
             .replace_many_input(&edits, kind, self.last_kind == Some(kind))
             .map_err(|_| "Selections are stale")?;
-        let count = inserted.chars().count();
         let mut delta = 0isize;
         self.selections = targets
             .iter()
             .enumerate()
             .map(|(index, (range, primary))| {
+                let count = fragment(index).chars().count();
                 let caret = range.start.wrapping_add_signed(delta) + count;
                 delta += count as isize - range.len() as isize;
                 if *primary {
