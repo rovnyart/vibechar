@@ -383,6 +383,69 @@ automation restored the clipboard. Quit the QA app and removed its bundle,
 registration, recovery and preferences. No manual checkpoint is required for Art
 on this routine increment.
 
+## Smart syntax increment — 2026-11-12
+
+Both clients now run shared local syntax detection and background highlighting.
+The pinned catalog reports 186 visible grammars, not 186 automatic content detectors.
+Tests cover filename/manual precedence, shebangs, 15 common content families,
+conservative prose/token fallback, JavaScript/Python import ambiguity, UTF-16
+ranges, source-free paint metadata, incremental equivalence after late-line edits
+and multiline-comment changes, unchanged-prefix reuse and latest-request wins.
+Document revision, language and path changes reject obsolete results. Ordinary
+language pins survive checkpoint load; private text and pins are excluded.
+
+Full `scripts/check.sh` passed: **56 Rust tests**, formatting/Clippy, release builds,
+**16 real PTY scenarios**, the Secret Drop PTY scenario and all native smoke checks.
+The syntax PTY scenario verifies truecolor output, F2 extension search, pinning,
+Escape, restart, Auto reset, unchanged text and private recovery exclusion. It
+explicitly clears the inherited NO_COLOR only in the color assertion session;
+the editor continues respecting NO_COLOR normally.
+
+Native checks verify colored UTF-16 ranges, text/selection/Undo preservation,
+Auto/manual/Auto switching, and footer button geometry at 420/880 pt with private
+Give/Stop controls. The picker checks bounded results, extension aliases, Enter
+arriving before an async query returns, empty results and Escape. Actual offscreen
+renders were visually inspected in both appearances: ignored
+`dist/syntax-ui/syntax-{light,dark}-{420,880}.png` and
+`language-picker-{light,dark}.png`. Picker images render its real view against a
+Pocket surface; they do not capture the system popover's material or shadow.
+
+A separate on-screen `dev.vibechar.syntax-check` bundle verified: automatic Swift
+colors, click and Control+Cmd+L invocation, `py` search via individual keypresses,
+Return pinning, Escape keeping the pin, persistence after Cmd+Q/relaunch, clicking
+Auto to restore Swift detection, and live Light/Dark appearance. A synthetic
+private JSON paste detected JSON; one Cmd+Z cleared it and returned the badge to
+Text. Original text and editor focus were preserved when choosing languages.
+The automation's general typeText helper targeted the main editor despite an
+open popover; that synthetic insertion was undone and the actual search was
+verified with individual keys instead. The user's existing app/recovery remained
+untouched; the paste automation restored clipboard contents. Removed the QA bundle,
+registration, recovery and preferences after quit.
+
+Single-sample full-suite paste-to-Auto-JSON time was 151.95 ms including the 120 ms
+debounce; highlighted TUI RSS was 8,592 KiB. Additional local release/PTY observations:
+
+| Synthetic workload | Paste to detected/limited label | Next edit to PTY screen | Process RSS |
+| --- | --- | --- | --- |
+| 2,000 JSON records, 58,000 bytes | 180.63 ms | 0.61 ms | 10,672 KiB |
+| One 12,011-byte JSON line, limited preview | 157.95 ms | 1.91 ms | 6,432 KiB |
+| One 1,048,587-byte JSON line, limited preview | 256.81 ms | 21.66 ms | 12,896 KiB |
+
+Ten empty warm TUI launches observed a 4.64 ms median first frame, 227.20 ms maximum,
+and 3,344 KiB median RSS. These include Python/process/PTY startup and are neither
+cold-launch percentiles nor terminal-display latency. The 1 MiB edit still has
+presentation/line-processing cost despite uncolored parsing fallback. Size/line
+fallback and span budgets are explicit in the development guide; the 160 ms worker
+slice is cooperative between lines and is not a hard per-regex deadline.
+
+The isolated Mac process reported **136,640 KiB RSS (about 133.4 MiB)** after Swift
+highlighting, language search, restart and a theme switch. This exceeds the
+provisional Mac budget. It is a different workload from earlier observations and
+does not isolate the grammar cost. Raw supplemental measurements are in ignored
+`dist/syntax-measurements.json`. No Sublime comparison, peak-memory qualification,
+Linux runtime check or multi-emulator color acceptance has been performed.
+Art's visual/interaction feedback on this new feature is the next checkpoint.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS
@@ -421,7 +484,7 @@ is achieved. Isolate OS scheduling/launch work and the harness in the M1 baselin
 
 Native startup and Mac bridge/presentation costs across representative file sizes
 still need measurement. The milestone's baseline checkbox remains open until that
-evidence is recorded. M2 recovery is partial: private mode is implemented with
-hands-on feedback pending; retention and broader durability qualification remain
-open. M3 syntax/editing tools and M4/M5 AI are not
+evidence is recorded. M2 recovery is partial: retention and broader durability
+qualification remain open. M3 smart syntax is implemented; search, transforms,
+multicursor editing and complete large-document mode remain open. M4/M5 AI is not
 implemented. The prototype should not hold the only copy of important text.

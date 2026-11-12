@@ -31,6 +31,13 @@ while progressing through the remaining M2 behavior work.
 - File → Save As / Shift+Cmd+S chooses a new destination with the current filename
   and folder prefilled. Native replacement confirmation applies; only a successful
   write changes the tab's file association.
+- Syntax starts in Auto. A quiet footer badge states the detected language; its
+  tooltip explains the local signal. Click or Control+Cmd+L opens a compact search
+  with at most seven suggestions, never an alphabetic wall. Return pins, Escape
+  cancels, Auto resets. Preserve text, selection and Undo throughout.
+- Syntax colors belong to Pocket: muted rose keywords, sage strings, ochre
+  constants, teal keys and soft purple types. Keep separate light/dark palettes
+  and reserve the warm orange chrome accent for actions and the `V_` mark.
 
 ## Identity
 
@@ -52,6 +59,9 @@ while progressing through the remaining M2 behavior work.
 - Render only the viewport, accounting for wide graphemes, tabs, and horizontal scroll.
 - F4 opens Save As for scratches or files. Existing destinations require a second
   Enter; Esc cancels. Editing the filename resets replacement confirmation.
+- F2 opens the same local language search; arrows select, Return pins, Escape
+  cancels. Auto is the default. Colors follow the dark Pocket palette unless
+  `VIBECHAR_COLOR_SCHEME=light` is selected for a light terminal background.
 
 ## Editing and AI
 

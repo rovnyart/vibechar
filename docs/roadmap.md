@@ -161,8 +161,13 @@ into a child process. Implement the same operation model in Mac and terminal.
 
 ### M3 — Fast local text tools
 
-- [ ] Incremental/visible-region highlighting, language detection, manual override.
-- [ ] Evaluate Syntect first for broad language coverage; measure pathological input.
+- [x] Shared background incremental highlighting, viewport painting, local filename/
+  content detection, and a short searchable language override (Mac and terminal).
+- [x] Integrate Syntect + two-face with 186 visible grammars, Pocket light/dark colors,
+  lazy loading, version-bound results and bounded pathological-input fallback.
+  Primary paste cases, incremental invalidation, large/minified limits, recovery,
+  native rendering and real PTY behavior are verified. Full latency/memory targets
+  and multiple terminal emulators remain open; see verification.
 - [ ] Literal/regex search, replace preview, select matches, basic multicursor edits.
 - [ ] Local transforms and a keyboard command palette in both clients.
 - [ ] Coalesce a transformation or multi-edit into one undo transaction.

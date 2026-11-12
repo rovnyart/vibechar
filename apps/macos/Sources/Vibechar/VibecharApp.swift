@@ -37,6 +37,7 @@ struct VibecharApp {
             AppDelegate.inputSmokeTest()
             AppDelegate.closeSmokeTest()
             AppDelegate.saveAsSmokeTest()
+            AppDelegate.syntaxSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -101,6 +102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private var pendingSave: DispatchWorkItem?
     private var saveGeneration: UInt64 = 0
     private var dropTimer: Timer?
+    private var syntaxTimer: Timer?
+    private var syntaxWork: DispatchWorkItem?
+    private var syntaxFrame: SyntaxFrame?
+    private var syntaxSerial: UInt64 = 0
+    private var syntaxGeneration: UInt64 = 0
+    private var languagePopover: NSPopover?
 
     init(clipboard: NSPasteboard = .general) {
         let session = RustSession()
@@ -185,6 +192,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(syntaxViewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         scroll.documentView = textView
         scroll.backgroundColor = PocketPalette.canvas
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -195,6 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         header.onNew = { [weak self] in self?.newScratch() }
         footer.onGive = { [weak self] in self?.copyForAgent() }
         footer.onStop = { [weak self] in self?.closeAgentAccess() }
+        footer.onLanguage = { [weak self] in self?.showLanguagePicker() }
         content.appearanceChanged = { [weak self] in self?.applyTypography() }
         content.addSubview(header)
         content.addSubview(scroll)
@@ -232,6 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         }
         footer.detail.stringValue = "\(Int(fontSize)) pt  ·  UTF-8"
         textView.needsDisplay = true
+        paintSyntax()
     }
 
     @objc private func displayOptionsChanged() {
@@ -288,6 +299,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         addMenu("Edit", submenu: edit, to: menu)
         let view = NSMenu(title: "View")
+        let language = NSMenuItem(title: "Choose Language…", action: #selector(showLanguagePicker), keyEquivalent: "l")
+        language.keyEquivalentModifierMask = [.command, .control]
+        language.target = self
+        view.addItem(language)
+        view.addItem(.separator())
         addItem("Zoom In", action: #selector(zoomIn), key: "+", to: view)
         addItem("Zoom Out", action: #selector(zoomOut), key: "-", to: view)
         addItem("Actual Size", action: #selector(actualSize), key: "0", to: view)
@@ -344,11 +360,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.needsDisplay = true
         refreshTitle()
         scheduleSessionSave()
+        scheduleSyntax()
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
         if !textView.isPerformingEdit { document.breakUndoGroup() }
         scheduleSessionSave()
+    }
+
+    private func scheduleSyntax() {
+        guard !closingWindow else { return }
+        syntaxWork?.cancel()
+        syntaxGeneration &+= 1; let generation = syntaxGeneration
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.closingWindow, self.syntaxGeneration == generation else { return }
+            self.session.submitSyntax()
+            if self.pollSyntax() && self.syntaxTimer == nil {
+                self.syntaxTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] timer in
+                    MainActor.assumeIsolated {
+                        guard let self else { timer.invalidate(); return }
+                        self.pollSyntax()
+                    }
+                }
+            }
+        }
+        syntaxWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+    @discardableResult private func pollSyntax() -> Bool {
+        // Read busy first so a completion between these calls still gets painted.
+        let busy = session.syntaxBusy
+        if let frame = session.syntaxFrame(after: syntaxSerial) {
+            syntaxFrame = frame; syntaxSerial = frame.serial
+            footer.showSyntax(frame.language, automatic: frame.automatic, reason: frame.reason, limited: frame.limited)
+            paintSyntax()
+        }
+        if !busy { syntaxTimer?.invalidate(); syntaxTimer = nil }
+        return busy
+    }
+    @objc private func syntaxViewportChanged() { paintSyntax() }
+    private func paintSyntax() {
+        guard let layout = textView.layoutManager, let storage = textView.textStorage else { return }
+        guard let frame = syntaxFrame else {
+            layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: NSRange(location: 0, length: storage.length))
+            return
+        }
+        guard frame.revision == document.revision else { return }
+        layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: NSRange(location: 0, length: storage.length))
+        guard !frame.spans.isEmpty, let container = textView.textContainer else { return }
+        let glyphs = layout.glyphRange(forBoundingRect: textView.visibleRect, in: container)
+        let visible = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        let start = max(0, visible.location - 2048)
+        let end = min(storage.length, NSMaxRange(visible) + 2048)
+        let window = NSRange(location: start, length: max(0, end-start))
+        for span in frame.spans {
+            if span.start >= end { break }
+            let range = NSIntersectionRange(window, NSRange(location: span.start, length: span.length))
+            if range.length > 0 { layout.addTemporaryAttribute(.foregroundColor, value: SyntaxColors.color(span.role), forCharacterRange: range) }
+        }
+    }
+    @objc private func showLanguagePicker() {
+        document.breakUndoGroup()
+        languagePopover?.performClose(nil)
+        let popover = NSPopover(); popover.behavior = .transient; popover.animates = false
+        let hint = syntaxFrame.map { "\($0.language) · \($0.reason)" } ?? "Automatic · file name + pasted text"
+        let dismiss = { [weak self] in
+            self?.languagePopover?.performClose(nil)
+            if let self { self.window.makeFirstResponder(self.textView) }
+        }
+        popover.contentViewController = LanguagePicker(hint: hint, dismissed: dismiss) { [weak self] mode in
+            guard let self, self.session.setLanguage(mode) else { return }
+            self.languagePopover?.performClose(nil)
+            self.window.makeFirstResponder(self.textView)
+            self.syntaxFrame = nil; self.syntaxSerial = 0
+            self.footer.showSyntax(mode.isEmpty ? "Text" : mode, automatic: mode.isEmpty, reason: mode.isEmpty ? "Detecting locally" : "Pinned for this tab", limited: false)
+            self.paintSyntax(); self.scheduleSyntax(); self.scheduleSessionSave()
+        }
+        languagePopover = popover
+        popover.show(relativeTo: footer.languageButton.bounds, of: footer.languageButton, preferredEdge: .maxY)
     }
 
     private func refreshTitle() {
@@ -372,6 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.scrollRangeToVisible(textView.selectedRange())
         refreshTitle()
         scheduleSessionSave()
+        scheduleSyntax()
     }
 
     @objc private func newScratch() {
@@ -459,6 +549,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func showActiveBuffer() {
         footer.operationError = nil
+        syntaxFrame = nil; syntaxSerial = 0
+        footer.showSyntax(session.language.isEmpty ? "Text" : session.language, automatic: session.language.isEmpty, reason: session.language.isEmpty ? "Detects file names and pasted text locally" : "Pinned for this tab", limited: false)
         textView.string = document.text
         applyTypography()
         textView.setSelectedRange(session.selection)
@@ -466,6 +558,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         window.makeFirstResponder(textView)
         refreshTitle()
         scheduleSessionSave()
+        scheduleSyntax()
     }
 
     @objc private func previousBuffer() { switchBuffer(to: (session.active + session.count - 1) % session.count) }
@@ -571,6 +664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         footer.operationError = nil
         refreshTitle()
         scheduleSessionSave()
+        scheduleSyntax()
     }
 
     private func confirmDiscard() -> Bool {
@@ -596,6 +690,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     func applicationWillTerminate(_ notification: Notification) {
         // AppKit terminates the process without guaranteeing Swift/Rust deinit.
         closeAllAgentAccess()
+        syntaxWork?.cancel(); syntaxTimer?.invalidate()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -840,6 +935,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         print("Last-tab close native smoke passed: Cmd+W, tab close button, private empty, multiple tabs, quit recovery")
     }
 
+    static func syntaxSmokeTest() {
+        let app = AppDelegate(clipboard: .withUniqueName())
+        app.makeWindow(restoreFrame: false)
+        defer {
+            app.syntaxWork?.cancel(); app.syntaxTimer?.invalidate()
+            app.clipboard.clearContents(); app.window.delegate = nil; app.window.close()
+        }
+        let sample = "{\n  \"name\": \"Pocket 👩‍💻\",\n  \"local\": true,\n  \"languages\": 186,\n  \"features\": [\"Auto\", \"Private\", \"Secret Drop\"]\n}"
+        precondition(app.document.replace(NSRange(location: 0, length: 0), with: sample))
+        app.showActiveBuffer()
+        let selection = NSRange(location: 12, length: 4)
+        app.textView.setSelectedRange(selection)
+        func waitForSyntax(_ language: String, automatic: Bool) {
+            app.session.submitSyntax()
+            let deadline = Date(timeIntervalSinceNow: 15)
+            repeat {
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+                app.pollSyntax()
+                precondition(Date() < deadline, "Syntax worker must finish")
+            } while app.syntaxFrame?.complete != true || app.syntaxFrame?.language != language || app.syntaxFrame?.automatic != automatic
+            precondition(app.textView.string == sample && app.document.text == sample)
+            precondition(app.textView.selectedRange() == selection)
+        }
+        waitForSyntax("JSON", automatic: true)
+        precondition(app.syntaxFrame!.spans.contains { $0.role == 2 })
+        let revision = app.document.revision
+        let output = ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        LanguagePicker.smokeTest(output: output)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            app.window.appearance = NSAppearance(named: appearance)
+            for width in [420, 880] {
+                app.window.setContentSize(NSSize(width: width, height: 600))
+                app.window.layoutIfNeeded()
+                app.window.contentView!.layoutSubtreeIfNeeded()
+                app.paintSyntax()
+                let stringSpan = app.syntaxFrame!.spans.first { $0.role == 2 }!
+                precondition(app.textView.layoutManager!.temporaryAttribute(.foregroundColor, atCharacterIndex: stringSpan.start, effectiveRange: nil) != nil)
+                for isPrivate in [false, true] {
+                    app.footer.privateTab = isPrivate
+                    app.footer.agentUses = isPrivate ? 1 : nil
+                    app.footer.layoutSubtreeIfNeeded()
+                    let buttons = app.footer.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden }
+                    for (index, button) in buttons.enumerated() {
+                        precondition(app.footer.bounds.contains(button.frame), "Footer buttons must fit at narrow widths")
+                        for other in buttons.dropFirst(index + 1) { precondition(!button.frame.intersects(other.frame)) }
+                    }
+                }
+                app.footer.privateTab = false; app.footer.agentUses = nil
+                app.footer.layoutSubtreeIfNeeded()
+                if let output {
+                    let view = app.window.contentView!
+                    app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+                        view.cacheDisplay(in: view.bounds, to: bitmap)
+                        try! bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent("syntax-\(name)-\(width).png"))
+                    }
+                }
+            }
+        }
+        precondition(app.session.setLanguage("Python"))
+        waitForSyntax("Python", automatic: false)
+        precondition(app.session.setLanguage(""))
+        waitForSyntax("JSON", automatic: true)
+        precondition(app.document.revision == revision)
+        precondition(app.document.history(redo: false) != nil && app.document.text.isEmpty, "Syntax must not enter Undo")
+        print("Smart syntax native smoke passed: Auto, manual pin, UTF-16 colors, selection/Undo, narrow private footer, light/dark")
+    }
+
     // Exercise the real window composition without opening a window or recovery store.
     static func interfaceSmokeTest() {
         let app = AppDelegate(clipboard: .withUniqueName())
@@ -970,7 +1133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 let view = app.window.contentView!
                 view.layoutSubtreeIfNeeded()
                 precondition(abs(view.bounds.width - CGFloat(width)) < 1, "Secret Drop must fit the actual narrow window")
-                let buttons = app.footer.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden }
+                let buttons = app.footer.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden && $0 !== app.footer.languageButton }
                 precondition(buttons.count == 2 && !buttons[0].frame.intersects(buttons[1].frame))
                 precondition(buttons.allSatisfy { app.footer.bounds.contains($0.frame) })
                 for button in buttons {
@@ -1029,7 +1192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.session.count == countBeforeSave && app.textView.selectedRange() == selectionBeforeSave)
         precondition(app.session.fileURL == savedFile && app.session.label(app.session.active) == "saved.txt")
         precondition(!app.session.needsCloseConfirmation && !app.footer.status.stringValue.contains("Private"))
-        precondition(app.footer.subviews.compactMap { $0 as? NSButton }.allSatisfy { $0.isHidden })
+        precondition(app.footer.subviews.compactMap { $0 as? NSButton }.filter { $0 !== app.footer.languageButton }.allSatisfy { $0.isHidden })
         precondition(useDrop("raise Exception('CHILD_MUST_NOT_START')").0 == 1)
         let checkpointURL = savedFolder.appendingPathComponent("session.json")
         precondition(app.session.checkpoint().save(to: checkpointURL))

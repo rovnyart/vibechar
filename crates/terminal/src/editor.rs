@@ -15,6 +15,10 @@ pub struct Editor {
     pub message: String,
     pub recovery_status: &'static str,
     pub save_prompt: Option<String>,
+    pub language_prompt: Option<String>,
+    pub syntax: Option<std::sync::Arc<vibechar_core::syntax::Frame>>,
+    pub light_syntax: bool,
+    language_choice: usize,
     overwrite_pending: Option<PathBuf>,
     close_pending: bool,
     private_quit_pending: bool,
@@ -35,6 +39,10 @@ impl Editor {
             message: String::new(),
             recovery_status: "Saving locally…",
             save_prompt: None,
+            language_prompt: None,
+            syntax: None,
+            light_syntax: std::env::var("VIBECHAR_COLOR_SCHEME").is_ok_and(|s| s == "light"),
+            language_choice: 0,
             overwrite_pending: None,
             close_pending: false,
             private_quit_pending: false,
@@ -48,6 +56,13 @@ impl Editor {
 
     fn insert_with_kind(&mut self, text: &str, kind: EditKind) {
         self.cancel_private_quit();
+        if let Some(prompt) = &mut self.language_prompt {
+            if !text.contains(['\n', '\r', '\0']) && prompt.len() + text.len() <= 128 {
+                prompt.push_str(text);
+                self.language_choice = 0;
+            }
+            return;
+        }
         if let Some(prompt) = &mut self.save_prompt {
             if !text.contains(['\n', '\r', '\0']) {
                 self.overwrite_pending = None;
@@ -89,6 +104,10 @@ impl Editor {
         if !quitting {
             self.cancel_private_quit();
         }
+        if self.language_prompt.is_some() {
+            self.language_key(key);
+            return false;
+        }
         if self.save_prompt.is_some() {
             self.prompt_key(key);
             return false;
@@ -107,6 +126,11 @@ impl Editor {
             }
             KeyCode::Enter => self.insert(self.document().newline()),
             KeyCode::F(4) => self.save_as(),
+            KeyCode::F(2) => {
+                self.language_prompt = Some(String::new());
+                self.language_choice = 0;
+                self.message.clear();
+            }
             KeyCode::F(6) => self.switch_buffer(if key.modifiers.contains(KeyModifiers::SHIFT) {
                 -1
             } else {
@@ -217,6 +241,72 @@ impl Editor {
         if self.private_quit_pending {
             self.private_quit_pending = false;
             self.message.clear();
+        }
+    }
+
+    pub fn pump_syntax(&mut self) {
+        let serial = self.syntax.as_ref().map_or(0, |frame| frame.serial);
+        if let Some(frame) = self.session.syntax_frame(serial) {
+            self.syntax = Some(frame);
+        }
+    }
+    pub fn language_options(&self) -> Vec<vibechar_core::syntax::Choice> {
+        vibechar_core::syntax::choices(self.language_prompt.as_deref().unwrap_or(""))
+    }
+    pub fn selected_language(&self) -> usize {
+        self.language_choice
+    }
+    fn language_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => self.language_prompt = None,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.language_prompt = None
+            }
+            KeyCode::Enter => {
+                if let Some(choice) = self.language_options().get(self.language_choice) {
+                    if self.session.set_language(&choice.id) {
+                        self.syntax = None;
+                        self.session.submit_syntax();
+                        self.message = if choice.id.is_empty() {
+                            "Language: Automatic".into()
+                        } else {
+                            format!("Language pinned: {} · F2 → Auto resets", choice.name)
+                        };
+                        self.language_prompt = None;
+                    }
+                }
+            }
+            KeyCode::Down => {
+                let count = self.language_options().len();
+                if count > 0 {
+                    self.language_choice = (self.language_choice + 1) % count;
+                }
+            }
+            KeyCode::Up => {
+                let count = self.language_options().len();
+                if count > 0 {
+                    self.language_choice = (self.language_choice + count - 1) % count;
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(query) = &mut self.language_prompt {
+                    query.pop();
+                    self.language_choice = 0;
+                }
+            }
+            KeyCode::Char(ch)
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
+            {
+                if let Some(query) = &mut self.language_prompt {
+                    if query.len() + ch.len_utf8() <= 128 {
+                        query.push(ch);
+                        self.language_choice = 0;
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

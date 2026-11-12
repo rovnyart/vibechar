@@ -184,6 +184,36 @@ def main():
     expected = "Привет 👩‍💻\r\nline\r\n".encode()
     with tempfile.TemporaryDirectory(prefix="vibechar-test-") as directory:
         directory = Path(directory)
+        syntax_state = directory / "syntax-state"
+        syntax_text = '{"name":"Pocket 👩‍💻","count":42}'.encode()
+        with Session(state=syntax_state, extra_env={"NO_COLOR": ""}) as session:
+            started = time.perf_counter()
+            session.send(b"\x1b[200~" + syntax_text + b"\x1b[201~")
+            session.wait_until(lambda: "Auto · JSON" in session.screen_text())
+            syntax_ms = (time.perf_counter() - started) * 1000
+            syntax_rss = int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(session.process.pid)]))
+            assert b"38;2;" in session.output, "syntax must emit truecolor styles"
+            session.send(b"\x1bOQpy\r")
+            session.wait_for(b"Language pinned: Python")
+            session.wait_until(lambda: (data := session.checkpoint()) is not None
+                               and data["buffers"][0].get("language") == "Python")
+            assert session.checkpoint()["buffers"][0]["text"].encode() == syntax_text
+            session.send(b"\x1bOQjson\x1b")
+            session.wait_until(lambda: "Language:" not in session.screen_text())
+            session.send(b"\x11")
+            session.finish()
+        with Session(state=syntax_state) as session:
+            session.wait_until(lambda: "Python" in session.screen_text())
+            session.send(b"\x1bOQauto\r")
+            session.wait_until(lambda: "Auto · JSON" in session.screen_text())
+            session.send(b"\x10\x1b[200~PRIVATE_SYNTAX_PTY_FIXTURE\x1b[201~\x1bOQswift\r")
+            session.wait_for(b"Language pinned: Swift")
+            session.send(b"\x11\x11")
+            session.finish()
+            encoded = (syntax_state / "session.json").read_text()
+            assert "PRIVATE_SYNTAX_PTY_FIXTURE" not in encoded and "Swift" not in encoded
+            assert session.checkpoint()["buffers"][0]["text"].encode() == syntax_text
+            assert "language" not in session.checkpoint()["buffers"][0]
         path = directory / "sample.txt"
         with Session(path) as session:
             startup = session.first_frame_ms
@@ -478,7 +508,10 @@ def main():
         assert (checkpoint / "sentinel").read_text() == "keep"
 
     print(json.dumps({
-        "real_pty_scenarios": 14,
+        "real_pty_scenarios": 16,
+        "smart_syntax_auto_search_pin_cancel_restart_and_private_exclusion": "passed",
+        "syntax_paste_to_label_single_sample_ms": round(syntax_ms, 2),
+        "tui_highlighted_single_sample_rss_kib": syntax_rss,
         "grouped_typing_pause_paste_navigation_deletion_and_save_boundary": "passed",
         "save_as_cancel_failure_confirmed_replace_and_restart": "passed",
         "utf8_crlf_bytes": "preserved",

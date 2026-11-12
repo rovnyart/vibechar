@@ -34,6 +34,8 @@ struct StoredBuffer {
     selection: Range<usize>,
     scratch_number: usize,
     dirty: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
 }
 
 struct StoredText(Rope);
@@ -89,6 +91,7 @@ impl Checkpoint {
                         selection: start..end,
                         scratch_number: buffer.scratch_number,
                         dirty: buffer.document.is_dirty(),
+                        language: buffer.language.clone(),
                     }
                 })
                 .collect(),
@@ -153,6 +156,10 @@ impl Checkpoint {
             .map(|buffer| {
                 if buffer.selection.start > buffer.selection.end
                     || buffer.selection.end > buffer.text.0.len_chars()
+                    || buffer
+                        .language
+                        .as_ref()
+                        .is_some_and(|mode| mode.len() > 128 || mode.contains('\0'))
                 {
                     return Err(invalid_snapshot());
                 }
@@ -162,6 +169,7 @@ impl Checkpoint {
                     selection: buffer.selection,
                     scratch_number: buffer.scratch_number,
                     private: false,
+                    language: buffer.language,
                 })
             })
             .collect::<io::Result<Vec<_>>>()?;
@@ -170,6 +178,7 @@ impl Checkpoint {
             active: self.active,
             next_scratch: self.next_scratch,
             handoff: None,
+            syntax: None,
         })
     }
 }

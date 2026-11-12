@@ -357,6 +357,10 @@ final class PocketHeader: NSView {
 final class PocketFooter: NSView {
     let status = NSTextField(labelWithString: "Saved locally")
     let detail = NSTextField(labelWithString: "15 pt  ·  UTF-8")
+    let languageButton = NSButton(title: "Auto · Text", target: nil, action: nil)
+    var onLanguage: (() -> Void)?
+    private var syntaxName = "Text"
+    private var syntaxAuto = true
     private let give = NSButton(title: "Give to Agent", target: nil, action: nil)
     private let stop = NSButton(title: "Stop", target: nil, action: nil)
     var onGive: (() -> Void)?
@@ -378,7 +382,7 @@ final class PocketFooter: NSView {
         status.setAccessibilityLabel("Session recovery")
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.alignment = .right
-        for button in [give, stop] {
+        for button in [give, stop, languageButton] {
             button.isBordered = false
             button.font = .systemFont(ofSize: 11, weight: .medium)
             button.contentTintColor = PocketPalette.accent
@@ -390,10 +394,22 @@ final class PocketFooter: NSView {
         give.setAccessibilityLabel("Copy for Agent")
         stop.action = #selector(stopAgent)
         stop.setAccessibilityLabel("Close this tab's agent access")
+        languageButton.action = #selector(chooseLanguage)
+        languageButton.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
+        languageButton.imagePosition = .imageTrailing
+        languageButton.cell?.lineBreakMode = .byTruncatingTail
+        showSyntax("Text", automatic: true, reason: "Detects file names and pasted text locally", limited: false)
         renderStatus()
         status.toolTip = "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func showSyntax(_ name: String, automatic: Bool, reason: String, limited: Bool) {
+        syntaxName = name; syntaxAuto = automatic
+        languageButton.toolTip = "\(automatic ? "Automatic" : "Pinned") · \(reason)\(limited ? " · Color preview limited for this text" : "") · Click to search languages"
+        languageButton.setAccessibilityLabel("Language: \(automatic ? "Auto · " : "")\(name)")
+        languageButton.image = NSImage(systemSymbolName: automatic ? "chevron.down" : "pin.fill", accessibilityDescription: nil)
+        needsLayout = true
+    }
     func showStatus(_ message: String, failed: Bool = false) {
         recoveryMessage = message
         self.failed = failed
@@ -415,11 +431,15 @@ final class PocketFooter: NSView {
     }
     override func layout() {
         super.layout()
-        let details: CGFloat = privateTab && bounds.width < 650 ? 0 : 144
-        let actions: CGFloat = privateTab ? (agentUses == nil ? 112 : 142) : 0
+        let compact = privateTab && bounds.width < 650
+        let languageWidth: CGFloat = compact ? 92 : 142
+        let details: CGFloat = bounds.width >= 800 ? 94 : 0
+        let actions: CGFloat = privateTab ? (agentUses == nil ? 104 : 144) : 0
+        languageButton.title = syntaxAuto && !compact ? "Auto · \(syntaxName)" : syntaxName
+        languageButton.frame = NSRect(x: bounds.width - 16 - languageWidth, y: 4, width: languageWidth, height: 24)
         detail.isHidden = details == 0
-        detail.frame = NSRect(x: bounds.width - 144, y: 8, width: 122, height: 16)
-        let actionX = bounds.width - details - actions - 16
+        detail.frame = NSRect(x: languageButton.frame.minX - details - 8, y: 8, width: max(0, details - 8), height: 16)
+        let actionX = languageButton.frame.minX - details - (actions == 0 ? 0 : 8) - actions
         give.frame = NSRect(x: actionX, y: 4, width: 104, height: 24)
         stop.frame = NSRect(x: actionX + 104, y: 4, width: 40, height: 24)
         status.frame = NSRect(x: 26, y: 8, width: max(0, actionX - 38), height: 16)
@@ -430,6 +450,7 @@ final class PocketFooter: NSView {
     }
     @objc private func giveToAgent() { onGive?() }
     @objc private func stopAgent() { onStop?() }
+    @objc private func chooseLanguage() { onLanguage?() }
 }
 
 @MainActor

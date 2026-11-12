@@ -33,6 +33,14 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--syntax-licenses") {
+        print!("{}", vibechar_core::syntax::licenses());
+        return Ok(());
+    }
+    if args.first().is_some_and(|arg| arg == "--syntax-count") {
+        println!("{}", vibechar_core::syntax::syntax_count());
+        return Ok(());
+    }
     if args.first().is_some_and(|arg| arg == "run") {
         std::process::exit(agent::run(&args[1..])?);
     }
@@ -40,7 +48,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .first()
         .is_some_and(|arg| arg == "--help" || arg == "-h")
     {
-        println!("vibechar [FILE]\nvibechar run <reference> --env NAME -- <program> [args...]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+G / F7 Copy for Agent · F8 Paste Secret for Agent · F9 Close All Agent Access\nCtrl+S save file · F4 Save As · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\nSave As: Enter submits a filename; Enter again confirms replacement; Esc cancels.\n\nSecret Drop works with local agents on the same host. Keep the editor open.\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Successful file saving ends private mode and closes that tab's agent access. Highlighting and AI rewrites are still in development.");
+        println!("vibechar [FILE]\nvibechar run <reference> --env NAME -- <program> [args...]\n\nA tiny text workbench. Also accepts piped UTF-8 text.\n\nCtrl+N new · Ctrl+P new private · F6/Shift+F6 switch · Ctrl+W close\nCtrl+G / F7 Copy for Agent · F8 Paste Secret for Agent · F9 Close All Agent Access\nCtrl+S save file · F4 Save As · Ctrl+Z undo · Ctrl+Y redo · Ctrl+Q save session and quit\nF2 language search · Auto detects file names and pasted text locally\nSave As: Enter submits a filename; Enter again confirms replacement; Esc cancels.\n\nSecret Drop works with local agents on the same host. Keep the editor open.\nOrdinary tabs restore after restart. Private tabs do not enter recovery; quitting with private text requires confirmation. Successful file saving ends private mode and closes that tab's agent access. AI rewrites are still in development.");
         return Ok(());
     }
     if args.first().is_some_and(|arg| arg == "--version") {
@@ -108,8 +116,16 @@ fn edit(
 ) -> io::Result<()> {
     let mut deadline = Some(Instant::now() + Duration::from_millis(500));
     let mut latest = 0;
+    let mut syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
     let mut quit_failed = false;
     loop {
+        if syntax_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            editor.session.submit_syntax();
+            syntax_deadline = None;
+        }
+        // Read busy before taking the frame: a concurrent completion cannot get lost.
+        let syntax_busy = editor.session.syntax_busy();
+        editor.pump_syntax();
         while let Some((id, result)) = recovery.poll()? {
             if id == latest && deadline.is_none() {
                 editor.recovery_status = if result.is_ok() {
@@ -127,6 +143,15 @@ fn edit(
         terminal.draw(|frame| view::draw(frame, editor))?;
         let mut timeout =
             deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        if let Some(syntax) = syntax_deadline {
+            let delay = syntax.saturating_duration_since(Instant::now());
+            timeout = Some(timeout.map_or(delay, |current| current.min(delay)));
+        }
+        if syntax_busy {
+            timeout = Some(timeout.map_or(Duration::from_millis(25), |value| {
+                value.min(Duration::from_millis(25))
+            }));
+        }
         if editor.session.has_drop_access() {
             timeout = Some(timeout.map_or(Duration::from_secs(1), |value| {
                 value.min(Duration::from_secs(1))
@@ -166,6 +191,7 @@ fn edit(
                     }
                 }
                 deadline = Some(Instant::now() + Duration::from_millis(500));
+                syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
                 editor.recovery_status = "Saving locally…";
             }
             Event::Paste(text) => {
@@ -174,6 +200,7 @@ fn edit(
                     quit_failed = false;
                 }
                 editor.insert(&text);
+                syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
                 deadline = Some(Instant::now() + Duration::from_millis(500));
                 editor.recovery_status = "Saving locally…";
             }

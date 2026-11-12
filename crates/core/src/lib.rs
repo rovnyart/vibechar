@@ -3,6 +3,7 @@
 pub mod checkpoint;
 pub mod handoff;
 pub mod session;
+pub mod syntax;
 
 #[cfg(test)]
 mod history_tests;
@@ -10,8 +11,10 @@ mod history_tests;
 use std::{
     fmt,
     ops::Range,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
+static NEXT_DOCUMENT: AtomicU64 = AtomicU64::new(1);
 
 use ropey::Rope;
 use unicode_segmentation::UnicodeSegmentation;
@@ -57,6 +60,7 @@ const MAX_GROUP_EDITS: usize = 512;
 const MAX_GROUP_BYTES: usize = 64 * 1024;
 
 pub struct Document {
+    id: u64,
     text: Rope,
     undo: Vec<HistoryEntry>,
     redo: Vec<HistoryEntry>,
@@ -101,6 +105,7 @@ impl Document {
 
     pub fn new(text: &str) -> Self {
         Self {
+            id: NEXT_DOCUMENT.fetch_add(1, Ordering::Relaxed),
             text: Rope::from_str(text),
             undo: Vec::new(),
             redo: Vec::new(),
@@ -261,6 +266,9 @@ impl Document {
 
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn revoke_drop(&mut self) {

@@ -96,7 +96,7 @@ modification dot is independent from the footer's local session-save status.
 View provides text zoom (Zoom In/Out and Cmd+0 reset), an appearance submenu
 (Follow System/Light/Dark), and full screen. Appearance and the normal window frame
 persist locally. The canvas uses native AppKit input and an opaque light/dark
-surface. Syntax colors, AI actions, line numbers, and line/column indicators remain
+surface. AI actions, line numbers, and native line/column indicators remain
 later work; the design studies showed illustrative future interactions.
 
 The build's native smoke test checks tab geometry at 420–1600 pt, active-tab
@@ -113,6 +113,48 @@ VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/pocket-ui" \
 These images exclude the system titlebar/traffic-light layer. They supplement
 on-screen application checks; they do not qualify native full-screen transitions,
 VoiceOver, or IME composition.
+
+## Smart syntax
+
+Both clients default to Auto: a recognized filename extension wins, followed by a
+shebang and conservative content signals. Common paste detectors cover JSON/JSON
+Lines, environment pairs, TOML/YAML, SQL, shell commands, Rust, Swift, Python,
+TypeScript/JavaScript, HTML/XML and Markdown. Ambiguous fragments/prose/tokens stay
+Text; auto detection is heuristic, not a classifier for every bundled language.
+An ordinary `.txt`/`.log` filename still permits content detection. Nothing is sent
+to an AI provider or network, including for private tabs.
+
+On Mac click the footer's **Auto · language** badge or use View → Choose Language /
+Control+Cmd+L. Search names or extensions (`ts`, `py`, `json`); the popover shows at
+most seven choices, with arrows/Return to choose and Escape to cancel. In the TUI
+use **F2** with the same search/selection keys. Choose **Auto** to return to detection
+or **Text** to disable colors for that tab. An override is per tab and never changes
+the text/dirty state. Ordinary pins survive restart; private pins are not recovered.
+
+The pinned Syntect/two-face catalog has **186 visible grammars**. Run
+`./target/release/vibechar --syntax-count` to inspect the build. Grammar data loads
+on demand, outside the editor input thread; empty/plain scratches do not load it.
+After a 120 ms input debounce, one worker parses an immutable rope snapshot. It
+keeps parser checkpoints every 32 lines and reuses unchanged prefixes. A new
+request replaces pending work; stale document/revision/path/mode results cannot
+override the current state. Soft 160 ms slices publish partial results and continue;
+that is a cooperative budget between lines, not a per-regex wall-clock deadline.
+
+The current color preview caps are **512 KiB per document, 8,192 bytes per line,
+10,000 lines and 20,000 colored spans**. Crossing a size/line cap leaves the text
+uncolored and fully editable; a span/parser limit can keep a colored prefix. The
+Mac tooltip/TUI `preview` label indicates a limited result. Regex execution uses
+fancy-regex's backtracking limit; a single regex/line can outlast the soft slice.
+These are explicit preview limits, not full large-document-mode qualification.
+
+AppKit uses temporary foreground attributes for the viewport plus a small margin;
+TUI paints visible rows with the same palette. Colors do not enter the clipboard,
+save files or Undo. Dark terminal colors are the default; set
+`VIBECHAR_COLOR_SCHEME=light` for a light background. Truecolor/emulator acceptance
+beyond the local PTY remains pending. A nonempty `NO_COLOR` disables terminal color
+output. Dependency notices are in
+[syntax-licenses.md](syntax-licenses.md), included in the Mac bundle's Resources,
+and available through `vibechar --syntax-licenses`.
 
 ## Private scratches
 
@@ -233,7 +275,7 @@ docs/              roadmap, architecture, development, verification evidence
 
 ## M1 limitations
 
-The app is an early prototype. Highlighting, AI,
+The app is an early prototype. AI,
 multicursors, global hotkeys, and search are later
 milestones. TUI selection/clipboard and native IME composition qualification are
 also pending. No dedicated settings window exists; recovery uses a versioned JSON checkpoint.

@@ -7,6 +7,8 @@ swift build --package-path "$root/apps/macos" -c release \
 app="$root/dist/Vibechar.app"
 mkdir -p "$app/Contents/MacOS"
 mkdir -p "$app/Contents/Helpers"
+mkdir -p "$app/Contents/Resources"
+cp "$root/docs/syntax-licenses.md" "$app/Contents/Resources/Syntax Notices.md"
 cp "$root/target/release/vibechar" "$app/Contents/Helpers/.vibechar-next-$$"
 mv -f "$app/Contents/Helpers/.vibechar-next-$$" "$app/Contents/Helpers/vibechar"
 codesign --force --sign - "$app/Contents/Helpers/vibechar"

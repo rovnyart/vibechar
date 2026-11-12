@@ -9,6 +9,7 @@ use std::{
 use vibechar_core::{checkpoint::Checkpoint, session::Session, Document};
 
 pub type VcDocument = Document;
+pub struct VcSyntaxFrame(std::sync::Arc<vibechar_core::syntax::Frame>);
 
 fn guard<T: Default>(operation: impl FnOnce() -> T) -> T {
     catch_unwind(AssertUnwindSafe(operation)).unwrap_or_default()
@@ -155,6 +156,10 @@ pub unsafe extern "C" fn vc_document_redo(document: *mut VcDocument, cursor: *mu
 pub unsafe extern "C" fn vc_document_dirty(document: *const VcDocument) -> bool {
     guard(|| document.as_ref().is_some_and(|doc| doc.is_dirty()))
 }
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_revision(document: *const VcDocument) -> u64 {
+    guard(|| document.as_ref().map_or(0, Document::revision))
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn vc_document_mark_saved(document: *mut VcDocument) {
@@ -175,6 +180,102 @@ pub unsafe extern "C" fn vc_session_free(session: *mut Session) {
     if !session.is_null() {
         guard(|| drop(Box::from_raw(session)));
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_syntax_submit(session: *mut Session) {
+    guard(|| {
+        if let Some(session) = session.as_mut() {
+            session.submit_syntax();
+        }
+    });
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_syntax_busy(session: *const Session) -> bool {
+    guard(|| session.as_ref().is_some_and(Session::syntax_busy))
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_syntax_frame(
+    session: *const Session,
+    after: u64,
+) -> *mut VcSyntaxFrame {
+    guard(|| {
+        session
+            .as_ref()
+            .and_then(|s| s.syntax_frame(after))
+            .map_or(ptr::null_mut(), |frame| {
+                Box::into_raw(Box::new(VcSyntaxFrame(frame)))
+            })
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_syntax_frame_free(frame: *mut VcSyntaxFrame) {
+    if !frame.is_null() {
+        guard(|| drop(Box::from_raw(frame)));
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_syntax_frame_json(
+    frame: *const VcSyntaxFrame,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        frame.as_ref().map_or(0, |frame| {
+            copy_metadata(
+                str::from_utf8(&frame.0.encoded).unwrap_or(""),
+                output,
+                capacity,
+            )
+        })
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_language(
+    session: *const Session,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        session.as_ref().map_or(0, |s| {
+            copy_metadata(s.language().unwrap_or(""), output, capacity)
+        })
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_session_set_language(
+    session: *mut Session,
+    value: *const u8,
+    length: usize,
+) -> bool {
+    guard(|| {
+        if length > 128 {
+            return false;
+        }
+        let (Some(session), Some(mode)) = (session.as_mut(), input(value, length)) else {
+            return false;
+        };
+        session.set_language(mode)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_syntax_choices(
+    query: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        if length > 128 {
+            return 0;
+        }
+        let Some(query) = input(query, length) else {
+            return 0;
+        };
+        let result =
+            serde_json::to_string(&vibechar_core::syntax::choices(query)).unwrap_or_default();
+        copy_metadata(&result, output, capacity)
+    })
 }
 
 #[no_mangle]
@@ -680,6 +781,14 @@ mod tests {
             assert!(!vc_document_replace(ptr::null_mut(), 0, 0, ptr::null(), 0));
             assert!(!vc_document_dirty(ptr::null()));
             vc_document_free(ptr::null_mut());
+            vc_session_syntax_submit(ptr::null_mut());
+            assert!(!vc_session_syntax_busy(ptr::null()));
+            assert!(vc_session_syntax_frame(ptr::null(), 0).is_null());
+            assert_eq!(vc_syntax_frame_json(ptr::null(), ptr::null_mut(), 0), 0);
+            vc_syntax_frame_free(ptr::null_mut());
+            assert_eq!(vc_syntax_choices([0xff].as_ptr(), 1, ptr::null_mut(), 0), 0);
+            assert_eq!(vc_syntax_choices(ptr::null(), 129, ptr::null_mut(), 0), 0);
+            assert!(!vc_session_set_language(ptr::null_mut(), ptr::null(), 0));
         }
     }
 

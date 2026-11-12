@@ -52,14 +52,24 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         header,
     );
 
+    let syntax = editor
+        .syntax
+        .as_ref()
+        .filter(|frame| frame.document == editor.document().id());
     let lines: Vec<_> = (editor.top
         ..(editor.top + usize::from(body.height)).min(editor.document().line_count()))
         .map(|index| {
-            Line::raw(visible_line(
-                &editor.document().line(index),
+            let text = editor.document().line(index);
+            let paint = syntax
+                .and_then(|frame| frame.lines.get(index))
+                .filter(|paint| paint.hash == vibechar_core::syntax::line_hash(&text));
+            styled_line(
+                &text,
                 editor.left,
                 usize::from(body.width),
-            ))
+                paint.map(|p| p.as_ref()),
+                editor.light_syntax,
+            )
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), body);
@@ -75,12 +85,30 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     } else {
         editor.recovery_status.to_owned()
     };
+    let language = syntax.map_or_else(
+        || {
+            editor
+                .session
+                .language()
+                .unwrap_or("Auto · Text")
+                .to_owned()
+        },
+        |frame| {
+            format!(
+                "{}{}{}",
+                if frame.automatic { "Auto · " } else { "" },
+                frame.language,
+                if frame.limited { " · preview" } else { "" }
+            )
+        },
+    );
     frame.render_widget(
         Paragraph::new(format!(
-            " {}  · {}:{}  UTF-8",
+            " {}  · {}:{}  {}",
             recovery,
             line + 1,
-            column + 1
+            column + 1,
+            language,
         ))
         .style(Style::default().fg(Color::DarkGray)),
         status,
@@ -88,7 +116,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     let prompt = editor.save_prompt.as_ref().map_or_else(
         || {
             if editor.message.is_empty() {
-                " ^N new ^P private ^S save F4 save as F6 next ^G agent F8 paste F9 stop ^Q quit"
+                " ^N new ^P private ^S save F2 lang F4 as F6 next ^G agent F8 paste F9 stop ^Q quit"
                     .into()
             } else {
                 format!(" {}", editor.message)
@@ -109,6 +137,25 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
             }
         },
     );
+    let prompt = if let Some(query) = &editor.language_prompt {
+        let choices = editor.language_options();
+        format!(
+            " Language: {}  [{}] · Enter choose · Esc cancel",
+            query,
+            choices
+                .iter()
+                .enumerate()
+                .map(|(i, c)| if i == editor.selected_language() {
+                    format!("›{}", c.name)
+                } else {
+                    c.name.clone()
+                })
+                .collect::<Vec<_>>()
+                .join(" / ")
+        )
+    } else {
+        prompt
+    };
     frame.render_widget(
         Paragraph::new(prompt).style(Style::default().fg(Color::Rgb(245, 158, 66))),
         footer,
@@ -121,10 +168,37 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     }
 }
 
-fn visible_line(text: &str, left: usize, width: usize) -> String {
-    let mut output = String::new();
+fn styled_line(
+    text: &str,
+    left: usize,
+    width: usize,
+    paint: Option<&vibechar_core::syntax::LinePaint>,
+    light: bool,
+) -> Line<'static> {
+    let mut output: Vec<Span<'static>> = Vec::new();
+    let mut run = String::new();
+    let mut last_role = 0;
+    let mut offset = 0;
+    let mut span_index = 0;
+    let spans = paint.map_or(&[][..], |p| p.spans.as_slice());
     let mut column = 0;
     for grapheme in text.graphemes(true) {
+        while span_index < spans.len()
+            && spans[span_index].start + spans[span_index].length <= offset
+        {
+            span_index += 1;
+        }
+        let role = spans
+            .get(span_index)
+            .filter(|span| span.start <= offset)
+            .map_or(0, |span| span.role);
+        if role != last_role && !run.is_empty() {
+            output.push(Span::styled(
+                std::mem::take(&mut run),
+                syntax_style(last_role, light),
+            ));
+        }
+        last_role = role;
         let size = cell_width(grapheme, column);
         let end = column + size;
         if column >= left + width {
@@ -133,16 +207,65 @@ fn visible_line(text: &str, left: usize, width: usize) -> String {
         if end > left {
             if grapheme == "\t" || column < left || end > left + width {
                 let visible = end.min(left + width).saturating_sub(column.max(left));
-                output.push_str(&" ".repeat(visible));
+                run.push_str(&" ".repeat(visible));
             } else if grapheme.chars().any(char::is_control) {
-                output.push('�');
+                run.push('�');
             } else {
-                output.push_str(grapheme);
+                run.push_str(grapheme);
             }
         }
         column = end;
+        offset += grapheme.encode_utf16().count();
     }
-    output
+    if !run.is_empty() {
+        output.push(Span::styled(run, syntax_style(last_role, light)));
+    }
+    Line::from(output)
+}
+
+fn syntax_style(role: u8, light: bool) -> Style {
+    if role == 0 {
+        return Style::default();
+    }
+    let palette = if light {
+        [
+            0x282B29u32,
+            0x9C4263,
+            0x427445,
+            0x956529,
+            0x81867C,
+            0x7761A1,
+            0x356B9A,
+            0x257D82,
+            0xBD4C2B,
+            0x356B9A,
+            0x777D73,
+        ]
+    } else {
+        [
+            0xE3E5DFu32,
+            0xDDA4BB,
+            0xB2CF9B,
+            0xE2BA83,
+            0x7F8B7B,
+            0xC0B0DE,
+            0x9DBFDA,
+            0x8FC7C5,
+            0xF49A6B,
+            0x9DBFDA,
+            0x969F91,
+        ]
+    };
+    let rgb = palette[usize::from(role).min(palette.len() - 1)];
+    Style::default().fg(Color::Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8))
+}
+#[cfg(test)]
+fn visible_line(text: &str, left: usize, width: usize) -> String {
+    styled_line(text, left, width, None, false)
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect()
 }
 
 #[cfg(test)]

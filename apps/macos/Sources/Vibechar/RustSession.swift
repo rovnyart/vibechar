@@ -20,6 +20,19 @@ final class RustSession {
     var isPrivate: Bool { isPrivate(active) }
     func isPrivate(_ index: Int) -> Bool { vc_session_buffer_private(handle, index) }
     func openPrivate() { precondition(vc_session_open_private(handle)) }
+    var language: String { metadata { vc_session_language(handle, $0, $1) } }
+    func setLanguage(_ mode: String) -> Bool {
+        let bytes = Array(mode.utf8)
+        return bytes.withUnsafeBufferPointer { vc_session_set_language(handle, $0.baseAddress, $0.count) }
+    }
+    func submitSyntax() { vc_session_syntax_submit(handle) }
+    var syntaxBusy: Bool { vc_session_syntax_busy(handle) }
+    func syntaxFrame(after serial: UInt64) -> SyntaxFrame? {
+        guard let frame = vc_session_syntax_frame(handle, serial) else { return nil }
+        defer { vc_syntax_frame_free(frame) }
+        let json = metadata { vc_syntax_frame_json(frame, $0, $1) }
+        return try? JSONDecoder().decode(SyntaxFrame.self, from: Data(json.utf8))
+    }
     var hasDropAccess: Bool { vc_session_has_drop_access(handle) }
     var dropActive: Bool { vc_session_drop_active(handle) }
     var dropUses: UInt64 { vc_session_drop_uses(handle) }

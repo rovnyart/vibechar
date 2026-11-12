@@ -8,6 +8,28 @@ use vibechar_core::{checkpoint::Checkpoint, session::Session};
 static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
+fn language_pins_restore_without_marking_text_dirty_and_private_pins_are_excluded() {
+    let directory = TemporaryDirectory::new();
+    let mut session = Session::new("a fragment", None);
+    let revision = session.active().document.revision();
+    let dirty = session.active().document.is_dirty();
+    assert!(session.set_language("Python"));
+    assert_eq!(session.active().document.revision(), revision);
+    assert_eq!(session.active().document.is_dirty(), dirty);
+    session.open_private();
+    assert!(session.set_language("Swift"));
+    let snapshot = Checkpoint::capture(&session);
+    let encoded = serde_json::to_string(&snapshot).unwrap();
+    assert!(encoded.contains("Python") && !encoded.contains("Swift"));
+    snapshot.save(&directory.file()).unwrap();
+    let mut restored = Checkpoint::load(&directory.file()).unwrap().unwrap();
+    assert_eq!(restored.language(), Some("Python"));
+    assert!(restored.set_language(""));
+    assert_eq!(restored.language(), None);
+    assert!(!restored.set_language("unknown-language-xyz"));
+}
+
+#[test]
 fn private_text_and_paths_never_enter_checkpoints_and_active_indices_are_remapped() {
     let directory = TemporaryDirectory::new();
     let mut session = Session::new("public first", None);

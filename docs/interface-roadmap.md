@@ -46,6 +46,7 @@ window; no dashboard, card grid, or permanent AI chat panel is required.
 
 - [x] Design and render light/dark appearances together; View can override the system.
 - [x] Choose warm orange with warm light / graphite dark neutrals for Pocket.
+- [x] Give syntax its own coordinated light/dark palette and a compact Auto badge.
 - [x] Avoid generic all-grey controls, excessive borders, and decorative gradients.
 - [ ] Refine the approved `V_` mark, vibechar wordmark, and app icon.
 
@@ -54,6 +55,8 @@ window; no dashboard, card grid, or permanent AI chat panel is required.
 - [x] Empty state invites immediate typing with minimal useful hints.
 - [x] Quiet local saving; persistent failures explain saving a copy with Cmd+S.
 - [x] Clear tab create/switch/close feedback without moving the editing target.
+- [x] Auto language detection with a short searchable override, keyboard selection,
+  cancellation and focus restoration. Ordinary overrides survive restart.
 - [ ] Designed hover/focus/pressed states and keyboard-only navigation.
 - [ ] Any motion is short, interruptible, and respects reduced motion.
 - [ ] Search, command palette, and future previews share this visual language.

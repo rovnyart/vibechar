@@ -8,4 +8,5 @@ rust-version.workspace = true
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+serde_json.workspace = true
 vibechar-core = { path = "../core" }

@@ -33,8 +33,8 @@ The shared Rust engine drives both a terminal editor and a native macOS editing
 shell. Both support multiple scratch buffers with independent text,
 cursor/selection, undo history, file destinations, and unsaved-close protection.
 Both clients save their own local sessions and restore ordinary tabs after restart. Their
-session files are separate; live synchronization is not implemented. Highlighting
-and AI are still ahead. The first native Pocket interface is implemented: compact
+session files are separate; live synchronization is not implemented. AI is still
+ahead. The first native Pocket interface is implemented: compact
 tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
 and quiet session status. Art accepted the first Pocket increment.
 Private scratches are now available in both clients: Shift+Cmd+N on Mac or Ctrl+P
@@ -51,8 +51,19 @@ one step, and undo across a file save restores its correct modification state.
 Save As is available through File → Save As / Shift+Cmd+S on Mac and F4 in the
 terminal, including for files already open. A successful save attaches the new
 destination; cancellation/failure keeps the original. Existing destinations need
-replacement confirmation. Art has tested the Mac Secret Drop Give/Stop workflow;
-the next feedback increment is Save As.
+replacement confirmation. Art has tested Save As and the Mac Secret Drop Give/Stop
+workflow. Routine mechanics are verified automatically; visible features remain
+hands-on feedback checkpoints.
+
+Smart syntax is available in both clients. Auto uses the filename and conservative
+local content detection for common JSON, environment, SQL, Markdown and code pastes.
+Ambiguous fragments stay Text. Click **Auto · JSON** in the Mac footer, or use
+**Control+Cmd+L** / **F2** in the terminal, to search by language or extension and pin
+an override. Auto resets the pin. The pinned catalog has **186 visible grammars**;
+this is coverage, not a claim to infer every language from arbitrary fragments.
+Parsing runs in a background worker; ordinary pins survive restart and private
+ones are excluded from recovery. Large/minified input uses an explicit uncolored
+fallback; see [syntax limits](docs/development.md#smart-syntax).
 
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar

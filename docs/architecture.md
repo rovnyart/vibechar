@@ -121,6 +121,37 @@ swap/crash data. Future AI, recipes, and diagnostics must reject private buffers
 before collecting text. Those services do not exist in the current editor.
 Secret Drop is a separate, explicitly invoked local export described below.
 
+## Local syntax pipeline
+
+Each document has a stable runtime identity and monotonic revision. Language
+override is per-buffer metadata; checkpoints persist it only for ordinary tabs,
+with an optional field compatible with version 1 snapshots. Detection uses a
+bounded sample and conservative filename/shebang/content rules. Private paths are
+not passed to the detector. Plain Text bypasses grammar loading entirely.
+
+A lazily created Session worker owns parsing and a single-document incremental
+cache. Requests contain a cheap immutable Rope clone plus identity/revision/path/
+mode. One latest-wins pending slot replaces queued work; the worker checks
+cancellation between lines. Syntect with two-face grammars and the pure Rust regex
+backend generates semantic role IDs. Checkpoints every 32 lines allow reparsing
+from before the first changed line. A changed grammar/document resets the cache.
+Soft slices publish partial results and resume from a parser-state checkpoint.
+Hard size/line/span caps provide an explicit limited preview; see development.
+
+Immutable frames contain only metadata, UTF-16 ranges and role IDs, never source
+strings. The C ABI returns an owned frame handle backed by Arc, so two-pass copy-out
+cannot race a newer result. The live Session remains thread-confined. Clients
+poll only while work is pending, reading busy before taking the frame to avoid
+missing a completion between those operations. Results must match the current
+document, revision, path and override. AppKit temporarily colors visible text;
+terminal rows additionally check their current line hash before reusing colors.
+Neither path mutates source, history, selection, saved-state flags or Secret Drop.
+The same palette roles have separate light/dark render colors in both clients.
+
+No parser state or painted source is written to disk; no provider is involved.
+This does not securely erase process memory or OS-managed swap. Imported grammar
+licenses are shipped with the bundle and exposed by the CLI.
+
 Save buffers through a same-directory temporary file + flush/sync + atomic replace,
 with a documented symlink/permissions policy and external-change check. Prototype
 save support must be labeled until these semantics are complete.

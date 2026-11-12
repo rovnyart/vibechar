@@ -9,6 +9,7 @@ pub struct Buffer {
     pub selection: Range<usize>,
     pub(crate) scratch_number: usize,
     pub(crate) private: bool,
+    pub(crate) language: Option<String>,
 }
 
 impl Buffer {
@@ -63,6 +64,7 @@ pub struct Session {
     pub(crate) active: usize,
     pub(crate) next_scratch: usize,
     pub(crate) handoff: Option<crate::handoff::DropHost>,
+    pub(crate) syntax: Option<crate::syntax::Engine>,
 }
 
 impl Session {
@@ -72,6 +74,7 @@ impl Session {
             active: 0,
             next_scratch: 1,
             handoff: None,
+            syntax: None,
         };
         session.open(text, path);
         session
@@ -97,6 +100,65 @@ impl Session {
         self.buffers
             .iter()
             .any(|buffer| buffer.private && buffer.document.len_chars() > 0)
+    }
+
+    pub fn language(&self) -> Option<&str> {
+        self.active().language.as_deref()
+    }
+    pub fn set_language(&mut self, mode: &str) -> bool {
+        if !crate::syntax::valid_mode(mode) {
+            return false;
+        }
+        self.active_mut().document.break_undo_group();
+        self.active_mut().language = (!mode.is_empty()).then(|| mode.to_owned());
+        true
+    }
+    pub fn submit_syntax(&mut self) {
+        if self.syntax.is_none()
+            && self.active().document.len_chars() == 0
+            && self.language().is_none()
+            && self.active().path.is_none()
+        {
+            return;
+        }
+        if self.syntax.is_none() {
+            self.syntax = crate::syntax::Engine::new().ok();
+        }
+        let buffer = self.active();
+        let (id, revision, text, path, language) = (
+            buffer.document.id(),
+            buffer.document.revision(),
+            buffer.document.checkpoint_text(),
+            if buffer.private {
+                None
+            } else {
+                buffer.path.clone()
+            },
+            buffer.language.clone(),
+        );
+        if let Some(engine) = &mut self.syntax {
+            engine.submit(id, revision, text, path, language);
+        }
+    }
+    pub fn syntax_frame(&self, after: u64) -> Option<std::sync::Arc<crate::syntax::Frame>> {
+        let engine = self.syntax.as_ref()?;
+        let buffer = self.active();
+        if !engine.matches(
+            buffer.document.id(),
+            buffer.document.revision(),
+            if buffer.private {
+                None
+            } else {
+                buffer.path.as_deref()
+            },
+            buffer.language.as_deref(),
+        ) {
+            return None;
+        }
+        engine.frame(after)
+    }
+    pub fn syntax_busy(&self) -> bool {
+        self.syntax.as_ref().is_some_and(|engine| engine.busy())
     }
 
     /// Commit a successful file save. Call only after the write has succeeded.
@@ -187,6 +249,7 @@ impl Session {
             selection: 0..0,
             scratch_number,
             private: false,
+            language: None,
         });
         self.active = self.buffers.len() - 1;
     }

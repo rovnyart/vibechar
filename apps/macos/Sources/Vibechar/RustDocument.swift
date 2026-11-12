@@ -34,6 +34,7 @@ final class RustDocument {
     deinit { if let ownedHandle { vc_document_free(ownedHandle) } }
 
     var isDirty: Bool { vc_document_dirty(handle) }
+    var revision: UInt64 { vc_document_revision(handle) }
 
     var text: String {
         var bytes = [UInt8](repeating: 0, count: vc_document_length(handle))

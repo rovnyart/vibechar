@@ -10,3 +10,5 @@ unicode-segmentation.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+syntect.workspace = true
+two-face.workspace = true

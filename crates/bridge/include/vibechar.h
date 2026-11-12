@@ -23,9 +23,21 @@ void vc_document_break_undo_group(VcDocument *document);
 bool vc_document_undo(VcDocument *document, size_t *utf16_cursor);
 bool vc_document_redo(VcDocument *document, size_t *utf16_cursor);
 bool vc_document_dirty(const VcDocument *document);
+uint64_t vc_document_revision(const VcDocument *document);
 void vc_document_mark_saved(VcDocument *document);
 
 typedef struct VcSession VcSession;
+typedef struct VcSyntaxFrame VcSyntaxFrame;
+void vc_session_syntax_submit(VcSession *session);
+bool vc_session_syntax_busy(const VcSession *session);
+// Own the returned immutable frame until vc_syntax_frame_free; null means no new paint.
+VcSyntaxFrame *vc_session_syntax_frame(const VcSession *session, uint64_t after_serial);
+void vc_syntax_frame_free(VcSyntaxFrame *frame);
+size_t vc_syntax_frame_json(const VcSyntaxFrame *frame, uint8_t *output, size_t capacity);
+size_t vc_session_language(const VcSession *session, uint8_t *output, size_t capacity);
+bool vc_session_set_language(VcSession *session, const uint8_t *value, size_t length);
+// Thread-safe language search; returns at most seven choices. Empty mode means Auto.
+size_t vc_syntax_choices(const uint8_t *query, size_t length, uint8_t *output, size_t capacity);
 VcSession *vc_session_new(void);
 void vc_session_free(VcSession *session);
 size_t vc_session_count(const VcSession *session);
