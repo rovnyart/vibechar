@@ -14,8 +14,8 @@ use std::{
 
 use crossterm::{
     event::{
-        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind,
-        KeyModifiers,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind,
     },
     execute,
 };
@@ -95,17 +95,22 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
     let mut terminal = ratatui::init();
+    let panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
+        panic_hook(info);
+    }));
     let result = (|| -> io::Result<()> {
-        execute!(io::stdout(), EnableBracketedPaste)?;
+        execute!(io::stdout(), EnableBracketedPaste, EnableMouseCapture)?;
         edit(&mut terminal, &mut editor, &mut recovery)
     })();
-    let paste_result = execute!(io::stdout(), DisableBracketedPaste);
+    let input_result = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
     ratatui::restore();
     if result.is_err() {
         flush(&mut editor, &mut recovery)?;
     }
     result?;
-    paste_result?;
+    input_result?;
     Ok(())
 }
 
@@ -169,6 +174,8 @@ fn edit(
                 continue;
             }
         }
+        let before = editor.recovery_mark();
+        let cursor_before = editor.cursor;
         match event::read()? {
             Event::Key(key) if key.kind != KeyEventKind::Release => {
                 let quitting =
@@ -190,9 +197,6 @@ fn edit(
                         }
                     }
                 }
-                deadline = Some(Instant::now() + Duration::from_millis(500));
-                syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
-                editor.recovery_status = "Saving locally…";
             }
             Event::Paste(text) => {
                 if quit_failed {
@@ -200,11 +204,30 @@ fn edit(
                     quit_failed = false;
                 }
                 editor.insert(&text);
-                syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
-                deadline = Some(Instant::now() + Duration::from_millis(500));
-                editor.recovery_status = "Saving locally…";
+            }
+            Event::Mouse(mouse) => {
+                if quit_failed
+                    && matches!(
+                        mouse.kind,
+                        MouseEventKind::Down(_)
+                            | MouseEventKind::ScrollUp
+                            | MouseEventKind::ScrollDown
+                    )
+                {
+                    editor.message.clear();
+                    quit_failed = false;
+                }
+                editor.mouse(mouse);
             }
             _ => {}
+        }
+        if editor.recovery_mark() != before {
+            deadline = Some(Instant::now() + Duration::from_millis(500));
+            syntax_deadline = Some(Instant::now() + Duration::from_millis(120));
+            editor.recovery_status = "Saving locally…";
+        } else if editor.cursor != cursor_before {
+            // Preserve the caret on restart without flashing saving or delaying text writes.
+            deadline.get_or_insert(Instant::now() + Duration::from_millis(500));
         }
     }
     Ok(())

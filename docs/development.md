@@ -45,6 +45,24 @@ that confirmation. If the ordinary-tab flush fails, the editor stays open;
 a second Ctrl+Q allows quitting without the latest changes. Escape
 cancels the save prompt. Bracketed paste is one undo step. No mouse is required.
 
+Mouse reporting is enabled while the TUI is running. Wheel/trackpad scroll moves
+the document viewport by three lines per reported wheel event and keeps the caret
+in place. An offscreen caret is hidden; typing or keyboard navigation reveals it
+again. A left click inside the text area places the caret at the nearest grapheme
+boundary, accounting for tabs, wide characters, emoji, and the scrolled viewport.
+Clicks beyond a line/document clamp to its end; header/footer clicks and mouse
+events while a Save As/language prompt is open do not move the editing caret.
+Drag selection is still pending. Terminal-owned selection/copy depends on the
+emulator's mouse-reporting override (often Shift).
+
+Viewport scrolling does not write recovery or trigger syntax parsing. Cursor-only
+navigation is checkpointed quietly, without a Saving locally flash or postponing
+an already pending text write. Content/tab/language/file-state changes still show
+the recovery save status. Mouse reporting and bracketed paste are disabled on
+normal/error exit and by the panic cleanup hook before terminal restoration.
+The emulator must support mouse reporting; physical trackpad acceptance across
+terminal apps remains part of release qualification.
+
 F4 opens Save As even for an existing file buffer. Type/paste a destination and
 press Enter. An existing destination requires another Enter to confirm replacement;
 Esc cancels. Editing or pasting a filename clears that replacement confirmation.

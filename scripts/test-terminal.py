@@ -152,6 +152,9 @@ class Session:
             if not self.receive(0):
                 break
         assert b"\x1b[?2004l" in self.output, "bracketed paste was not disabled"
+        for mode in (1000, 1006):
+            assert f"\x1b[?{mode}h".encode() in self.output, "mouse capture was not enabled"
+            assert f"\x1b[?{mode}l".encode() in self.output, "mouse capture was not disabled"
         assert b"\x1b[?1049l" in self.output, "alternate screen was not left"
 
     def close(self):
@@ -184,6 +187,51 @@ def main():
     expected = "Привет 👩‍💻\r\nline\r\n".encode()
     with tempfile.TemporaryDirectory(prefix="vibechar-test-") as directory:
         directory = Path(directory)
+        mouse_file = directory / "mouse.txt"
+        mouse_state = directory / "mouse-state"
+        mouse_text = "".join(f"row {n:03}\n" for n in range(60))
+        mouse_file.write_text(mouse_text)
+        with Session(mouse_file, state=mouse_state) as session:
+            session.wait_until(lambda: session.checkpoint() is not None and "Saved locally" in session.screen_text())
+            checkpoint = mouse_state / "session.json"
+            before = checkpoint.read_bytes(), checkpoint.stat().st_mtime_ns
+            session.send(b"\x1b[<65;10;5M")  # SGR wheel down, inside the document.
+            session.wait_until(lambda: session.screen_text().splitlines()[1].startswith("row 003"))
+            assert "1:1" in session.screen_text().splitlines()[22], "wheel moved the caret"
+            until = time.monotonic() + 0.8
+            while time.monotonic() < until:
+                session.receive(0.05)
+                assert "Saving locally" not in session.screen_text(), "wheel flashed recovery status"
+            assert (checkpoint.read_bytes(), checkpoint.stat().st_mtime_ns) == before, "wheel rewrote recovery"
+            assert b"\x1b[?25l" in session.output, "an offscreen caret should be hidden"
+            session.send(b"\x1b[<0;5;3M\x1b[<0;5;3m")  # Click row 004, before its number.
+            session.wait_until(lambda: session.checkpoint()["buffers"][0]["selection"]["start"] == 36)
+            assert "Saved locally" in session.screen_text() and "Saving locally" not in session.screen_text()
+            session.send(b"!")
+            edited = mouse_text[:36] + "!" + mouse_text[36:]
+            session.wait_until(lambda: session.checkpoint()["buffers"][0]["text"] == edited)
+            session.send(b"\x1a")
+            session.wait_until(lambda: session.checkpoint()["buffers"][0]["text"] == mouse_text)
+            session.send(b"\x11")
+            session.finish()
+        assert mouse_file.read_text() == mouse_text, "mouse edits overwrote the original file"
+        with Session(state=mouse_state) as session:
+            session.wait_until(lambda: "Saved locally" in session.screen_text())
+            session.send(b"\x1b[C")  # Keyboard navigation persists quietly too.
+            session.wait_until(lambda: session.checkpoint()["buffers"][0]["selection"]["start"] == 37)
+            assert "Saved locally" in session.screen_text() and "Saving locally" not in session.screen_text()
+            session.send(b"\x11")
+            session.finish()
+
+        unicode_mouse = "a界e\u0301👩‍💻\tZ\r\nshort\r\n".encode()
+        with Session(piped=unicode_mouse) as session:
+            session.wait_until(lambda: session.checkpoint() is not None and "Saved locally" in session.screen_text())
+            session.send(b"\x1b[<0;6;2M\x1b[<0;6;2m!")  # Second cell of emoji snaps after its whole grapheme.
+            expected_mouse = "a界e\u0301👩‍💻!\tZ\r\nshort\r\n"
+            session.wait_until(lambda: session.checkpoint()["buffers"][0]["text"] == expected_mouse)
+            session.send(b"\x1a\x11")
+            session.finish()
+            assert session.checkpoint()["buffers"][0]["text"].encode() == unicode_mouse
         syntax_state = directory / "syntax-state"
         syntax_text = '{"name":"Pocket 👩‍💻","count":42}'.encode()
         with Session(state=syntax_state, extra_env={"NO_COLOR": ""}) as session:
@@ -508,7 +556,8 @@ def main():
         assert (checkpoint / "sentinel").read_text() == "keep"
 
     print(json.dumps({
-        "real_pty_scenarios": 16,
+        "real_pty_scenarios": 19,
+        "mouse_scroll_no_cursor_move_no_checkpoint_write_click_edit_unicode_and_quiet_navigation": "passed",
         "smart_syntax_auto_search_pin_cancel_restart_and_private_exclusion": "passed",
         "syntax_paste_to_label_single_sample_ms": round(syntax_ms, 2),
         "tui_highlighted_single_sample_rss_kib": syntax_rss,

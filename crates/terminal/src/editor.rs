@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
+use ratatui::layout::Rect;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 use vibechar_core::{session::Session, Document, EditKind};
@@ -18,6 +21,8 @@ pub struct Editor {
     pub language_prompt: Option<String>,
     pub syntax: Option<std::sync::Arc<vibechar_core::syntax::Frame>>,
     pub light_syntax: bool,
+    viewport: Rect,
+    reveal_cursor: bool,
     language_choice: usize,
     overwrite_pending: Option<PathBuf>,
     close_pending: bool,
@@ -42,6 +47,8 @@ impl Editor {
             language_prompt: None,
             syntax: None,
             light_syntax: std::env::var("VIBECHAR_COLOR_SCHEME").is_ok_and(|s| s == "light"),
+            viewport: Rect::default(),
+            reveal_cursor: true,
             language_choice: 0,
             overwrite_pending: None,
             close_pending: false,
@@ -78,6 +85,7 @@ impl Editor {
             .is_ok()
         {
             self.cursor += text.chars().count();
+            self.reveal_cursor = true;
         }
         self.close_pending = false;
     }
@@ -112,6 +120,7 @@ impl Editor {
             self.prompt_key(key);
             return false;
         }
+        self.reveal_cursor = true;
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             return self.control(key.code);
         }
@@ -176,6 +185,96 @@ impl Editor {
             _ => {}
         }
         false
+    }
+
+    pub fn mouse(&mut self, event: MouseEvent) {
+        if self.save_prompt.is_some()
+            || self.language_prompt.is_some()
+            || !self.viewport.contains((event.column, event.row).into())
+        {
+            return;
+        }
+        match event.kind {
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                self.cancel_private_quit();
+                self.close_pending = false;
+                let max_top = self
+                    .document()
+                    .line_count()
+                    .saturating_sub(usize::from(self.viewport.height));
+                self.top = if event.kind == MouseEventKind::ScrollUp {
+                    self.top.saturating_sub(3)
+                } else {
+                    self.top.saturating_add(3).min(max_top)
+                };
+                self.reveal_cursor = false;
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.cancel_private_quit();
+                self.close_pending = false;
+                self.session.active_mut().document.break_undo_group();
+                let line = self.top + usize::from(event.row - self.viewport.y);
+                self.cursor = if line >= self.document().line_count() {
+                    self.document().len_chars()
+                } else {
+                    self.position_at_column(
+                        line,
+                        self.left + usize::from(event.column - self.viewport.x),
+                        true,
+                    )
+                };
+                self.reveal_cursor = true;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn update_viewport(&mut self, body: Rect) {
+        if body != self.viewport {
+            let line = self.document().line_index(self.cursor);
+            let column = self.cursor_column();
+            if line >= self.top
+                && line < self.top + usize::from(self.viewport.height)
+                && column >= self.left
+                && column < self.left + usize::from(self.viewport.width)
+            {
+                self.reveal_cursor = true;
+            }
+        }
+        self.viewport = body;
+        let height = usize::from(body.height).max(1);
+        self.top = self
+            .top
+            .min(self.document().line_count().saturating_sub(height));
+        if !self.reveal_cursor || body.is_empty() {
+            return;
+        }
+        let line = self.document().line_index(self.cursor);
+        let column = self.cursor_column();
+        self.top = self.top.min(line);
+        if line >= self.top + height {
+            self.top = line + 1 - height;
+        }
+        self.left = self.left.min(column);
+        let width = usize::from(body.width);
+        if column >= self.left + width {
+            self.left = column + 1 - width;
+        }
+        self.reveal_cursor = false;
+    }
+
+    // Only persisted metadata participates; viewport movement and prompts do not.
+    pub fn recovery_mark(&self) -> RecoveryMark {
+        let buffer = self.session.active();
+        RecoveryMark {
+            document: self.document().id(),
+            revision: self.document().revision(),
+            count: self.session.buffers().len(),
+            dirty: self.document().is_dirty(),
+            private: buffer.is_private(),
+            path: buffer.path.clone(),
+            language: self.session.language().map(str::to_owned),
+        }
     }
 
     fn control(&mut self, code: KeyCode) -> bool {
@@ -377,18 +476,24 @@ impl Editor {
         if target == line {
             return;
         }
-        let column = self.cursor_column();
+        self.cursor = self.position_at_column(target, self.cursor_column(), false);
+    }
+
+    fn position_at_column(&self, line: usize, column: usize, nearest: bool) -> usize {
         let mut width = 0;
         let mut offset = 0;
-        for grapheme in self.document().line(target).graphemes(true) {
+        for grapheme in self.document().line(line).graphemes(true) {
             let next_width = width + cell_width(grapheme, width);
             if next_width > column {
+                if nearest && column - width >= (next_width - width).div_ceil(2) {
+                    offset += grapheme.chars().count();
+                }
                 break;
             }
             width = next_width;
             offset += grapheme.chars().count();
         }
-        self.cursor = self.document().line_start(target) + offset;
+        self.document().line_start(line) + offset
     }
 
     pub fn remember_cursor(&mut self) {
@@ -399,6 +504,7 @@ impl Editor {
         self.cursor = self.session.active().selection.start;
         self.top = 0;
         self.left = 0;
+        self.reveal_cursor = true;
         self.message.clear();
     }
 
@@ -514,6 +620,17 @@ impl Editor {
     }
 }
 
+#[derive(PartialEq, Eq)]
+pub struct RecoveryMark {
+    document: u64,
+    revision: u64,
+    count: usize,
+    dirty: bool,
+    private: bool,
+    path: Option<PathBuf>,
+    language: Option<String>,
+}
+
 pub fn cell_width(grapheme: &str, column: usize) -> usize {
     if grapheme == "\t" {
         return 4 - column % 4;
@@ -535,6 +652,111 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn wheel_only_scrolls_the_viewport_and_keyboard_returns_to_the_caret() {
+        let source = "line\n".repeat(30);
+        let mut editor = Editor::new(&source, None);
+        let body = Rect::new(0, 1, 40, 6);
+        editor.update_viewport(body);
+        let mark = editor.recovery_mark();
+        for _ in 0..20 {
+            editor.mouse(mouse(MouseEventKind::ScrollDown, 2, 3));
+        }
+        editor.update_viewport(body);
+        assert_eq!(editor.top, editor.document().line_count() - 6);
+        assert_eq!(editor.cursor, 0);
+        assert!(editor.recovery_mark() == mark);
+        assert_eq!(editor.document().text(), source);
+        editor.update_viewport(Rect::new(0, 1, 40, 8));
+        assert!(
+            editor.top > 0,
+            "A redraw/resize must preserve an independently scrolled viewport"
+        );
+        editor.handle(key(KeyCode::Right));
+        editor.update_viewport(body);
+        assert_eq!((editor.cursor, editor.top), (1, 0));
+        for _ in 0..20 {
+            editor.mouse(mouse(MouseEventKind::ScrollUp, 2, 3));
+        }
+        assert_eq!(editor.top, 0);
+    }
+
+    #[test]
+    fn clicks_use_display_cells_and_whole_graphemes_with_scrolling_and_eof_clamps() {
+        let mut editor = Editor::new("a界e\u{301}👩‍💻\tZ\r\nshort\r\nlast", None);
+        let body = Rect::new(4, 2, 20, 5);
+        editor.update_viewport(body);
+        let revision = editor.document().revision();
+        for (cell, expected) in [
+            (0, 0),
+            (1, 1),
+            (2, 2),
+            (3, 2),
+            (4, 4),
+            (5, 7),
+            (6, 7),
+            (7, 8),
+            (8, 8),
+            (15, 9),
+        ] {
+            editor.mouse(mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                body.x + cell,
+                body.y,
+            ));
+            assert_eq!(editor.cursor, expected, "cell {cell}");
+        }
+        editor.left = 4;
+        editor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            body.x,
+            body.y,
+        ));
+        assert_eq!(editor.cursor, 4);
+        editor.left = 0;
+        editor.top = 1;
+        editor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            body.x + 2,
+            body.y,
+        ));
+        assert_eq!(editor.cursor, editor.document().line_start(1) + 2);
+        editor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            body.x,
+            body.y + 4,
+        ));
+        assert_eq!(editor.cursor, editor.document().len_chars());
+        editor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            body.x,
+            body.y - 1,
+        ));
+        editor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Right),
+            body.x,
+            body.y,
+        ));
+        assert_eq!(editor.cursor, editor.document().len_chars());
+        editor.save_prompt = Some(String::new());
+        editor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            body.x,
+            body.y,
+        ));
+        assert_eq!(editor.cursor, editor.document().len_chars());
+        assert_eq!(editor.document().revision(), revision);
     }
 
     #[test]

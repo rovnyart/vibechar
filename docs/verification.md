@@ -446,6 +446,42 @@ does not isolate the grammar cost. Raw supplemental measurements are in ignored
 Linux runtime check or multi-emulator color acceptance has been performed.
 Art's visual/interaction feedback on this new feature is the next checkpoint.
 
+## Terminal mouse and quiet navigation — 2026-11-12
+
+Mouse reporting was previously disabled, allowing an emulator to translate wheel
+gestures into arrow keys. The event loop also restarted recovery/syntax deadlines
+and displayed Saving locally for every key, including navigation and prompts.
+
+The TUI now enables mouse reporting for its lifetime. Wheel events scroll the
+viewport independently of the caret; redraws and background syntax results do not
+snap back to it. Offscreen carets are hidden, keyboard editing/navigation reveals
+them, and left clicks map screen cells to whole grapheme boundaries. Mapping
+accounts for the body origin, viewport offsets, tabs, wide characters, combining
+marks and ZWJ emoji; clicks beyond a line/document clamp to its end. Prompts and
+chrome clicks do not move the caret. Drag selection remains pending.
+
+Recovery/syntax scheduling compares document identity/revision and persisted tab
+metadata instead of treating every input as an edit. Cursor-only changes checkpoint
+quietly and do not postpone an already pending text write. Scrolling changes no
+persisted state and submits no recovery request. Mouse/bracketed-paste modes are
+disabled on ordinary/error exit; panic cleanup is also installed, but not fault
+injected in this increment.
+
+Full `scripts/check.sh` passed: **59 Rust tests**, formatting/Clippy, release builds,
+**19 real PTY scenarios**, Secret Drop integration and native AppKit checks. New PTY
+cases inject actual SGR wheel/click/release sequences through the release parser:
+scrolling changes the displayed first line, keeps the status caret at 1:1, and
+leaves recovery bytes and modification time unchanged beyond the debounce window.
+Clicking a scrolled row checkpoints the expected cursor without a saving flash;
+typing edits that position and one Undo restores the source. Relaunch/arrow movement
+preserves the cursor quietly. A click in the second emoji cell snaps after its whole
+grapheme, preserves CRLF/tab/combining text, and undoes exactly. PTY teardown checks
+that mouse modes 1000/1006, bracketed paste, raw mode and alternate screen are reset.
+Unit/render checks also cover scroll bounds, resize/redraw, horizontal offsets,
+EOF, ignored clicks, and typing after a click. No user's terminal, clipboard,
+recovery data or files were opened. Physical trackpad/emulator acceptance remains
+for hands-on feedback; the binary and bundled helper have both been rebuilt.
+
 ## Initial performance observations
 
 One `ps` sample after the native edit/save workflow reported 103,200 KiB RSS

@@ -57,6 +57,10 @@ while progressing through the remaining M2 behavior work.
 - Never require a mouse. Respect terminal capabilities and resize events.
 - Conventional insertion mode, arrows, Ctrl shortcuts; modal Vim behavior is not MVP.
 - Render only the viewport, accounting for wide graphemes, tabs, and horizontal scroll.
+- Wheel scrolling moves the viewport independently of the editing caret. Hide an
+  offscreen caret and reveal it on keyboard editing/navigation. A left click places
+  it at the nearest whole grapheme. Scrolling never flashes a recovery-save status;
+  cursor-only checkpoint updates are quiet.
 - F4 opens Save As for scratches or files. Existing destinations require a second
   Enter; Esc cancels. Editing the filename resets replacement confirmation.
 - F2 opens the same local language search; arrows select, Return pins, Escape

@@ -17,16 +17,9 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         Constraint::Length(1),
     ])
     .areas(frame.area());
+    editor.update_viewport(body);
     let line = editor.document().line_index(editor.cursor);
     let column = editor.cursor_column();
-    editor.top = editor.top.min(line);
-    if line >= editor.top + usize::from(body.height) {
-        editor.top = line + 1 - usize::from(body.height);
-    }
-    editor.left = editor.left.min(column);
-    if column >= editor.left + usize::from(body.width) {
-        editor.left = column + 1 - usize::from(body.width);
-    }
 
     let name = format!(
         "{}/{}  {}",
@@ -160,7 +153,13 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         Paragraph::new(prompt).style(Style::default().fg(Color::Rgb(245, 158, 66))),
         footer,
     );
-    if editor.save_prompt.is_none() && body.width > 0 && body.height > 0 {
+    if editor.save_prompt.is_none()
+        && !body.is_empty()
+        && line >= editor.top
+        && line < editor.top + usize::from(body.height)
+        && column >= editor.left
+        && column < editor.left + usize::from(body.width)
+    {
         frame.set_cursor_position((
             body.x + (column - editor.left) as u16,
             body.y + (line - editor.top) as u16,
@@ -272,6 +271,38 @@ fn visible_line(text: &str, left: usize, width: usize) -> String {
 mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn redraw_keeps_the_wheel_viewport_and_click_then_typing_edits_the_clicked_row() {
+        use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        let source = (0..40).map(|n| format!("row {n:02}\n")).collect::<String>();
+        let mut editor = Editor::new(&source, None);
+        let mut terminal = Terminal::new(TestBackend::new(20, 8)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut editor)).unwrap();
+        editor.mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 4,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        });
+        for _ in 0..3 {
+            terminal.draw(|frame| draw(frame, &mut editor)).unwrap();
+        }
+        assert_eq!((editor.top, editor.cursor), (3, 0));
+        assert_eq!(terminal.backend().buffer()[(0, 1)].symbol(), "r");
+        assert_eq!(terminal.backend().buffer()[(5, 1)].symbol(), "3");
+        editor.mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        });
+        editor.insert("!");
+        terminal.draw(|frame| draw(frame, &mut editor)).unwrap();
+        assert!(editor.document().text().contains("row !04\n"));
+        editor.session.active_mut().document.undo().unwrap();
+        assert_eq!(editor.document().text(), source);
+    }
 
     #[test]
     fn renders_a_unicode_document_and_keeps_cursor_visible_after_resize() {
