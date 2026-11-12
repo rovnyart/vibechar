@@ -106,7 +106,7 @@ are measured with larger documents.
 - [x] Mac final-tab close exits through the window lifecycle; explicit closure is
   persisted without spawning another visible scratch. TUI keeps its empty fallback.
 - [x] Save As for existing file buffers, cancellation/failure protection and
-  overwrite confirmation in Mac and terminal. Hands-on feedback pending.
+  overwrite confirmation in Mac and terminal, verified with native/PTY checks.
 - [ ] Atomic saves, clear policy for symlinks/permissions/external file changes.
 - [ ] Debounced recovery journal, crash recovery, retention limits, private mode.
 - [x] Mac local session checkpoints and restart restoration (first recovery increment).
@@ -117,7 +117,9 @@ are measured with larger documents.
   file tab. Terminal manual acceptance remains part of platform qualification.
 - [ ] Qualify remaining durability cases and retention; audit private mode again
   when actions, diagnostics, and AI are introduced.
-- [ ] Selection, clipboard, word navigation, indentation, and grouped typing undo.
+- [x] Group adjacent typing/backspace/forward-delete into shared undo steps, with
+  pause, navigation, paste, save and tab boundaries in Mac and terminal.
+- [ ] Selection, clipboard, word navigation and indentation improvements.
 - [ ] IME composition, accessibility, keyboard layout, and UTF-16/grapheme tests.
 - [x] Decide same-machine simultaneous editing: separate sessions in MVP; no silent
   cross-process sharing or overwriting of another session's scratch recovery.
@@ -274,12 +276,15 @@ unrealistic, record evidence and adjust architecture or targets explicitly.
 
 M0 → M1 → M2 recovery checkpoint → M2a Mac interface → remaining M2 → M3 → M4 → M5 → M6 → M7.
 
-Deliver one small runnable increment at a time, with a short test walkthrough;
-stop for Art's feedback before the next increment. The first requested feedback
+Deliver one small runnable increment at a time. From 2026-11-12, Art delegates
+routine mechanics and bug fixes to autonomous verification and local commits;
+do not block each such increment on a manual walkthrough. Reserve Art's hands-on
+feedback for notable features, interaction design and the AI workflows.
+The first requested feedback
 increment adds in-memory scratch buffers while the M1 performance investigation
 remains open. This does not close the M1 measurement gate or the M2 durability gate.
-Commit each completed, verified increment locally before handing it over for
-feedback. Recovery parity in both clients is the final behavior step before M2a.
+Commit each completed, verified increment locally. Recovery parity in both clients
+was the final behavior step before M2a.
 
 After M1, measure before expanding. After M3, use the offline editor daily. After
 M4, evaluate rewrite UX with a small model before building inference. After M5,

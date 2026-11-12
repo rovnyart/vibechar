@@ -28,11 +28,29 @@ and a Swift Package. No runtime service, webview, or JavaScript engine is requir
   must never be interchanged implicitly.
 - User navigation/deletion operates on grapheme boundaries. CRLF stays intact.
 - Changes keep inserted/removed payloads for undo; do not clone the whole document
-  into a String for every keystroke. Add transaction grouping and history limits M2.
+  into a String for every keystroke. Adjacent input groups share one history entry
+  containing ordered deltas, avoiding repeated prepend/copy of deleted runs.
+  Total history retention limits remain M2 work.
 - Every mutation, including undo/redo, advances a monotonic revision. Dirty tracking
   uses history state identity so undo to a saved state becomes clean again.
 - AppKit should patch its presentation storage instead of replacing the whole view
   on every keystroke. Viewport reads in the TUI do not serialize the entire document.
+
+`Document::edit` distinguishes typing, backspace, forward delete and isolated
+operations. Only adjacent operations of the same input kind coalesce, with less
+than one second between edits. Line boundaries, selection replacement, clipboard
+operations, navigation, explicit save, undo/redo and tab changes separate steps.
+Each group is bounded to 512 edits and 64 KiB of changed payload. A single large
+paste is still one isolated step; total history is not capped by these limits.
+
+Every edit advances state/revision even when added to an existing group. Undo
+reverses its deltas in reverse order and redo replays them forward; each advances
+revision once. File-save points end a group, so undo can return exactly to a clean
+saved state. Recovery only copies document state and never changes input grouping.
+Explicit replacement APIs remain isolated by default; input adapters opt into
+coalescing. AppKit tracks the outermost editing action so internal `insertText`
+calls cannot turn paste into typing, and distinguishes automatic caret updates
+from user selection changes. The TUI classifies key events versus bracketed paste.
 
 ## Bridge ownership
 

@@ -64,6 +64,53 @@ final class PocketSurface: NSView {
 }
 
 final class PocketTextView: NSTextView {
+    private(set) var editKind: TextEditKind = .isolated
+    private var editDepth = 0
+    var isPerformingEdit: Bool { editDepth > 0 }
+    var onBreakUndoGroup: (() -> Void)?
+
+    // The outer action wins: a paste may internally call insertText.
+    private func performEdit<T>(_ kind: TextEditKind, _ operation: () -> T) -> T {
+        let previous = editKind
+        if editDepth == 0 {
+            editKind = kind
+            if kind == .isolated { onBreakUndoGroup?() }
+        }
+        editDepth += 1
+        defer { editDepth -= 1; editKind = previous }
+        return operation()
+    }
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        performEdit(.typing) { super.insertText(insertString, replacementRange: replacementRange) }
+    }
+    override func deleteBackward(_ sender: Any?) {
+        performEdit(selectedRange().length == 0 ? .backspace : .isolated) { super.deleteBackward(sender) }
+    }
+    override func deleteForward(_ sender: Any?) {
+        performEdit(selectedRange().length == 0 ? .deleteForward : .isolated) { super.deleteForward(sender) }
+    }
+    override func paste(_ sender: Any?) {
+        performEdit(.isolated) { super.paste(sender) }
+    }
+    override func pasteAsPlainText(_ sender: Any?) {
+        performEdit(.isolated) { super.pasteAsPlainText(sender) }
+    }
+    override func pasteAsRichText(_ sender: Any?) {
+        performEdit(.isolated) { super.pasteAsRichText(sender) }
+    }
+    override func readSelection(from pboard: NSPasteboard) -> Bool {
+        performEdit(.isolated) { super.readSelection(from: pboard) }
+    }
+    override func cut(_ sender: Any?) {
+        performEdit(.isolated) { super.cut(sender) }
+    }
+    override func insertNewline(_ sender: Any?) {
+        performEdit(.isolated) { super.insertNewline(sender) }
+    }
+    override func insertTab(_ sender: Any?) {
+        performEdit(.isolated) { super.insertTab(sender) }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard string.isEmpty, !hasMarkedText() else { return }

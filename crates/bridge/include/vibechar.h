@@ -16,6 +16,10 @@ size_t vc_document_length(const VcDocument *document);
 bool vc_document_copy(const VcDocument *document, uint8_t *output, size_t capacity);
 bool vc_document_replace(VcDocument *document, size_t utf16_start, size_t utf16_length,
                          const uint8_t *replacement, size_t replacement_length);
+// kind: 0 isolated, 1 typing, 2 backspace, 3 forward delete. Unknown kinds fail.
+bool vc_document_edit(VcDocument *document, size_t utf16_start, size_t utf16_length,
+                      const uint8_t *replacement, size_t replacement_length, uint32_t kind);
+void vc_document_break_undo_group(VcDocument *document);
 bool vc_document_undo(VcDocument *document, size_t *utf16_cursor);
 bool vc_document_redo(VcDocument *document, size_t *utf16_cursor);
 bool vc_document_dirty(const VcDocument *document);

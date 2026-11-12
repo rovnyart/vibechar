@@ -234,15 +234,23 @@ docs/              roadmap, architecture, development, verification evidence
 ## M1 limitations
 
 The app is an early prototype. Highlighting, AI,
-multicursors, grouped typing undo, global hotkeys, and search are later
+multicursors, global hotkeys, and search are later
 milestones. TUI selection/clipboard and native IME composition qualification are
 also pending. No dedicated settings window exists; recovery uses a versioned JSON checkpoint.
+
+Adjacent typing and repeated backspace/forward delete undo as runs in both clients.
+A pause of at least one second, cursor/selection movement, newline, paste/cut,
+explicit save, undo/redo or changing tabs ends the run. Typing and deletion do not
+merge with one another. Paste and selection replacement remain separate undo steps,
+including a one-character paste. Undo across a file save restores the correct
+modified/clean flag. Groups cap at 512 edits / 64 KiB; a large single paste remains
+one step. These limits do not bound total history memory.
 
 Both clients start with one buffer and allow more buffers in the same process.
 Both clients restore their separate sessions after restart. Switching restores
 the cursor/selection and scrolls it into
-view; exact manual scroll positions are not retained. Ordinary typed characters produce
-individual undo entries. Mac history restoration copies the document to the view;
+view; exact manual scroll positions are not retained. Ordinary adjacent input is
+grouped by the shared engine. Mac history restoration copies the document to the view;
 ordinary edits send only the changed text to Rust. TUI navigation currently scans
 the current line for grapheme boundaries: pathological single-line files need the
 M3 large-document work before a performance claim.

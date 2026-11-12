@@ -217,6 +217,49 @@ def main():
             session.finish()
         assert destination.read_text() == "scratch"
 
+        undo_state = directory / "grouped-undo-state"
+        undo_file = directory / "grouped-undo.txt"
+        with Session(state=undo_state) as session:
+            def undo_text(value, dirty=None):
+                session.wait_until(lambda: session.screen_text().splitlines()[1].rstrip() == value)
+                session.wait_until(lambda: (data := session.checkpoint()) is not None
+                                   and data["buffers"][0]["text"] == value
+                                   and (dirty is None or data["buffers"][0]["dirty"] == dirty))
+            baseline = "hello world"
+            session.send(baseline.encode()); undo_text(baseline)
+            session.send(b"\x1a"); undo_text("")
+            session.send(b"\x19"); undo_text(baseline)
+            session.send(b"\x13"); session.wait_for(b"Save as:")
+            session.send(str(undo_file).encode() + b"\r")
+            session.wait_until(lambda: session.file_matches(undo_file, baseline.encode()))
+            session.send(b"ab"); undo_text(baseline + "ab")
+            session.send(b"\x1a"); undo_text(baseline, dirty=False)
+            session.send(b"\x1a"); undo_text("", dirty=True)
+            session.send(b"\x19"); undo_text(baseline, dirty=False)
+            session.send(b"FIRST"); undo_text(baseline + "FIRST")
+            time.sleep(1.1)
+            session.send(b"SECOND"); undo_text(baseline + "FIRSTSECOND")
+            session.send(b"\x1a"); undo_text(baseline + "FIRST")
+            session.send(b"\x1a"); undo_text(baseline)
+            session.send(b"ab"); undo_text(baseline + "ab")
+            session.send(b"\x1b[D\x1b[Ccd"); undo_text(baseline + "abcd")
+            session.send(b"\x1a"); undo_text(baseline + "ab")
+            session.send(b"\x1a"); undo_text(baseline)
+            session.send(b"ab"); undo_text(baseline + "ab")
+            session.send(b"\x1b[200~P\x1b[201~cd"); undo_text(baseline + "abPcd")
+            session.send(b"\x1a"); undo_text(baseline + "abP")
+            session.send(b"\x1a"); undo_text(baseline + "ab")
+            session.send(b"\x1a"); undo_text(baseline)
+            session.send(b"abc"); undo_text(baseline + "abc")
+            session.send(b"\x7f\x7f"); undo_text(baseline + "a")
+            session.send(b"\x1a"); undo_text(baseline + "abc")
+            session.send(b"\x19"); undo_text(baseline + "a")
+            session.send(b"\x1a"); undo_text(baseline + "abc")
+            session.send(b"\x1b[D\x1b[D\x1b[D\x1b[3~\x1b[3~"); undo_text(baseline + "c")
+            session.send(b"\x1a"); undo_text(baseline + "abc")
+            session.send(b"\x13\x11"); session.finish()
+            assert undo_file.read_bytes() == (baseline + "abc").encode()
+
         original = directory / "save-as-original.txt"
         original.write_bytes(expected)
         renamed = directory / "копия.txt"
@@ -435,7 +478,8 @@ def main():
         assert (checkpoint / "sentinel").read_text() == "keep"
 
     print(json.dumps({
-        "real_pty_scenarios": 13,
+        "real_pty_scenarios": 14,
+        "grouped_typing_pause_paste_navigation_deletion_and_save_boundary": "passed",
         "save_as_cancel_failure_confirmed_replace_and_restart": "passed",
         "utf8_crlf_bytes": "preserved",
         "terminal_restoration": "passed",

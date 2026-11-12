@@ -11,17 +11,20 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 41 Rust tests: 7 document/history/Unicode, 3 session/buffer behavior, 1 bounded
+- 49 Rust tests: 7 document/history/Unicode, 7 grouped-history, 3 session/buffer behavior, 1 bounded
   Unicode scratch-label test, 7 core recovery, 4 Secret Drop transport/revocation/save,
-  5 C bridge, and 14 terminal model/layout/recovery/output-masking tests.
+  6 C bridge, and 14 terminal model/layout/recovery/output-masking tests.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
   emoji substitution, undo/redo, dirty tracking, and saved-state reset.
+- Native input smoke exercises AppKit typing/deletion, isolated one-character
+  clipboard insertion, selections/navigation, newline, save and tab boundaries
+  against the shared document history.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Thirteen real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
+- Fourteen real PTY scenarios: bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
   saved buffers with restart/cursor restoration; background checkpoint + forced
@@ -30,6 +33,9 @@ This records local prototype evidence, not MVP release acceptance.
 - Save As PTY coverage includes existing file tabs, cancelled prompts, failed and
   read-only/symlink destinations, replacement confirmation/reset, Unicode paths,
   subsequent Save to the new path and restart with that destination.
+- Grouped-input PTY coverage includes typing/redo, an actual input pause,
+  cursor-away-and-back, one-character paste, backward/forward deletion and clean
+  save-point restoration.
 - Private PTY cases verify mixed/private-only recovery, background exclusion,
   conversion after successful file save, cancelled/failed saves, subsequent saves,
   hidden-private quit confirmation, and forced termination.
@@ -338,6 +344,44 @@ the existing target remains unchanged. All fixtures, clipboards and recovery sto
 are isolated from the user's normal app/session. Full `scripts/check.sh` passed:
 41 Rust tests, formatting/Clippy, 13 PTY scenarios, the Secret Drop PTY scenario and
 native release smoke tests. The expanded filename-approval reset case also passed.
+
+### Routine increment: grouped Undo/Redo (2026-11-12)
+
+Art asked to self-test and commit routine mechanics, reserving hands-on checks for
+notable features and interface decisions. The roadmap delivery policy now reflects
+that. This increment adds shared input-run grouping in Mac and terminal. Adjacent
+typing, repeated backspace and repeated forward delete group separately until a
+one-second input gap, explicit boundary, 512 edits or 64 KiB of changed payload.
+History stores ordered deltas without repeatedly prepending deleted text or copying
+the document. Large individual pastes remain atomic. Total history limits, IME
+composition qualification and grouped multi-edit transforms remain separate work.
+
+Core tests use a controlled monotonic clock to verify pause boundaries without
+sleeping. They cover Unicode/ZWJ/combining sequences, forward/backward cursors,
+CRLF/Unicode line separators, explicit boundaries, isolated paste and selection
+replacement, saved-state identity, divergent edits, group bounds and invalid/no-op
+requests. Bridge tests cover grouped UTF-16 conversion and malformed input kinds.
+
+The release AppKit smoke calls native input methods and checks the actual text view
+against Rust after each undo/redo. It covers automatic caret movement versus user
+selection, emoji deletion, a unique-pasteboard one-character insertion, selection
+replacement, newline, saved-state flags and independent tab histories. The real PTY
+scenario exercises the same commands, including an actual 1.1-second pause and
+backspace/delete key sequences. Existing Secret Drop tests still prove edit/undo
+revocation: restoring old text never restores the old capability. The user's app,
+clipboard, files and recovery store are untouched by these checks.
+
+Full `scripts/check.sh` passed: 49 Rust tests, formatting/Clippy, release builds,
+14 PTY scenarios, the Secret Drop PTY scenario and all native smoke checks.
+
+In a separate on-screen `dev.vibechar.undo-check` app, pressed a/b/c individually:
+one Cmd+Z cleared the run and Shift+Cmd+Z restored it. Two Backspace presses were
+undone together. Left/right between typing runs separated the next undo, and a
+one-character paste stayed separate from the following typed run. Observed each
+result in the actual text view. Only disposable synthetic text was used; the paste
+automation restored the clipboard. Quit the QA app and removed its bundle,
+registration, recovery and preferences. No manual checkpoint is required for Art
+on this routine increment.
 
 ## Initial performance observations
 

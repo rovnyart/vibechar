@@ -34,6 +34,7 @@ struct VibecharApp {
             recoverySmokeTest()
             pocketInterfaceSmokeTest()
             AppDelegate.interfaceSmokeTest()
+            AppDelegate.inputSmokeTest()
             AppDelegate.closeSmokeTest()
             AppDelegate.saveAsSmokeTest()
             print("Swift ↔ Rust smoke test passed")
@@ -176,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.delegate = self
+        textView.onBreakUndoGroup = { [weak self] in self?.document.breakUndoGroup() }
         textView.setAccessibilityLabel("Text editor")
         textView.setAccessibilityHelp("Type or paste text. Command-N creates a scratch. Command-S saves a file.")
         applyTypography()
@@ -238,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     func windowDidResize(_ notification: Notification) { header.needsLayout = true }
     func windowDidBecomeKey(_ notification: Notification) { header.needsLayout = true }
-    func windowDidResignKey(_ notification: Notification) { header.needsLayout = true }
+    func windowDidResignKey(_ notification: Notification) { document.breakUndoGroup(); header.needsLayout = true }
     func windowDidEnterFullScreen(_ notification: Notification) { header.needsLayout = true }
     func windowDidExitFullScreen(_ notification: Notification) { header.needsLayout = true }
 
@@ -333,7 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
         guard let replacementString else { return true }
-        let accepted = document.replace(affectedCharRange, with: replacementString)
+        let accepted = document.replace(affectedCharRange, with: replacementString, kind: self.textView.editKind)
         if !accepted { NSSound.beep() }
         return accepted
     }
@@ -344,7 +346,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         scheduleSessionSave()
     }
 
-    func textViewDidChangeSelection(_ notification: Notification) { scheduleSessionSave() }
+    func textViewDidChangeSelection(_ notification: Notification) {
+        if !textView.isPerformingEdit { document.breakUndoGroup() }
+        scheduleSessionSave()
+    }
 
     private func refreshTitle() {
         window.title = "\(session.label(session.active)) — vibechar"
@@ -468,7 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func switchBuffer(to index: Int) {
         guard index >= 0, index < session.count else { return }
-        if index == session.active { window.makeFirstResponder(textView); return }
+        if index == session.active { document.breakUndoGroup(); window.makeFirstResponder(textView); return }
         session.rememberSelection(textView.selectedRange())
         session.select(index)
         showActiveBuffer()
@@ -536,6 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func performSave(alwaysChooseDestination: Bool,
                              chooseDestination: @MainActor (NSSavePanel) -> URL? = { $0.runModal() == .OK ? $0.url : nil }) throws {
+        document.breakUndoGroup()
         let wasPrivate = session.isPrivate
         var destination = alwaysChooseDestination || wasPrivate ? nil : fileURL
         if destination == nil {
@@ -642,6 +648,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "vibechar", .applicationVersion: "0.1.0 · Preview"])
+    }
+
+    static func inputSmokeTest() {
+        let app = AppDelegate(clipboard: .withUniqueName())
+        app.makeWindow(restoreFrame: false)
+        app.showActiveBuffer()
+        defer { app.closeAllAgentAccess(); app.clipboard.clearContents(); app.window.delegate = nil; app.window.close() }
+        func type(_ text: String) {
+            for character in text { app.textView.insertText(String(character), replacementRange: NSRange(location: NSNotFound, length: 0)) }
+        }
+        func check(_ text: String) {
+            precondition(app.document.text == text && app.textView.string == text, "Native input and shared history must stay identical")
+        }
+        let unicode = "Привет 👩‍💻e\u{301}"
+        type(unicode); check(unicode)
+        app.undoEdit(); check("")
+        app.redoEdit(); check(unicode)
+        type("!"); app.undoEdit(); check(unicode)
+        app.newScratch(); type("abc👩‍💻")
+        app.textView.deleteBackward(nil); app.textView.deleteBackward(nil); check("ab")
+        app.undoEdit(); check("abc👩‍💻")
+        app.redoEdit(); check("ab")
+        app.undoEdit()
+        app.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        app.textView.deleteForward(nil); app.textView.deleteForward(nil); check("c👩‍💻")
+        app.undoEdit(); check("abc👩‍💻")
+        app.newScratch(); type("ab")
+        app.clipboard.clearContents(); app.clipboard.setString("P", forType: .string)
+        precondition(app.textView.readSelection(from: app.clipboard))
+        check("abP"); type("cd"); check("abPcd")
+        app.undoEdit(); check("abP")
+        app.undoEdit(); check("ab")
+        app.undoEdit(); check("")
+        app.newScratch(); type("ab")
+        app.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        app.textView.setSelectedRange(NSRange(location: 2, length: 0))
+        type("cd"); app.undoEdit(); check("ab")
+        app.newScratch(); type("hello")
+        app.textView.setSelectedRange(NSRange(location: 0, length: 5))
+        type("x"); type("y"); app.undoEdit(); check("x")
+        app.undoEdit(); check("hello")
+        app.newScratch(); type("abcdef")
+        app.textView.setSelectedRange(NSRange(location: 2, length: 2))
+        app.textView.deleteBackward(nil); check("abef")
+        app.textView.deleteBackward(nil); check("aef")
+        app.undoEdit(); check("abef")
+        app.undoEdit(); check("abcdef")
+        app.newScratch(); type("a"); app.textView.insertNewline(nil); type("b")
+        app.undoEdit(); check("a\n")
+        app.undoEdit(); check("a")
+        app.undoEdit(); check("")
+        app.newScratch(); type("saved"); app.document.markSaved(); type("new")
+        app.undoEdit(); check("saved"); precondition(!app.document.isDirty)
+        app.undoEdit(); check(""); precondition(app.document.isDirty)
+        app.redoEdit(); check("saved"); precondition(!app.document.isDirty)
+        app.newScratch(); let left = app.session.active; type("left")
+        app.newScratch(); let right = app.session.active; type("right")
+        app.switchBuffer(to: left); type("!"); app.undoEdit(); check("left")
+        app.undoEdit(); check("")
+        app.switchBuffer(to: right); check("right"); app.undoEdit(); check("")
+        print("Grouped input native smoke passed: typing, Unicode deletion, isolated paste, cursor/selection, newline, save, tab boundaries")
     }
 
     static func saveAsSmokeTest() {

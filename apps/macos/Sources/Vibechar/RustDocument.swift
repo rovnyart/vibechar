@@ -1,6 +1,10 @@
 import CVibechar
 import Foundation
 
+enum TextEditKind: UInt32 {
+    case isolated = 0, typing = 1, backspace = 2, deleteForward = 3
+}
+
 @MainActor
 final class RustDocument {
     private let ownedHandle: OpaquePointer?
@@ -38,12 +42,14 @@ final class RustDocument {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    func replace(_ range: NSRange, with text: String) -> Bool {
+    func replace(_ range: NSRange, with text: String, kind: TextEditKind = .isolated) -> Bool {
         let bytes = Array(text.utf8)
         return bytes.withUnsafeBufferPointer {
-            vc_document_replace(handle, range.location, range.length, $0.baseAddress, $0.count)
+            vc_document_edit(handle, range.location, range.length, $0.baseAddress, $0.count, kind.rawValue)
         }
     }
+
+    func breakUndoGroup() { vc_document_break_undo_group(handle) }
 
     func history(redo: Bool) -> Int? {
         var cursor = 0

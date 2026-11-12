@@ -44,6 +44,10 @@ it an ordinary file tab, includes it in recovery, and closes that tab's agent ac
 Cancelled or failed saves keep the tab private.
 See the roadmap for status and the development guide for runnable commands.
 
+Typing and repeated deletion now undo as input runs in both clients. A pause,
+navigation, paste, newline, save or changing tabs separates steps. Paste stays
+one step, and undo across a file save restores its correct modification state.
+
 Save As is available through File → Save As / Shift+Cmd+S on Mac and F4 in the
 terminal, including for files already open. A successful save attaches the new
 destination; cancellation/failure keeps the original. Existing destinations need

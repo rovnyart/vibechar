@@ -56,6 +56,9 @@ while progressing through the remaining M2 behavior work.
 ## Editing and AI
 
 - Standard editing remains immediate and works without a key or network.
+- Undo/redo follows input runs, not individual keystrokes. Pause, navigation,
+  selection, newlines, paste and save establish deliberate boundaries; typing,
+  backspace and forward delete stay distinct. A pasted fragment is one step.
 - AI starts from a command or selection. No automatic calls while typing.
 - Example workflow: edit an item → invoke "Do the rest" → choose target → preview.
 - Preview keeps the original accessible; accept is a deliberate action and one undo.

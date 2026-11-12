@@ -4,7 +4,14 @@ pub mod checkpoint;
 pub mod handoff;
 pub mod session;
 
-use std::{fmt, ops::Range};
+#[cfg(test)]
+mod history_tests;
+
+use std::{
+    fmt,
+    ops::Range,
+    time::{Duration, Instant},
+};
 
 use ropey::Rope;
 use unicode_segmentation::UnicodeSegmentation;
@@ -26,12 +33,34 @@ struct Change {
     inserted: String,
     before: u64,
     after: u64,
+    removed_chars: usize,
+    inserted_chars: usize,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum EditKind {
+    Isolated = 0,
+    Typing = 1,
+    Backspace = 2,
+    DeleteForward = 3,
+}
+
+struct HistoryEntry {
+    changes: Vec<Change>,
+    kind: EditKind,
+    bytes: usize,
+}
+
+const TYPING_PAUSE: Duration = Duration::from_secs(1);
+const MAX_GROUP_EDITS: usize = 512;
+const MAX_GROUP_BYTES: usize = 64 * 1024;
 
 pub struct Document {
     text: Rope,
-    undo: Vec<Change>,
-    redo: Vec<Change>,
+    undo: Vec<HistoryEntry>,
+    redo: Vec<HistoryEntry>,
+    last_edit: Option<Instant>,
     revision: u64,
     state: u64,
     next_state: u64,
@@ -75,6 +104,7 @@ impl Document {
             text: Rope::from_str(text),
             undo: Vec::new(),
             redo: Vec::new(),
+            last_edit: None,
             revision: 0,
             state: 0,
             next_state: 1,
@@ -92,6 +122,30 @@ impl Document {
         range: Range<usize>,
         inserted: &str,
     ) -> Result<bool, InvalidPosition> {
+        self.edit(range, inserted, EditKind::Isolated)
+    }
+
+    /// Coalesce adjacent input of the same kind until a pause or explicit boundary.
+    pub fn edit(
+        &mut self,
+        range: Range<usize>,
+        inserted: &str,
+        kind: EditKind,
+    ) -> Result<bool, InvalidPosition> {
+        self.edit_at(range, inserted, kind, Instant::now())
+    }
+
+    pub fn break_undo_group(&mut self) {
+        self.last_edit = None;
+    }
+
+    fn edit_at(
+        &mut self,
+        range: Range<usize>,
+        inserted: &str,
+        kind: EditKind,
+        now: Instant,
+    ) -> Result<bool, InvalidPosition> {
         if range.start > range.end || range.end > self.len_chars() {
             return Err(InvalidPosition);
         }
@@ -99,6 +153,38 @@ impl Document {
         if removed == inserted {
             return Ok(false);
         }
+        let bytes = removed.len() + inserted.len();
+        let groupable = bytes <= MAX_GROUP_BYTES
+            && !removed.contains([
+                '\r', '\n', '\u{b}', '\u{c}', '\u{85}', '\u{2028}', '\u{2029}',
+            ])
+            && !inserted.contains([
+                '\r', '\n', '\u{b}', '\u{c}', '\u{85}', '\u{2028}', '\u{2029}',
+            ])
+            && match kind {
+                EditKind::Typing => range.is_empty() && !inserted.is_empty(),
+                EditKind::Backspace | EditKind::DeleteForward => {
+                    !range.is_empty() && inserted.is_empty()
+                }
+                EditKind::Isolated => false,
+            };
+        let merge = groupable
+            && self.last_edit.is_some_and(|last| {
+                now.checked_duration_since(last)
+                    .is_some_and(|gap| gap < TYPING_PAUSE)
+            })
+            && self.undo.last().is_some_and(|entry| {
+                let last = entry.changes.last().unwrap();
+                entry.kind == kind
+                    && entry.changes.len() < MAX_GROUP_EDITS
+                    && entry.bytes + bytes <= MAX_GROUP_BYTES
+                    && match kind {
+                        EditKind::Typing => range.start == last.start + last.inserted_chars,
+                        EditKind::Backspace => range.end == last.start,
+                        EditKind::DeleteForward => range.start == last.start,
+                        EditKind::Isolated => false,
+                    }
+            });
         self.revoke_drop();
         self.text.remove(range.clone());
         self.text.insert(range.start, inserted);
@@ -108,38 +194,68 @@ impl Document {
             inserted: inserted.to_owned(),
             before: self.state,
             after: self.next_state,
+            removed_chars: range.end - range.start,
+            inserted_chars: inserted.chars().count(),
         };
         self.state = self.next_state;
         self.next_state += 1;
         self.revision += 1;
-        self.undo.push(change);
+        if merge {
+            let entry = self.undo.last_mut().unwrap();
+            entry.bytes += bytes;
+            entry.changes.push(change);
+        } else {
+            self.undo.push(HistoryEntry {
+                changes: vec![change],
+                kind: if groupable { kind } else { EditKind::Isolated },
+                bytes,
+            });
+        }
+        self.last_edit = groupable.then_some(now);
         self.redo.clear();
         Ok(true)
     }
 
     pub fn undo(&mut self) -> Option<usize> {
-        let change = self.undo.pop()?;
+        self.break_undo_group();
+        let entry = self.undo.pop()?;
         self.revoke_drop();
-        self.text
-            .remove(change.start..change.start + change.inserted.chars().count());
-        self.text.insert(change.start, &change.removed);
-        self.state = change.before;
+        for change in entry.changes.iter().rev() {
+            self.text
+                .remove(change.start..change.start + change.inserted_chars);
+            self.text.insert(change.start, &change.removed);
+        }
+        let first = &entry.changes[0];
+        self.state = first.before;
         self.revision += 1;
-        let cursor = change.start + change.removed.chars().count();
-        self.redo.push(change);
+        let cursor = first.start
+            + if entry.kind == EditKind::DeleteForward {
+                entry
+                    .changes
+                    .iter()
+                    .map(|change| change.removed_chars)
+                    .sum()
+            } else {
+                first.removed_chars
+            };
+        self.redo.push(entry);
         Some(cursor)
     }
 
     pub fn redo(&mut self) -> Option<usize> {
-        let change = self.redo.pop()?;
+        self.break_undo_group();
+        let entry = self.redo.pop()?;
         self.revoke_drop();
-        self.text
-            .remove(change.start..change.start + change.removed.chars().count());
-        self.text.insert(change.start, &change.inserted);
-        self.state = change.after;
+        for change in &entry.changes {
+            self.text
+                .remove(change.start..change.start + change.removed_chars);
+            self.text.insert(change.start, &change.inserted);
+        }
+        let last = entry.changes.last().unwrap();
+        self.state = last.after;
         self.revision += 1;
-        let cursor = change.start + change.inserted.chars().count();
-        self.undo.push(change);
+        let cursor = last.start + last.inserted_chars;
+        self.undo.push(entry);
         Some(cursor)
     }
 
@@ -157,6 +273,7 @@ impl Document {
         self.drop_access.as_ref().and_then(|grant| grant.uses())
     }
     pub(crate) fn publish_drop(&mut self, grant: handoff::GrantLink) {
+        self.break_undo_group();
         self.drop_access = Some(grant);
     }
 
@@ -165,6 +282,7 @@ impl Document {
     }
 
     pub fn mark_saved(&mut self) {
+        self.break_undo_group();
         self.saved_state = self.state;
     }
 

@@ -110,6 +110,7 @@ impl Session {
     }
 
     pub fn share_active(&mut self) -> std::io::Result<String> {
+        self.active_mut().document.break_undo_group();
         if !self.active().is_private() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -135,6 +136,9 @@ impl Session {
     pub fn revoke_all_drops(&mut self) {
         // Stopping all access also releases the idle broker and its socket.
         self.handoff = None;
+        for buffer in &mut self.buffers {
+            buffer.document.break_undo_group();
+        }
     }
     pub fn drop_instruction(&self, executable: &str) -> Option<String> {
         self.active()
@@ -154,11 +158,16 @@ impl Session {
         if index >= self.buffers.len() {
             return false;
         }
+        self.active_mut().document.break_undo_group();
         self.active = index;
+        self.active_mut().document.break_undo_group();
         true
     }
 
     pub fn open(&mut self, text: &str, path: Option<PathBuf>) {
+        if let Some(buffer) = self.buffers.get_mut(self.active) {
+            buffer.document.break_undo_group();
+        }
         let document = if path.is_none() && !text.is_empty() {
             let mut document = Document::new("");
             document
@@ -192,6 +201,7 @@ impl Session {
             self.open("", None);
         } else {
             self.active = self.active.min(self.buffers.len() - 1);
+            self.active_mut().document.break_undo_group();
         }
         true
     }

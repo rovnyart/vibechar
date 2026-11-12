@@ -78,7 +78,27 @@ pub unsafe extern "C" fn vc_document_replace(
     replacement: *const u8,
     replacement_length: usize,
 ) -> bool {
+    vc_document_edit(document, start, length, replacement, replacement_length, 0)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_edit(
+    document: *mut VcDocument,
+    start: usize,
+    length: usize,
+    replacement: *const u8,
+    replacement_length: usize,
+    kind: u32,
+) -> bool {
     guard(|| {
+        use vibechar_core::EditKind;
+        let kind = match kind {
+            0 => EditKind::Isolated,
+            1 => EditKind::Typing,
+            2 => EditKind::Backspace,
+            3 => EditKind::DeleteForward,
+            _ => return false,
+        };
         let Some(doc) = document.as_mut() else {
             return false;
         };
@@ -91,8 +111,17 @@ pub unsafe extern "C" fn vc_document_replace(
         let (Ok(start), Ok(end)) = (doc.char_from_utf16(start), doc.char_from_utf16(end)) else {
             return false;
         };
-        doc.replace(start..end, text).is_ok()
+        doc.edit(start..end, text, kind).is_ok()
     })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_break_undo_group(document: *mut VcDocument) {
+    guard(|| {
+        if let Some(doc) = document.as_mut() {
+            doc.break_undo_group();
+        }
+    });
 }
 
 unsafe fn history(document: *mut VcDocument, cursor: *mut usize, redo: bool) -> bool {
@@ -525,6 +554,39 @@ pub unsafe extern "C" fn vc_session_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grouped_edits_preserve_utf16_boundaries_and_explicit_breaks() {
+        unsafe {
+            use vibechar_core::EditKind;
+            vc_document_break_undo_group(ptr::null_mut());
+            let doc = vc_document_new(ptr::null(), 0);
+            for (offset, text) in [(0, "я"), (1, "👩‍💻"), (6, "e\u{301}")] {
+                assert!(vc_document_edit(
+                    doc,
+                    offset,
+                    0,
+                    text.as_ptr(),
+                    text.len(),
+                    EditKind::Typing as u32
+                ));
+            }
+            assert!(!vc_document_edit(doc, 2, 0, b"x".as_ptr(), 1, 1));
+            assert!(!vc_document_edit(doc, 8, 0, b"x".as_ptr(), 1, 99));
+            let mut cursor = 999;
+            assert!(vc_document_undo(doc, &mut cursor));
+            assert_eq!(cursor, 0);
+            assert_eq!(vc_document_length(doc), 0);
+            assert!(vc_document_redo(doc, &mut cursor));
+            assert_eq!(cursor, 8);
+            vc_document_break_undo_group(doc);
+            assert!(vc_document_edit(doc, 8, 0, b"!".as_ptr(), 1, 1));
+            assert!(vc_document_undo(doc, &mut cursor));
+            assert_eq!(cursor, 8);
+            assert_eq!(vc_document_length(doc), "я👩‍💻e\u{301}".len());
+            vc_document_free(doc);
+        }
+    }
 
     #[test]
     fn completed_save_converts_private_tab_but_invalid_paths_do_not() {

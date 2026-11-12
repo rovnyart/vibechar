@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-use vibechar_core::{session::Session, Document};
+use vibechar_core::{session::Session, Document, EditKind};
 
 use crate::files;
 
@@ -42,6 +42,11 @@ impl Editor {
     }
 
     pub fn insert(&mut self, text: &str) {
+        self.session.active_mut().document.break_undo_group();
+        self.insert_with_kind(text, EditKind::Isolated);
+    }
+
+    fn insert_with_kind(&mut self, text: &str, kind: EditKind) {
         self.cancel_private_quit();
         if let Some(prompt) = &mut self.save_prompt {
             if !text.contains(['\n', '\r', '\0']) {
@@ -54,7 +59,7 @@ impl Editor {
             .session
             .active_mut()
             .document
-            .replace(self.cursor..self.cursor, text)
+            .edit(self.cursor..self.cursor, text, kind)
             .is_ok()
         {
             self.cursor += text.chars().count();
@@ -69,6 +74,15 @@ impl Editor {
     pub fn handle(&mut self, key: KeyEvent) -> bool {
         if key.kind == KeyEventKind::Release {
             return false;
+        }
+        let direct_edit = matches!(
+            key.code,
+            KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete
+        ) && !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
+        if !direct_edit {
+            self.session.active_mut().document.break_undo_group();
         }
         let quitting =
             key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL);
@@ -89,7 +103,7 @@ impl Editor {
                     .modifiers
                     .intersects(KeyModifiers::ALT | KeyModifiers::SUPER) =>
             {
-                self.insert(&ch.to_string())
+                self.insert_with_kind(&ch.to_string(), EditKind::Typing)
             }
             KeyCode::Enter => self.insert(self.document().newline()),
             KeyCode::F(4) => self.save_as(),
@@ -121,7 +135,7 @@ impl Editor {
                     .session
                     .active_mut()
                     .document
-                    .replace(start..self.cursor, "")
+                    .edit(start..self.cursor, "", EditKind::Backspace)
                     .is_ok()
                 {
                     self.cursor = start;
@@ -129,11 +143,11 @@ impl Editor {
             }
             KeyCode::Delete => {
                 let end = self.document().next_grapheme(self.cursor);
-                let _ = self
-                    .session
-                    .active_mut()
-                    .document
-                    .replace(self.cursor..end, "");
+                let _ = self.session.active_mut().document.edit(
+                    self.cursor..end,
+                    "",
+                    EditKind::DeleteForward,
+                );
             }
             _ => {}
         }
