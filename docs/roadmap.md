@@ -195,9 +195,12 @@ into a child process. Implement the same operation model in Mac and terminal.
   Both clients use this geometry for multicursors; Mac snapshots avoid a temporary
   byte array. Native 1/10 MiB log/minified layout is measured; bounded history
   presentation patches and a caret-line layout policy remove full resets and
-  preceding-log layout from common commands. First layout of giant paragraphs,
-  pathological Unicode/word selection, peak-memory and cross-platform qualification remain open; this does not complete
-  large-document mode.
+  preceding-log layout from common commands. Initial Mac viewport geometry is
+  resolved before loading text, avoiding repeated giant-paragraph layout at a
+  provisional width. The first-frame profiler now also measures the first input
+  at the start; giant-paragraph shaping/wrapping and beginning-of-line edits remain
+  expensive. Pathological Unicode/word selection, peak-memory and cross-platform
+  qualification remain open; this does not complete large-document mode.
 
 Exit: representative JSON, logs, code, and prose are pleasant to manipulate offline;
 highlighting and commands do not block text input. Terminal styling and width

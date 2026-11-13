@@ -44,6 +44,9 @@ python3 scripts/profile-text.py
 # After building the Mac app:
 dist/Vibechar.app/Contents/MacOS/Vibechar --profile-snapshots
 python3 scripts/profile-mac.py
+# Repeat first presentation in fresh processes for one fixture:
+python3 scripts/profile-mac.py --kind minified --mib 10 --repeat 5
+dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-first-presentation
 ```
 
 The PTY profiler uses temporary 1/10 MiB JSON files and isolated recovery, takes
@@ -53,8 +56,13 @@ local release binary for comparisons. Snapshot profiling uses only synthetic
 in-memory documents, without launching the editor UI or opening recovery state.
 The AppKit profiler runs four isolated 1/10 MiB log/minified fixtures through the
 real native window, bitmap rendering and history path. It uses unique pasteboards
-and no recovery store. Each child has a timeout; `--samples` controls the 30 input
-samples and `--binary PATH` allows an instrumented pre-change build. Timings are
+and no recovery store. `first_screen_ms` includes show, layout, bitmap allocation
+and the first bitmap draw. `native_first_frame_ms` also includes window setup and
+opening the synthetic document in Rust, but excludes fixture construction and
+NSApplication initialization. First typing/Backspace at the start is measured
+before jumping to EOF and collecting the repeated input samples. Each child has
+a timeout; `--samples` controls the 30 EOF input samples, `--repeat` launches fresh
+processes, and `--binary PATH` allows an instrumented pre-change build. Timings are
 CPU/render-work observations, not physical screen latency or cold-launch percentiles.
 
 Start the terminal editor:

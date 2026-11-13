@@ -14,15 +14,21 @@ def main():
     parser.add_argument("--binary",type=Path,default=ROOT/"apps/macos/.build/release/Vibechar")
     parser.add_argument("--samples",type=int,default=30)
     parser.add_argument("--timeout",type=float,default=50)
+    parser.add_argument("--kind",choices=["minified","logs"])
+    parser.add_argument("--mib",type=int,choices=[1,10])
+    parser.add_argument("--repeat",type=int,default=1,help="Fresh processes per fixture")
     options=parser.parse_args()
+    if not 1 <= options.samples <= 30 or options.repeat < 1 or options.timeout <= 0:
+        parser.error("samples must be 1–30; repeat and timeout must be positive")
     results=[]
-    for kind in ["minified","logs"]:
-        for mib in [1,10]:
-            print(f"AppKit fixture: {kind}, {mib} MiB",file=sys.stderr,flush=True)
-            result=subprocess.run([str(options.binary),"--profile-appkit","--kind",kind,
-                                   "--mib",str(mib),"--samples",str(options.samples)],
-                                  stdout=subprocess.PIPE,text=True,check=True,timeout=options.timeout)
-            results.append(json.loads(result.stdout))
+    for run in range(options.repeat):
+        for kind in [options.kind] if options.kind else ["minified","logs"]:
+            for mib in [options.mib] if options.mib else [1,10]:
+                print(f"AppKit fixture: {kind}, {mib} MiB, run {run+1}/{options.repeat}",file=sys.stderr,flush=True)
+                result=subprocess.run([str(options.binary),"--profile-appkit","--kind",kind,
+                                       "--mib",str(mib),"--samples",str(options.samples)],
+                                      stdout=subprocess.PIPE,text=True,check=True,timeout=options.timeout)
+                results.append(json.loads(result.stdout))
     print(json.dumps(results,indent=2))
 
 

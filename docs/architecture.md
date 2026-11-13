@@ -122,6 +122,15 @@ only clear their temporary attributes when they previously painted any. This
 does not change wrapping, truncate text or make first layout of a giant paragraph
 cheap; large-file memory and broader renderer qualification remain open.
 
+Window construction resolves the empty scroll view's geometry before loading
+the first document. Otherwise the initial caret reveal lays out the paragraph at
+the provisional container width, and Auto Layout invalidates that work when the
+viewport reaches its actual width. The native first-presentation smoke checks
+that initial width remains stable after loading, as well as first input, history,
+full selection, tab/caret restoration, private tabs, resizing and appearance.
+The profiler includes the first bitmap draw and first input at the beginning:
+moving work from show into drawing or typing is not a presentation improvement.
+
 ## Bridge ownership
 
 Expose opaque document and session handles. The creator frees an owned handle

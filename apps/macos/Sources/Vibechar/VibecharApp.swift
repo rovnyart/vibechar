@@ -8,6 +8,10 @@ struct VibecharApp {
             AppDelegate.profileNativeEditing()
             return
         }
+        if CommandLine.arguments.contains("--smoke-first-presentation") {
+            AppDelegate.firstPresentationSmokeTest()
+            return
+        }
         if CommandLine.arguments.contains("--profile-snapshots") {
             profileSnapshotCopies()
             return
@@ -46,6 +50,7 @@ struct VibecharApp {
             AppDelegate.interfaceSmokeTest()
             AppDelegate.inputSmokeTest()
             AppDelegate.presentationHistorySmokeTest()
+            AppDelegate.firstPresentationSmokeTest()
             AppDelegate.closeSmokeTest()
             AppDelegate.saveAsSmokeTest()
             AppDelegate.syntaxSmokeTest()
@@ -192,7 +197,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition((1...10).contains(mib) && (1...30).contains(samples))
         let line="2026-11-12T00:00:00Z INFO synthetic request completed status=200 duration=12ms\n"
         let source=kind=="logs" ? String(repeating:line,count:mib*1024*1024/line.utf8.count) : "{\"data\":\""+String(repeating:"x",count:mib*1024*1024-11)+"\"}"
+        let nativeStart=ContinuousClock.now
         let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false)
+        let setupDuration=nativeStart.duration(to:.now)
         defer {
             app.syntaxWork?.cancel();app.syntaxGeneration &+= 1;app.syntaxTimer?.invalidate()
             app.pendingSave?.cancel();app.multiController.cancel();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()
@@ -204,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         }
         app.session.open(source,url:URL(fileURLWithPath:kind=="logs" ? "/synthetic.log" : "/synthetic.json"))
         phase("show")
+        let screenStart=ContinuousClock.now
         let show=timed {app.showActiveBuffer();app.window.contentView!.layoutSubtreeIfNeeded()}
         app.syntaxWork?.cancel();app.syntaxGeneration &+= 1
         let surface=app.window.contentView!
@@ -211,6 +219,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         func draw() {surface.cacheDisplay(in:surface.bounds,to:bitmap)}
         phase("first-draw")
         let first=timed {draw()}
+        let screenDuration=screenStart.duration(to:.now),nativeDuration=nativeStart.duration(to:.now)
+        phase("first-input-at-start")
+        let firstInput=timed {app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));draw()}
+        let firstDelete=timed {app.textView.deleteBackward(nil);draw()}
+        precondition(app.document.text==source && app.textView.string==source)
         phase("jump-to-end")
         let end=(source as NSString).length
         let jump=timed {app.textView.setSelectedRange(NSRange(location:end,length:0));app.textView.scrollRangeToVisible(app.textView.selectedRange());draw()}
@@ -228,11 +241,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.document.text==source && app.textView.string==source)
         typing.sort();deletion.sort()
         let data:[String:Any]=["kind":kind,"bytes":source.utf8.count,"samples":samples,
+            "window_setup_ms":Double(setupDuration.components.seconds)*1000+Double(setupDuration.components.attoseconds)/1e15,
+            "first_screen_ms":Double(screenDuration.components.seconds)*1000+Double(screenDuration.components.attoseconds)/1e15,
+            "native_first_frame_ms":Double(nativeDuration.components.seconds)*1000+Double(nativeDuration.components.attoseconds)/1e15,
+            "first_input_ms":firstInput,"first_backspace_ms":firstDelete,
             "show_ms":show,"first_draw_ms":first,"jump_ms":jump,
             "typing_p50_ms":typing[samples/2],"typing_p95_ms":typing[min(samples-1,samples*95/100)],
             "backspace_p50_ms":deletion[samples/2],"backspace_p95_ms":deletion[min(samples-1,samples*95/100)],
             "undo_ms":undo,"redo_ms":redo]
         print(String(decoding:try! JSONSerialization.data(withJSONObject:data,options:[.prettyPrinted,.sortedKeys]),as:UTF8.self))
+    }
+
+    static func firstPresentationSmokeTest() {
+        _ = NSApplication.shared
+        final class GeometryObserver:NSObject,NSLayoutManagerDelegate {
+            var loadedWidthChanges=0
+            func layoutManager(_ layoutManager:NSLayoutManager,textContainer:NSTextContainer,didChangeGeometryFrom oldSize:NSSize) {
+                if (layoutManager.textStorage?.length ?? 0)>0 && oldSize.width != textContainer.containerSize.width {
+                    loadedWidthChanges+=1
+                }
+            }
+        }
+        for privateTab in [false,true] {
+            let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false)
+            let observer=GeometryObserver();app.textView.layoutManager?.delegate=observer
+            defer {
+                app.syntaxWork?.cancel();app.syntaxGeneration &+= 1;app.syntaxTimer?.invalidate()
+                app.pendingSave?.cancel();app.multiController.cancel();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()
+            }
+            let source="я👩‍💻e\u{301}\0"+String(repeating:"x",count:256*1024)+"\r\nlast"
+            if privateTab {app.session.openPrivate();precondition(app.document.replace(NSRange(location:0,length:0),with:source))}
+            else {app.session.open(source)}
+            let index=app.session.active
+            app.showActiveBuffer()
+            func draw() {
+                let surface=app.window.contentView!;surface.layoutSubtreeIfNeeded()
+                let bitmap=surface.bitmapImageRepForCachingDisplay(in:surface.bounds)!
+                surface.cacheDisplay(in:surface.bounds,to:bitmap)
+            }
+            func check(_ text:String) {precondition(app.document.text==text && app.textView.string==text)}
+            func checkCaret() {
+                let screen=app.textView.firstRect(forCharacterRange:app.textView.selectedRange(),actualRange:nil)
+                let rect=app.textView.convert(app.window.convertFromScreen(screen),from:nil)
+                precondition(app.textView.visibleRect.contains(NSPoint(x:rect.minX,y:rect.midY)),"Restored caret must be visible")
+            }
+            draw();check(source);checkCaret()
+            precondition(observer.loadedWidthChanges==0,"Resolve the initial viewport before laying out loaded text")
+            app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));draw();check("!"+source)
+            app.applyHistory(redo:false);draw();check(source)
+            app.applyHistory(redo:true);draw();check("!"+source)
+            app.textView.deleteBackward(nil);draw();check(source)
+            app.textView.setSelectedRange(NSRange(location:(source as NSString).length,length:0))
+            app.textView.scrollRangeToVisible(app.textView.selectedRange());draw();checkCaret()
+            app.newScratch();draw();check("");checkCaret()
+            app.switchBuffer(to:index);draw();check(source);checkCaret()
+            precondition(app.session.isPrivate==privateTab)
+            app.textView.selectAll(nil)
+            precondition(app.textView.selectedRange().length==(source as NSString).length)
+            precondition(app.textView.writeSelection(to:app.clipboard,types:app.textView.writablePasteboardTypes),"Copy the full selection to an isolated pasteboard")
+            precondition(app.clipboard.string(forType:.string)==source)
+            app.textView.insertText("short\n",replacementRange:NSRange(location:NSNotFound,length:0));draw();check("short\n")
+            app.applyHistory(redo:false);draw();check(source)
+            app.applyHistory(redo:true);draw();check("short\n")
+            app.applyHistory(redo:false);draw();check(source)
+            let revision=app.document.revision
+            for appearance in [NSAppearance.Name.aqua,.darkAqua] {
+                app.window.appearance=NSAppearance(named:appearance)
+                for width in [420,880] {
+                    app.window.setContentSize(NSSize(width:width,height:600));draw();check(source)
+                    precondition(app.document.revision==revision)
+                }
+            }
+        }
+        print("First presentation native smoke passed: stable initial width, Unicode/CRLF/NUL, first input/history, copy-all, tab/caret restoration, private, narrow and light/dark")
     }
 
     static func presentationHistorySmokeTest() {
@@ -415,6 +496,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             guard self.findController.visible else { return false }
             self.findController.close(); return true
         }
+        // Resolve the viewport while storage is empty. Resizing a text container
+        // for the first time after loading a giant paragraph forces full layout.
+        content.layoutSubtreeIfNeeded()
     }
 
     private func applyTypography() {

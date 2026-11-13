@@ -20,6 +20,9 @@ This records local prototype evidence, not MVP release acceptance.
 - Native input smoke exercises AppKit typing/deletion, isolated one-character
   clipboard insertion, selections/navigation, newline, save and tab boundaries
   against the shared document history.
+- Native first-presentation smoke checks stable initial container width, a 256 KiB
+  paragraph with Unicode/NUL/CRLF, first input and history, complete selection/copy,
+  tab/caret restoration, private tabs, narrow/wide layout and light/dark appearance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
@@ -944,6 +947,58 @@ were removed. User recovery and clipboard were not changed.
 Large-paragraph first layout, retained/peak memory, complete live accessibility/IME
 and multi-platform qualification remain open. M1/M3/M6 performance gates remain
 open; this records a bounded native optimization, not release acceptance.
+
+### Feedback increment: initial native viewport layout (2026-11-13)
+
+The first caret reveal laid out loaded text at the provisional text-container
+width. Resolving the window's constraints then changed that width and discarded
+the paragraph layout. Window construction now resolves the empty viewport before
+loading text. The regression smoke observes text-container geometry changes: an
+instrumented pre-fix executable fails its loaded-width assertion, while the final
+build passes. Native wrapping, selection and text storage keep their existing
+behavior. First input/history, full selection/copy including NUL, tab/caret
+restoration, private tabs, resizing and appearance were checked through real
+AppKit objects and bitmap rendering. The complete `bash scripts/check.sh` passed
+120 Rust tests, 42 real PTY scenarios, the independent Secret Drop helper and all
+native smoke tests; the signed development app was rebuilt.
+
+The profiler now includes bitmap allocation and drawing in `first_screen_ms`,
+and records first typing/Backspace at position zero before jumping to EOF. This
+exposed another existing cost that the previous EOF-only input sample missed.
+`native_first_frame_ms` also includes AppDelegate/window construction and opening
+the synthetic document in Rust. Source-fixture construction and NSApplication
+initialization are outside that timer. These are offscreen native layout/bitmap
+observations, not on-screen latency, file I/O, cold-launch percentiles or a Sublime
+comparison.
+
+Five fresh child processes per version used identical instrumentation and a
+10 MiB minified JSON fixture. The only behavior difference in the comparison is
+the empty-viewport layout. Each process also took 30 EOF input samples. Values
+below are medians of the five per-process observations, including per-process
+EOF p95; five runs do not establish a startup p95.
+
+| Observation | Before | After |
+| --- | --- | --- |
+| Show through first bitmap frame | 1,870.541 ms | 1,107.116 ms |
+| Native setup through first bitmap frame | 1,906.036 ms | 1,146.897 ms |
+| First typing at start | 972.998 ms | 973.830 ms |
+| First Backspace at start | 962.789 ms | 970.031 ms |
+| Jump to end | 2.906 ms | 3.021 ms |
+| EOF typing p95 | 19.042 ms | 18.751 ms |
+| EOF Undo / Redo | 18.469 / 17.878 ms | 18.498 / 18.081 ms |
+
+First presentation improved by about 41%; the giant paragraph still takes about
+1.1 seconds to show, and editing its beginning still costs about one second.
+Sampling attributes the remaining work to AppKit paragraph shaping/wrapping.
+This increment removes duplicate work; it does not complete giant-line performance
+or large-document mode. No steady-state input improvement is claimed.
+
+A separate final four-fixture run observed first-screen work of 130.622 / 1,104.556
+ms for 1 / 10 MiB minified JSON and 18.714 / 21.814 ms for short-line logs. These are
+single observations. Reports are ignored `dist/first-show-series-{before,after}.json`
+and `dist/first-show-matrix-after.json`. Temporary probe sources/executables and
+the instrumented pre-fix executable were removed. User recovery and the real
+clipboard were not accessed. The remaining M1/M3/M6 performance gates stay open.
 
 ## Initial performance observations
 
