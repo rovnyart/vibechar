@@ -149,7 +149,7 @@ is not a notarized distributable. It is not copied to `/Applications`.
 environment that permits creating a controlling terminal. The integration test
 cleans up its processes and temporary files and uses no desktop terminal app.
 
-Mac controls: native text editing/selection and clipboard; Cmd+N new scratch,
+Mac controls: native text editing/selection and clipboard; Cmd+T (or Cmd+N) new scratch tab,
 Shift+Cmd+N new private scratch, Cmd+O open UTF-8 file in a new buffer,
 Cmd+S save (ends private mode after success), Cmd+Z undo, Shift+Cmd+Z redo.
 Shift+Cmd+S / File → Save As chooses a new destination for the active tab. The native

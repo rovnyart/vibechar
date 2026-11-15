@@ -442,7 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.delegate = self
         textView.onBreakUndoGroup = { [weak self] in self?.document.breakUndoGroup() }
         textView.setAccessibilityLabel("Text editor")
-        textView.setAccessibilityHelp("Type or paste text. Command-N creates a scratch. Command-S saves a file.")
+        textView.setAccessibilityHelp("Type or paste text. Command-T creates a tab. Command-S saves a file.")
         applyTypography()
 
         let scroll = NSScrollView()
@@ -536,6 +536,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         appMenu.addItem(withTitle: "Quit vibechar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         addMenu("vibechar", submenu: appMenu, to: menu)
         let file = NSMenu(title: "File")
+        addItem("New Tab", action: #selector(newScratch), key: "t", to: file)
         addItem("New Scratch", action: #selector(newScratch), key: "n", to: file)
         let privateScratch = NSMenuItem(title: "New Private Scratch", action: #selector(newPrivateScratch), keyEquivalent: "n")
         privateScratch.keyEquivalentModifierMask = [.command, .shift]

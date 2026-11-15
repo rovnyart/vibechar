@@ -327,7 +327,7 @@ final class PocketHeader: NSView {
     private var models: [PocketTab] = []
     private var active = 0
     private var tabViews: [PocketTabView] = []
-    private let newButton = PocketButton(symbol: "plus", label: "New scratch · ⌘N")
+    private let newButton = PocketButton(symbol: "plus", label: "New tab · ⌘T")
     private let overflow = PocketButton(symbol: "chevron.down", label: "All tabs")
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { true }
