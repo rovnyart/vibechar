@@ -559,6 +559,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         next.keyEquivalentModifierMask = [.command, .option]
         next.target = self
         buffers.addItem(next)
+        buffers.addItem(.separator())
+        for number in 1...9 {
+            let item = NSMenuItem(title: number == 9 ? "Last Tab" : "Tab \(number)", action: #selector(selectNumberedBuffer(_:)), keyEquivalent: String(number))
+            item.tag = number
+            item.target = self
+            buffers.addItem(item)
+        }
         addMenu("Buffers", submenu: buffers, to: menu)
         let edit = NSMenu(title: "Edit")
         addItem("Undo", action: #selector(undoEdit), key: "z", to: edit)
@@ -926,6 +933,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         scheduleSyntax()
     }
 
+    @objc private func selectNumberedBuffer(_ sender: NSMenuItem) {
+        switchBuffer(to: sender.tag == 9 ? session.count - 1 : sender.tag - 1)
+    }
+
     @objc private func previousBuffer() { switchBuffer(to: (session.active + session.count - 1) % session.count) }
     @objc private func nextBuffer() { switchBuffer(to: (session.active + 1) % session.count) }
 
@@ -976,6 +987,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(selectNumberedBuffer(_:)) {
+            return menuItem.tag == 9 || (menuItem.tag >= 1 && menuItem.tag <= session.count)
+        }
         if menuItem.action == #selector(copyForAgent) { return session.isPrivate && !textView.string.isEmpty }
         if menuItem.action == #selector(closeAgentAccess) { return session.dropActive }
         if menuItem.action == #selector(closeAllAgentAccess) { return session.hasDropAccess }

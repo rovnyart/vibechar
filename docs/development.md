@@ -161,6 +161,8 @@ exits the app after the existing discard checks. Explicitly closed tabs are remo
 from recovery; closing the final tab restarts into an empty scratch. The terminal
 keeps its empty-scratch fallback when its final buffer closes; Ctrl+Q exits it.
 Click a tab or use Option+Cmd+Left/Right to switch.
+Cmd+1 through Cmd+8 select the first eight tabs; Cmd+9 selects the last tab,
+including when more than nine are open. Unavailable numbered tabs are disabled.
 Each buffer remembers its selection and has independent undo history. Cmd+Q or
 the red window button preserves ordinary Mac tabs locally
 and waits for the final save. Explicitly closing an edited tab asks before removing
