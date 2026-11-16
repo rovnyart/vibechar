@@ -604,6 +604,67 @@ Legacy PTY coordinate fixtures disable the gutter via `VIBECHAR_LINE_NUMBERS=0`;
 the dedicated counters suite explicitly tests it enabled, including wrapping,
 mouse selection, private/narrow layout and a 10 MiB file.
 
+## Large text mode
+
+The shared resource policy marks documents from **512 KiB of UTF-8** as large.
+Mac **View → Large Text Mode → Automatic / On / Off** controls a client-session
+presentation preference. Automatic follows the current document, including edits,
+Undo and tab switches. A lightning icon beside the footer counter identifies the
+mode; its tooltip explains the active layout path. TUI shows **Large text** in
+the footer (or **Large** in narrow terminals); F11 includes a tool-size reminder.
+Its viewport renderer already uses bounded Rope windows, so it needs no separate
+rendering toggle. Wrap preferences remain independent in both clients.
+
+Wrapped Mac presentation limits paragraph context to **256 Ki glyphs per chunk**,
+rounded back to a native composed-character boundary. This can add an earlier
+visual wrap at a chunk edge; it adds no character to text storage or the Rust
+document. Native input, offsets, selections, clipboard, Undo and saved bytes retain
+their full-document meaning. Noncontiguous layout is used for short lines and the
+first bounded window of a large paragraph; later caret positions retain the faster
+contiguous tail-edit path. In Automatic, a distant selection or paste prepares one
+full native paragraph context, reused for subsequent navigation in that revision.
+An edit near the beginning returns to bounded context; On forces chunking and Off
+keeps standard layout. Transient native EOF selections during text installation
+are ignored. No-wrap uses standard native layout. Unicode bidi text
+retains full paragraph context, as does a single composed cluster exceeding the
+budget. The bidi decision uses pinned `unicode-bidi` data and a revision cache.
+
+The mode improves first-viewport and nearby edit work on giant paragraphs, at the
+cost of potentially slower first distant navigation. A fresh EOF reveal can still
+do substantial layout on the UI thread; this is **not** a hard wall-time guarantee
+or a general large-file performance qualification. Standard mode remains available.
+
+| Operation | Shared limit / behavior |
+| --- | --- |
+| Syntax | 512 KiB source, 8 KiB logical line, 10,000 lines; uncolored fallback |
+| Pointer word selection | 64 KiB logical line; drag selection remains available |
+| Find / multiple selections | 4 MiB document; explicit error above the limit |
+| Local text tools | 1 MiB selected input, 2 MiB result; small selections work in large documents |
+| Statistics | 64 MiB / cooperative 500 ms scan; line/byte metadata remains available |
+| Undo + Redo | 32 MiB charged allocations / 1,024 steps; newest oversized step survives |
+
+These are operation limits, not a file-size cap or a total-process memory ceiling.
+Large text and mode changes do not weaken private recovery exclusion or grants.
+
+```sh
+python3 scripts/test-large.py
+dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-large-text
+VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/large-ui" \
+  dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-large-text
+python3 scripts/profile-mac.py --kind minified --mib 10 --repeat 3 --samples 3
+python3 scripts/profile-mac.py --large-mode off --wrap on --kind minified --mib 10
+python3 scripts/profile-mac.py --load paste --kind minified --mib 10 --samples 3
+```
+
+Profiling supports `--large-mode auto/on/off`, `--wrap auto/on/off` and `--load open/paste`.
+Paste fixtures use a unique synthetic pasteboard. Their first screen includes
+paste/read, model/native update and rendering; clipboard preparation is excluded.
+First input is measured at the start, after a separately timed return from EOF.
+The report also measures repeated start/end jumps after the context is prepared.
+Use identical fixtures and record first screen/input and first distant navigation;
+report all trade-offs. Synthetic bitmap timings do not measure physical latency,
+cold launch or a Sublime comparison. Broad performance/memory acceptance is M6.
+
 ## Layout
 
 ```text

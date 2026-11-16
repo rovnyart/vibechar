@@ -16,6 +16,13 @@ struct EditingUpdate:Decodable {
 
 @MainActor
 final class RustDocument {
+    var isLarge:Bool {vc_document_large(handle)}
+    static var paragraphBudget:Int {vc_native_paragraph_budget()}
+    var nativeParagraphBudget:Int {vc_document_native_budget(handle)}
+    func wordRange(at offset:Int)->NSRange? {
+        var start=0,length=0
+        return vc_document_word_range(handle,offset,&start,&length) ? NSRange(location:start,length:length) : nil
+    }
     private let ownedHandle: OpaquePointer?
     private let session: RustSession?
     var handle: OpaquePointer {

@@ -9,6 +9,46 @@ use std::{
 use vibechar_core::{checkpoint::Checkpoint, session::Session, Document};
 
 pub type VcDocument = Document;
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_large(document: *const VcDocument) -> bool {
+    guard(|| document.as_ref().is_some_and(Document::is_large))
+}
+#[no_mangle]
+pub extern "C" fn vc_native_paragraph_budget() -> usize {
+    vibechar_core::limits::NATIVE_PARAGRAPH_GLYPHS
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_native_budget(document: *const VcDocument) -> usize {
+    guard(|| {
+        document
+            .as_ref()
+            .map_or(0, Document::native_paragraph_budget)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_word_range(
+    document: *const VcDocument,
+    offset: usize,
+    start: *mut usize,
+    length: *mut usize,
+) -> bool {
+    guard(|| {
+        let (Some(doc), Some(start), Some(length)) =
+            (document.as_ref(), start.as_mut(), length.as_mut())
+        else {
+            return false;
+        };
+        let Ok(position) = doc.char_from_utf16(offset) else {
+            return false;
+        };
+        let Ok(range) = doc.word_selection(position) else {
+            return false;
+        };
+        *start = doc.utf16_from_char(range.start).unwrap();
+        *length = doc.utf16_from_char(range.end).unwrap() - *start;
+        true
+    })
+}
 pub struct VcHistory(String);
 pub struct VcMetrics(vibechar_core::metrics::Engine);
 
@@ -1422,6 +1462,25 @@ mod tests {
         unsafe {
             let source = "я👩‍💻e\u{301}\r\nx";
             let doc = vc_document_new(source.as_ptr(), source.len());
+            assert!(!vc_document_large(doc) && !vc_document_large(ptr::null()));
+            assert_eq!(
+                vc_native_paragraph_budget(),
+                vibechar_core::limits::NATIVE_PARAGRAPH_GLYPHS
+            );
+            let (mut word_start, mut word_length) = (0, 0);
+            assert!(!vc_document_word_range(
+                doc,
+                2,
+                &mut word_start,
+                &mut word_length
+            ));
+            assert!(vc_document_word_range(
+                doc,
+                6,
+                &mut word_start,
+                &mut word_length
+            ));
+            assert_eq!((word_start, word_length), (6, 2));
             assert_eq!(vc_document_line_count(doc), 2);
             assert_eq!(vc_document_line_index(doc, 2), usize::MAX);
             let (mut start, mut length) = (0, 0);

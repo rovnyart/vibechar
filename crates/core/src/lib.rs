@@ -3,6 +3,7 @@
 pub mod checkpoint;
 pub mod editing;
 pub mod handoff;
+pub mod limits;
 pub mod metrics;
 pub mod multi;
 pub mod search;
@@ -85,13 +86,14 @@ impl HistoryEntry {
 const TYPING_PAUSE: Duration = Duration::from_secs(1);
 const MAX_GROUP_EDITS: usize = 512;
 const MAX_GROUP_BYTES: usize = 64 * 1024;
-const MAX_HISTORY_BYTES: usize = 32 * 1024 * 1024;
-const MAX_HISTORY_STEPS: usize = 1024;
+const MAX_HISTORY_BYTES: usize = limits::HISTORY_BYTES;
+const MAX_HISTORY_STEPS: usize = limits::HISTORY_STEPS;
 
 pub struct Document {
     id: u64,
     text: Rope,
     layout: RefCell<text::Cache>,
+    native_layout_safety: RefCell<Option<(u64, bool)>>,
     undo: VecDeque<HistoryEntry>,
     redo: Vec<HistoryEntry>,
     history_bytes: usize,
@@ -139,6 +141,7 @@ impl Document {
             id: NEXT_DOCUMENT.fetch_add(1, Ordering::Relaxed),
             text: Rope::from_str(text),
             layout: RefCell::default(),
+            native_layout_safety: RefCell::default(),
             undo: VecDeque::new(),
             redo: Vec::new(),
             history_bytes: 0,

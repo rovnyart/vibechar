@@ -109,6 +109,12 @@ Undo/Redo history has a shared per-document retention budget in both clients:
 1,024 steps / 32 MiB of charged allocations, keeping the newest operation
 undoable even when it alone exceeds the budget. Oldest steps expire as needed.
 
+Large text mode activates from **512 KiB**. Mac bounds wrapped paragraph layout
+and offers **View → Large Text Mode → Automatic / On / Off**; a lightning mark
+appears beside the counter. TUI shows **Large text** and keeps its viewport-based
+renderer. Text, real newlines and file bytes are unchanged. First distant Mac
+navigation can be slower; see the [mode and operation limits](docs/development.md#large-text-mode).
+
 Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
 Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar
 creates a private tab and replaces the clipboard with an instruction for your

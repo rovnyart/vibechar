@@ -20,6 +20,9 @@ struct VibecharApp {
             AppDelegate.countersSmokeTest()
             return
         }
+        if CommandLine.arguments.contains("--smoke-large-text") {
+            AppDelegate.largeTextSmokeTest();return
+        }
         if CommandLine.arguments.contains("--profile-snapshots") {
             profileSnapshotCopies()
             return
@@ -59,6 +62,7 @@ struct VibecharApp {
             AppDelegate.inputSmokeTest()
             AppDelegate.presentationHistorySmokeTest()
             AppDelegate.firstPresentationSmokeTest()
+            AppDelegate.largeTextSmokeTest()
             AppDelegate.editingSmokeTest()
             AppDelegate.countersSmokeTest()
             AppDelegate.closeSmokeTest()
@@ -189,6 +193,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }()
     private var fontSize: CGFloat = 15
     private var wrapLines = true
+    private let budgetTypesetter=BudgetTypesetter()
+    private var largeTextChoice=0 // Auto / On / Off, client-session preference.
+    private var expandedLayoutRevision:UInt64?
     private var closingWindow = false
     private var recovery: SessionRecovery?
     private var pendingSave: DispatchWorkItem?
@@ -215,6 +222,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         let source=kind=="logs" ? String(repeating:line,count:mib*1024*1024/line.utf8.count) : "{\"data\":\""+String(repeating:"x",count:mib*1024*1024-11)+"\"}"
         let nativeStart=ContinuousClock.now
         let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false)
+        if option("--wrap","auto")=="off" {app.toggleWrapLines()}
+        app.largeTextChoice=["auto","on","off"].firstIndex(of:option("--large-mode","auto")) ?? 0
         let setupDuration=nativeStart.duration(to:.now)
         defer {
             app.syntaxWork?.cancel();app.syntaxGeneration &+= 1;app.syntaxTimer?.invalidate()
@@ -225,10 +234,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             let start=ContinuousClock.now;action();let elapsed=start.duration(to:.now)
             return Double(elapsed.components.seconds)*1000+Double(elapsed.components.attoseconds)/1e15
         }
-        app.session.open(source,url:URL(fileURLWithPath:kind=="logs" ? "/synthetic.log" : "/synthetic.json"))
+        let pasted=option("--load","open")=="paste"
+        if pasted {app.showActiveBuffer();app.clipboard.setString(source,forType:.string)}
+        else {app.session.open(source,url:URL(fileURLWithPath:kind=="logs" ? "/synthetic.log" : "/synthetic.json"))}
         phase("show")
         let screenStart=ContinuousClock.now
-        let show=timed {app.showActiveBuffer();app.window.contentView!.layoutSubtreeIfNeeded()}
+        let show=timed {
+            if pasted {precondition(app.textView.readSelection(from:app.clipboard))} else {app.showActiveBuffer()}
+            app.window.contentView!.layoutSubtreeIfNeeded()
+        }
         app.syntaxWork?.cancel();app.syntaxGeneration &+= 1
         let surface=app.window.contentView!
         let bitmap=surface.bitmapImageRepForCachingDisplay(in:surface.bounds)!
@@ -236,6 +250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         phase("first-draw")
         let first=timed {draw()}
         let screenDuration=screenStart.duration(to:.now),nativeDuration=nativeStart.duration(to:.now)
+        let initiallyBounded=app.budgetTypesetter.glyphBudget>0
+        let returnToStart=pasted ? timed {app.textView.setSelectedRange(NSRange(location:0,length:0));app.textView.scrollRangeToVisible(app.textView.selectedRange());draw()} : 0
         phase("first-input-at-start")
         let firstInput=timed {app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));draw()}
         let firstDelete=timed {app.textView.deleteBackward(nil);draw()}
@@ -255,8 +271,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.document.text==source+"!")
         let redo=timed {app.applyHistory(redo:true);draw()}
         precondition(app.document.text==source && app.textView.string==source)
+        let returnJump=timed {app.textView.setSelectedRange(NSRange(location:0,length:0));app.textView.scrollRangeToVisible(app.textView.selectedRange());draw()}
+        let repeatJump=timed {app.textView.setSelectedRange(NSRange(location:end,length:0));app.textView.scrollRangeToVisible(app.textView.selectedRange());draw()}
         typing.sort();deletion.sort()
-        let data:[String:Any]=["kind":kind,"bytes":source.utf8.count,"samples":samples,
+        let data:[String:Any]=["kind":kind,"bytes":source.utf8.count,"samples":samples,"wrapped":app.wrapLines,"large_mode":app.footer.largeText,"bounded_initial_layout":initiallyBounded,"load":pasted ? "paste" : "open",
+            "return_to_start_ms":returnToStart,"return_jump_ms":returnJump,"repeat_jump_ms":repeatJump,
             "window_setup_ms":Double(setupDuration.components.seconds)*1000+Double(setupDuration.components.attoseconds)/1e15,
             "first_screen_ms":Double(screenDuration.components.seconds)*1000+Double(screenDuration.components.attoseconds)/1e15,
             "native_first_frame_ms":Double(nativeDuration.components.seconds)*1000+Double(nativeDuration.components.attoseconds)/1e15,
@@ -534,7 +553,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.delegate = self
+        budgetTypesetter.owner=textView.layoutManager
+        textView.layoutManager?.typesetter=budgetTypesetter
         textView.onBreakUndoGroup = { [weak self] in self?.document.breakUndoGroup() }
+        textView.onWillSelect={ [weak self] offset in self?.updateLayoutPolicy(at:offset) }
+        textView.onWordSelection={ [weak self] offset in
+            guard let self,self.document.isLarge || self.document.lineLength(at:offset)>32768 else {return nil}
+            if let range=self.document.wordRange(at:offset) {return range}
+            self.footer.operationError="Long line · drag to select a fragment"
+            return NSRange(location:offset,length:0)
+        }
         textView.onEditingAction = { [weak self] action in self?.performEditing(action) ?? false }
         textView.setAccessibilityLabel("Text editor")
         textView.setAccessibilityHelp("Type or paste text. Command-T creates a tab. Command-S saves a file.")
@@ -699,6 +727,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         numbers.keyEquivalentModifierMask=[.command,.option];numbers.target=self;view.addItem(numbers)
         let wrap=NSMenuItem(title:"Wrap Lines",action:#selector(toggleWrapLines),keyEquivalent:"w")
         wrap.keyEquivalentModifierMask=[.command,.option];wrap.target=self;view.addItem(wrap)
+        let largeMenu=NSMenu(title:"Large Text Mode")
+        for (tag,title) in ["Automatic","On","Off"].enumerated() {
+            let item=NSMenuItem(title:title,action:#selector(changeLargeTextMode(_:)),keyEquivalent:"");item.tag=tag;item.target=self;largeMenu.addItem(item)
+        }
+        addMenu("Large Text Mode",submenu:largeMenu,to:view)
         view.addItem(.separator())
         let language = NSMenuItem(title: "Choose Language…", action: #selector(showLanguagePicker), keyEquivalent: "l")
         language.keyEquivalentModifierMask = [.command, .control]
@@ -769,6 +802,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        guard !textView.isInstallingText else {return}
         updateLayoutPolicy(at:textView.selectedRange().location)
         multiController.selectionChanged()
         updatePosition()
@@ -821,6 +855,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
     @objc private func toggleWrapLines() {
         wrapLines.toggle()
+        expandedLayoutRevision=nil
+        updateLayoutPolicy(at:textView.selectedRange().location)
         guard let scroll=textView.enclosingScrollView,let container=textView.textContainer else {return}
         textView.minSize=NSSize(width:wrapLines ? 0 : scroll.contentSize.width,height:0)
         textView.isHorizontallyResizable = !wrapLines
@@ -837,12 +873,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func updateLayoutPolicy(at position:Int) {
         let length=document.lineLength(at:position)
+        guard length>=0 else {return}
         // AppKit's noncontiguous layout helps short paragraphs but makes editing
         // a giant wrapped paragraph slower. Choose from Rope metadata, not a scan.
-        let partial=length>=0 && length<=32768
+        let large=largeTextChoice==1 || largeTextChoice==0 && document.isLarge
+        let lineStart=document.lineRange(document.lineIndex(at:position))?.location ?? position
+        let nativeBudget=large && wrapLines ? document.nativeParagraphBudget : 0
+        // In Auto, a distant reveal/paste uses one native paragraph context,
+        // avoiding repeated prefix work through many bounded chunks.
+        let distant=largeTextChoice==0 && nativeBudget>0 && position-lineStart>=nativeBudget
+        if distant {expandedLayoutRevision=document.revision}
+        let expanded=largeTextChoice==0 && expandedLayoutRevision==document.revision
+        let budget=expanded ? 0 : nativeBudget
+        if budgetTypesetter.glyphBudget != budget {
+            budgetTypesetter.glyphBudget=budget
+            if let storage=textView.textStorage {
+                textView.layoutManager?.invalidateLayout(forCharacterRange:NSRange(location:0,length:storage.length),actualCharacterRange:nil)
+            }
+        }
+        footer.largeText=large
+        footer.largeTextNote = !wrapLines ? "No wrap uses standard native layout." : expanded ? "Adaptive native layout · full paragraph context prepared." : budget==0 && large ? "Standard layout preserves bidirectional paragraph context." : "Wrapped paragraphs use bounded layout; first distant navigation can take longer."
+        // Partial layout keeps the first bounded window responsive. Beyond it,
+        // contiguous layout preserves the faster native tail-edit/history path.
+        let partial=length>=0 && (length<=32768 || budget>0 && position-lineStart<budget)
         if textView.layoutManager?.allowsNonContiguousLayout != partial {
             textView.layoutManager?.allowsNonContiguousLayout=partial
         }
+    }
+    @objc private func changeLargeTextMode(_ sender:NSMenuItem) {
+        guard (0...2).contains(sender.tag) else {return}
+        largeTextChoice=sender.tag;expandedLayoutRevision=nil;updateLayoutPolicy(at:textView.selectedRange().location)
+        textView.scrollRangeToVisible(NSRange(location:textView.selectedRange().location,length:0));textView.needsDisplay=true
     }
 
     private func scheduleSyntax() {
@@ -1092,6 +1153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func showActiveBuffer() {
+        expandedLayoutRevision=nil
         multiController.cancel()
         toolPalette?.close(); toolPalette=nil
         if findController.visible { findController.close() }
@@ -1163,6 +1225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(changeLargeTextMode(_:)) {menuItem.state=menuItem.tag==largeTextChoice ? .on : .off}
         if menuItem.action == #selector(toggleLineNumbers) {menuItem.state=showLineNumbers ? .on : .off}
         if menuItem.action == #selector(toggleWrapLines) {menuItem.state=wrapLines ? .on : .off}
         if menuItem.action == #selector(selectNumberedBuffer(_:)) {
@@ -1315,6 +1378,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "vibechar", .applicationVersion: "0.1.0 · Preview"])
+    }
+
+    static func largeTextSmokeTest() {
+        _=NSApplication.shared
+        let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false);app.makeMenus()
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-large-native-\(UUID().uuidString)",isDirectory:true)
+        try! FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        defer {app.stopping=true;app.metricsTimer?.invalidate();app.closeAllAgentAccess();app.syntaxWork?.cancel();app.syntaxTimer?.invalidate();app.multiController.cancel();app.clipboard.clearContents();app.window.delegate=nil;app.window.close();try? FileManager.default.removeItem(at:root)}
+        let output=ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map {URL(fileURLWithPath:$0,isDirectory:true)}
+        if let output {try! FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)}
+        func draw(_ name:String="large") {
+            let view=app.window.contentView!;view.layoutSubtreeIfNeeded()
+            app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds)!;view.cacheDisplay(in:view.bounds,to:bitmap)
+                if let output {try! bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent(name+".png"))}
+            }
+        }
+        func check(_ source:String) {precondition(app.document.text==source && app.textView.string==source,"Layout must preserve every source character")}
+        func mode(_ choice:Int) {
+            let view=NSApp.mainMenu!.item(withTitle:"View")!.submenu!
+            let item=view.item(withTitle:"Large Text Mode")!.submenu!.items[choice]
+            precondition(NSApp.sendAction(item.action!,to:item.target,from:item));_=app.validateMenuItem(item);precondition(item.state == .on)
+        }
+        precondition(app.budgetTypesetter.glyphBudget==0)
+        let cap=RustDocument.paragraphBudget
+        let single=String(repeating:"z",count:cap*2+1)
+        app.session.open(single);app.showActiveBuffer()
+        precondition(app.budgetTypesetter.glyphBudget==cap,"Ignore transient EOF selections while installing a buffer")
+        app.textView.setSelectedRange(NSRange(location:(single as NSString).length,length:0))
+        precondition(app.budgetTypesetter.glyphBudget==0)
+        app.textView.setSelectedRange(NSRange(location:0,length:0))
+        precondition(app.budgetTypesetter.glyphBudget==0,"Reuse prepared context during navigation in the same revision")
+        app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));check("!"+single)
+        precondition(app.budgetTypesetter.glyphBudget==cap,"A new prefix edit returns to bounded context")
+        app.applyHistory(redo:false);check(single)
+        precondition(app.session.close(discard:true));app.showActiveBuffer()
+        let source=String(repeating:"x",count:cap-1)+"👩‍💻e\u{301}"+String(repeating:"y",count:cap*2)+"\0\r\nlast tail 👩‍💻\r\n"
+        app.session.open(source);app.document.markSaved();app.showActiveBuffer();draw()
+        precondition(app.document.isLarge && app.footer.largeText && app.budgetTypesetter.glyphBudget==cap && app.wrapLines)
+        let word=app.textView.selectionRange(forProposedRange:NSRange(location:100,length:0),granularity:.selectByWord)
+        precondition(word==NSRange(location:100,length:0) && app.footer.operationError?.contains("drag")==true)
+        app.footer.operationError=nil
+        let tail=(source as NSString).range(of:"last tail")
+        precondition(app.textView.selectionRange(forProposedRange:NSRange(location:tail.location+1,length:6),granularity:.selectByWord)==tail,"Word-drag expands both endpoints")
+        let emojiTail=(source as NSString).range(of:"last tail 👩‍💻")
+        precondition(app.textView.selectionRange(forProposedRange:NSRange(location:emojiTail.location+1,length:emojiTail.length-1),granularity:.selectByWord)==emojiTail,"Word-drag cannot split a trailing surrogate/emoji cluster")
+        precondition(app.textView.selectionRange(forProposedRange:NSRange(location:cap-1,length:5),granularity:.selectByWord)==NSRange(location:cap-1,length:5),"Refused giant-word scans retain native grapheme-safe drag")
+        app.footer.operationError=nil
+        for offset in [0,cap-1,cap+6,(source as NSString).length] {
+            app.textView.setSelectedRange(NSRange(location:offset,length:0));app.textView.scrollRangeToVisible(app.textView.selectedRange());draw()
+            let rect=app.textView.firstRect(forCharacterRange:app.textView.selectedRange(),actualRange:nil)
+            let local=app.textView.convert(app.window.convertFromScreen(rect),from:nil)
+            precondition(app.textView.visibleRect.contains(NSPoint(x:local.minX,y:local.midY)),"Native caret must be visible after a distant reveal")
+            precondition(app.textView.characterIndexForInsertion(at:NSPoint(x:local.minX+0.1,y:local.midY))==offset,"Native pointer geometry must agree at layout boundaries")
+            check(source)
+        }
+        app.textView.setSelectedRange(NSRange(location:cap-1,length:7))
+        precondition(app.textView.writeSelection(to:app.clipboard,types:app.textView.writablePasteboardTypes))
+        precondition(app.clipboard.string(forType:.string)=="👩‍💻e\u{301}")
+        app.textView.deleteBackward(nil);check(String(repeating:"x",count:cap-1)+String(repeating:"y",count:cap*2)+"\0\r\nlast tail 👩‍💻\r\n")
+        app.applyHistory(redo:false);check(source)
+        app.textView.setSelectedRange(NSRange(location:0,length:0))
+        app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));check("!"+source)
+        app.applyHistory(redo:false);check(source);precondition(!app.document.isDirty)
+        app.applyHistory(redo:true);check("!"+source);app.applyHistory(redo:false);check(source)
+        app.textView.selectAll(nil)
+        precondition(app.textView.writeSelection(to:app.clipboard,types:app.textView.writablePasteboardTypes))
+        precondition(app.clipboard.string(forType:.string)==source)
+        let selected=app.textView.selectedRange()
+        for (name,appearance) in [("light",NSAppearance.Name.aqua),("dark",.darkAqua)] {
+            app.window.appearance=NSAppearance(named:appearance)
+            for width in [420,880] {app.window.setContentSize(NSSize(width:width,height:600));draw("large-\(name)-\(width)");check(source);precondition(app.textView.selectedRange()==selected && app.footer.bounds.contains(app.footer.counts.frame))}
+        }
+        let version=app.document.revision
+        mode(2);precondition(app.budgetTypesetter.glyphBudget==0 && !app.footer.largeText)
+        mode(1);precondition(app.budgetTypesetter.glyphBudget==cap)
+        mode(0);precondition(app.document.revision==version && app.textView.selectedRange()==selected)
+        app.toggleWrapLines();precondition(app.budgetTypesetter.glyphBudget==0 && !app.wrapLines);check(source)
+        app.toggleWrapLines();precondition(app.budgetTypesetter.glyphBudget==cap && app.wrapLines)
+        app.textView.setSelectedRange(NSRange(location:0,length:0))
+        app.textView.insertText("שלום",replacementRange:NSRange(location:NSNotFound,length:0));check("שלום"+source)
+        precondition(app.budgetTypesetter.glyphBudget==0,"Preserve full bidi paragraph context")
+        app.applyHistory(redo:false);check(source);precondition(app.budgetTypesetter.glyphBudget==cap)
+        try! app.saveActive(to:root.appendingPathComponent("saved.txt"))
+        precondition(try! Data(contentsOf:root.appendingPathComponent("saved.txt"))==Data(source.utf8))
+        app.newScratch();precondition(app.budgetTypesetter.glyphBudget==0 && !app.footer.largeText)
+        app.switchBuffer(to:1);check(source);precondition(app.budgetTypesetter.glyphBudget==cap)
+        app.newPrivateScratch();app.textView.insertText("PRIVATE_LARGE_NATIVE",replacementRange:NSRange(location:NSNotFound,length:0))
+        _=try! app.session.shareForAgent(executable:"/synthetic/vibechar")
+        mode(1);mode(2);mode(0);precondition(app.session.dropActive)
+        app.session.openPrivate();precondition(app.document.replace(NSRange(location:0,length:0),with:source));app.showActiveBuffer()
+        precondition(app.budgetTypesetter.glyphBudget==cap && app.session.isPrivate)
+        let checkpoint=root.appendingPathComponent("recovery.json");precondition(app.session.checkpoint().save(to:checkpoint))
+        let restored=RustSession();_=try! restored.restore(from:checkpoint)
+        for index in 0..<restored.count {precondition(!restored.isPrivate(index))}
+        print("Large text native smoke passed: automatic/manual layout budgets, composed clusters at boundaries, NUL/CRLF, distant caret, native selection/copy/delete, input/Undo/Redo, exact save, tabs, private exclusion/grants and narrow themes")
     }
 
     static func countersSmokeTest() {

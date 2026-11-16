@@ -295,6 +295,11 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     } else {
         editor.recovery_status.to_owned()
     };
+    let recovery = if editor.document().is_large() {
+        format!("{recovery} · Large text")
+    } else {
+        recovery
+    };
     let language = syntax.map_or_else(
         || {
             editor
@@ -331,9 +336,14 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     };
     let statustext = if status.width < 70 {
         format!(
-            " {}{}:{} · {}",
+            " {}{}{}:{} · {}",
             if editor.session.active().is_private() {
                 "PRIVATE · "
+            } else {
+                ""
+            },
+            if editor.document().is_large() {
+                "Large · "
             } else {
                 ""
             },
@@ -517,7 +527,11 @@ fn draw_statistics(frame: &mut Frame, stats: &vibechar_core::metrics::Frame, lig
             vibechar_core::metrics::number(stats.total.bytes),
             vibechar_core::metrics::number(stats.selected.bytes),
         ),
-        Line::raw(""),
+        Line::raw(if stats.large {
+            " Large text · tools: selection ≤1 MiB."
+        } else {
+            ""
+        }),
         Line::raw(format!(
             " {} selections · {} carets",
             stats.selections, stats.carets

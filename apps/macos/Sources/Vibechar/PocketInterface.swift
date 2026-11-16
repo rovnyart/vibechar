@@ -66,8 +66,11 @@ final class PocketSurface: NSView {
 final class PocketTextView: NSTextView {
     private(set) var editKind: TextEditKind = .isolated
     private var editDepth = 0
+    private(set) var isInstallingText=false
     var isPerformingEdit: Bool { editDepth > 0 }
     var onBreakUndoGroup: (() -> Void)?
+    var onWordSelection: ((Int)->NSRange?)?
+    var onWillSelect: ((Int)->Void)?
     var onEditingAction: ((UInt32)->Bool)?
     var onEscape: (() -> Bool)?
     var onMultiInsert: ((String,UInt32)->Bool)?
@@ -81,6 +84,7 @@ final class PocketTextView: NSTextView {
 
     func setPlainText(_ text:String) {
         if hasMarkedText() {unmarkText()}
+        let previous=isInstallingText;isInstallingText=true;defer {isInstallingText=previous}
         guard let storage=textStorage else {string=text;return}
         storage.setAttributedString(NSAttributedString(string:text,attributes:typingAttributes))
         let range=NSRange(location:0,length:storage.length)
@@ -181,6 +185,24 @@ final class PocketTextView: NSTextView {
         return super.validateUserInterfaceItem(item)
     }
     override func mouseDown(with event:NSEvent) {if onMultiCancel?()==false {NSSound.beep();return};super.mouseDown(with:event)}
+    override func setSelectedRanges(_ ranges:[NSValue],affinity:NSSelectionAffinity,stillSelecting:Bool) {
+        if !isInstallingText,let range=ranges.first?.rangeValue,range.location != NSNotFound {onWillSelect?(NSMaxRange(range))}
+        super.setSelectedRanges(ranges,affinity:affinity,stillSelecting:stillSelecting)
+    }
+    override func selectionRange(forProposedRange proposedCharRange:NSRange,granularity:NSSelectionGranularity)->NSRange {
+        func scalarStart(_ index:Int)->Int {
+            guard index>0,let storage=textStorage,index<storage.length else {return index}
+            return (0xDC00...0xDFFF).contains(storage.mutableString.character(at:index)) ? index-1 : index
+        }
+        if granularity == .selectByWord,let range=onWordSelection?(scalarStart(proposedCharRange.location)) {
+            if proposedCharRange.length>0 {
+                if range.length>0,let end=onWordSelection?(scalarStart(NSMaxRange(proposedCharRange)-1)),end.length>0 {return NSUnionRange(range,end)}
+                return NSUnionRange(range,super.selectionRange(forProposedRange:proposedCharRange,granularity:.selectByCharacter))
+            }
+            return range
+        }
+        return super.selectionRange(forProposedRange:proposedCharRange,granularity:granularity)
+    }
     override func selectAll(_ sender:Any?) {if onMultiCancel?()==false {NSSound.beep();return};super.selectAll(sender)}
     override func setMarkedText(_ string:Any,selectedRange:NSRange,replacementRange:NSRange) {
         if onMultiCancel?()==false {NSSound.beep();return};super.setMarkedText(string,selectedRange:selectedRange,replacementRange:replacementRange)
@@ -455,6 +477,12 @@ final class PocketFooter: NSView {
     let position = NSTextField(labelWithString: "1:1")
     let counts = NSButton(title:"0 chars",target:nil,action:nil)
     private var metrics:TextMetrics?
+    var largeTextNote="" {didSet {showMetrics(metrics)}}
+    var largeText=false {didSet {
+        counts.image=largeText ? NSImage(systemSymbolName:"bolt.fill",accessibilityDescription:"Large text mode") : nil
+        counts.imagePosition = .imageLeading
+        showMetrics(metrics)
+    }}
     var onMetrics:((NSView)->Void)?
     let languageButton = NSButton(title: "Auto · Text", target: nil, action: nil)
     var onLanguage: (() -> Void)?
@@ -517,7 +545,7 @@ final class PocketFooter: NSView {
         needsLayout=true
     }
     func showMetrics(_ value:TextMetrics?) {
-        metrics=value;counts.toolTip=(value?.details ?? "Counting text…")+"\nClick for details"
+        metrics=value;counts.toolTip=(largeText ? "Large text mode · View → Large Text Mode\n\(largeTextNote)\n\n" : "")+(value?.details ?? "Counting text…")+"\nClick for details"
         counts.setAccessibilityValue(value?.summary(compact:false) ?? "Counting text")
         needsLayout=true
     }
@@ -556,8 +584,8 @@ final class PocketFooter: NSView {
         let languageWidth: CGFloat = compact ? 80 : 142
         let details: CGFloat = bounds.width >= 1100 ? 94 : 0
         let positionWidth:CGFloat = compact ? min(48,max(36,position.fittingSize.width+8)) : min(100,max(52,position.fittingSize.width+12))
-        let countsWidth:CGFloat = compact ? 64 : min(220,max(140,bounds.width*0.21))
-        let giveWidth:CGFloat = compact ? 64 : 104
+        let countsWidth:CGFloat = compact ? (largeText ? 80 : 64) : min(220,max(140,bounds.width*0.21))
+        let giveWidth:CGFloat = compact ? (largeText ? 48 : 64) : 104
         let stopWidth:CGFloat = compact ? 32 : 40
         let actions: CGFloat = privateTab ? giveWidth+(agentUses == nil ? 0 : stopWidth) : 0
         give.title=agentUses == nil ? (compact ? "Give" : "Give to Agent") : (compact ? "Copy" : "Copy Again")

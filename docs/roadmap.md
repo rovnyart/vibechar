@@ -195,19 +195,18 @@ into a child process. Implement the same operation model in Mac and terminal.
   search and keyboard navigation; Mac additionally scrolls with a mouse/trackpad.
 - [x] Shared atomic batch edits as one undo transaction, first used by Replace All.
   Future transforms and multicursor commands can reuse this operation.
-- [ ] Large document mode with explicit budgets for parsing, rendering, and history.
-  History retention now has a shared 32 MiB / 1,024-step budget with a newest-step
-  exception. Rope-local grapheme movement, bounded sparse cell geometry and TUI
-  viewport reads handle large logical lines without full copies/scans per key.
-  Both clients use this geometry for multicursors; Mac snapshots avoid a temporary
-  byte array. Native 1/10 MiB log/minified layout is measured; bounded history
-  presentation patches and a caret-line layout policy remove full resets and
-  preceding-log layout from common commands. Initial Mac viewport geometry is
-  resolved before loading text, avoiding repeated giant-paragraph layout at a
-  provisional width. The first-frame profiler now also measures the first input
-  at the start; giant-paragraph shaping/wrapping and beginning-of-line edits remain
-  expensive. Pathological Unicode/word selection, peak-memory and cross-platform
-  qualification remain open; this does not complete large-document mode.
+- [x] Large document mode with explicit budgets for parsing, rendering, and history.
+  Shared policy starts at 512 KiB, with visible mode status in both clients.
+  Wrapped Mac first-window layout uses 256 Ki-glyph chunks, rounded to composed
+  characters; source bytes stay unchanged. Auto prepares full native context for
+  distant navigation/paste and reuses it until another source revision. On forces
+  chunking; Off keeps standard layout.
+  Bidi paragraphs and oversized single clusters retain standard native layout.
+  Mac offers Automatic / On / Off; TUI retains its bounded viewport renderer.
+  Pointer-word selection declines lines above 64 KiB. Syntax, tools, search,
+  counters and history retain their explicit shared limits; smaller selections
+  remain usable in larger documents. Native first distant navigation, pathological
+  Unicode, peak-memory and cross-platform qualification remain M6 work.
 
 Exit: representative JSON, logs, code, and prose are pleasant to manipulate offline;
 highlighting and commands do not block text input. Terminal styling and width
@@ -256,6 +255,9 @@ feature only if it wins on task completion and review effort.
 - [ ] macOS Apple Silicon primary; validate TUI on macOS and Linux x86_64.
 - [ ] Measure the performance matrix below in release builds on named hardware.
 - [ ] Profile the slow paths, trim resident memory, and enforce the useful budgets.
+  Qualify first distant Mac navigation with chunked paragraph layout, contextual
+  Unicode fallbacks and large-file peak memory; mode implementation is not a
+  universal large-document latency or memory guarantee.
 - [ ] Verify 0 idle network traffic and no idle polling/redraw loop when no Secret
   Drop is open. Active access allows a 1-second status/expiry check; measure its cost.
 - [ ] Verify graceful startup/recovery when keychain, files, or terminal are unavailable.

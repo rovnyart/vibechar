@@ -114,8 +114,8 @@ Swift String's UTF-8 storage directly, avoiding an intermediate zeroed byte arra
 ordinary edits still submit deltas.
 
 Mac enables noncontiguous layout for a caret line up to 32,768 UTF-16 units and
-uses contiguous layout for longer lines: the latter avoided a measured typing
-regression for giant wrapped paragraphs. The choice updates from Rope metadata
+the initial bounded window in large-text mode, and uses contiguous layout beyond
+that window: the latter avoids a measured tail-input regression. The choice updates from Rope metadata
 on selection, edit, buffer and history changes, without scanning the source.
 Background AppKit layout is disabled; visible requests drive layout. Syntax/Find
 only clear their temporary attributes when they previously painted any. This
@@ -164,6 +164,40 @@ existing recovery, syntax, search and explicitly open Secret Drop timers.
 Mac shows compact primary counts, exact details in a live popover and a tooltip;
 TUI uses a width-adaptive status line and F11 details. Neither moves the caret or
 marks the document edited when updating counts.
+
+## Large-document policy
+
+`limits.rs` defines shared byte/history budgets and the 512 KiB large-document
+threshold. Both clients use it for visible mode state; existing syntax/search/
+tools/statistics/history engines enforce the same values. Pointer-word selection
+uses a shared, at-most-64-KiB logical line scan. Giant-line double click declines
+with a fragment-selection hint instead of flattening/scanning the line on input.
+
+Mac `BudgetTypesetter` subclasses the existing `NSATSTypesetter`. In wrapped large
+mode, `setParagraphGlyphRange` delegates a prefix of at most 256 Ki glyphs to native
+layout, with a zero-length separator at a composed-character boundary. No synthetic
+newline is inserted and no source/native offset translation is needed. Native
+input, Find/multicursor ranges, clipboard, history and file saving remain intact.
+Short paragraphs and standard/no-wrap mode use the original full paragraph range.
+Auto also prepares full native context for distant selections/paste, caching that
+choice for the active document revision so repeated navigation does not reflow it.
+A new prefix edit can return to bounded context. On forces bounded chunks; Off
+retains standard behavior. `setPlainText` suppresses transient installation-time
+selection callbacks so a temporary EOF does not accidentally expand context.
+The existing caret-line layout policy additionally enables noncontiguous layout
+inside the first budget window; the tail retains the faster contiguous path.
+
+Splitting bidi context could alter visual ordering. `Document::native_paragraph_budget`
+therefore returns zero for RTL/Arabic-number classes and directional embeddings,
+overrides and isolates. It uses [`unicode-bidi::bidi_class`](https://docs.rs/unicode-bidi/0.3.18/unicode_bidi/fn.bidi_class.html),
+pinned at 0.3.18. ASCII Rope chunks skip scalar decoding; the result is cached by
+revision. One oversized composed cluster also falls back to full native context.
+These fallbacks prioritize existing text semantics over a layout latency claim.
+
+Bounded context improves first presentation and local editing but the native
+layout driver may fill preceding holes on distant navigation. This is measured
+and disclosed as a trade-off, not hidden behind a first-frame-only benchmark.
+No renderer migration, permanent background prelayout or idle polling is added.
 
 ## Bridge ownership
 

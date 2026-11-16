@@ -364,17 +364,13 @@ impl Editor {
             nearest,
         )
     }
-    fn word_at(&self, position: usize) -> Range<usize> {
-        let line = self.document().line_index(position);
-        let mut start = self.document().line_start(line);
-        for word in self.document().line(line).split_word_bounds() {
-            let end = start + word.chars().count();
-            if position >= start && position < end {
-                return start..end;
-            }
-            start = end;
-        }
-        position..position
+    fn word_at(&mut self, position: usize) -> Range<usize> {
+        self.document()
+            .word_selection(position)
+            .unwrap_or_else(|error| {
+                self.message = error.into();
+                position..position
+            })
     }
     fn extend_drag(&mut self, column: u16, row: u16) {
         let drag = self.pointer.drag.as_mut().unwrap();

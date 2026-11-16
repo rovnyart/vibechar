@@ -3,7 +3,7 @@ use crate::{Document, TextEdit};
 use serde::Serialize;
 use std::{collections::HashSet, ops::Range, sync::mpsc, thread};
 
-pub const MAX_SOURCE: usize = 1024 * 1024;
+pub const MAX_SOURCE: usize = crate::limits::TOOL_BYTES;
 const MAX_OUTPUT: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Copy, Serialize)]

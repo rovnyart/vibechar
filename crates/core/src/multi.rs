@@ -633,7 +633,7 @@ fn word_at(document: &Document, position: usize) -> Result<Range<usize>, String>
     }
     let line = document.line_index(position);
     let start = document.line_start(line);
-    if document.text.line(line).len_bytes() > 64 * 1024 {
+    if document.text.line(line).len_bytes() > crate::limits::WORD_LINE_BYTES {
         return Err("Select a fragment in this long line first".into());
     }
     let text = document.line(line);

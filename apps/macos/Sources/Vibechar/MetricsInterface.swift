@@ -5,6 +5,7 @@ struct TextExtent:Decodable {
     let bytes:Int;let lines:Int;let characters:Int?;let words:Int?
 }
 struct TextMetrics:Decodable {
+    let large:Bool
     let document:UInt64;let revision:UInt64;let serial:UInt64
     let total:TextExtent;let selected:TextExtent
     let targets:Int;let selections:Int;let carets:Int;let busy:Bool;let limited:Bool
@@ -12,6 +13,7 @@ struct TextMetrics:Decodable {
     private func short(_ n:Int?)->String {
         guard let n else {return busy ? "…" : "—"}
         if n>=1_000_000 {return String(format:"%.1fM",Double(n)/1_000_000)}
+        if n>=100_000 {return String(format:"%.0fK",Double(n)/1_000)}
         if n>=1_000 {return String(format:"%.1fK",Double(n)/1_000)}
         return String(n)
     }

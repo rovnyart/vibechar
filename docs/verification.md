@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 138 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 141 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -26,7 +26,7 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Fifty real PTY scenarios across the baseline, selection, find, tools,
+- Fifty-three real PTY scenarios across the baseline, selection, find, tools,
   multicursor, history, large-text, editing/wrapping and counters suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
@@ -1095,6 +1095,76 @@ start and 956.231 ms first Backspace. This is a regression spot check, not a lat
 percentile, physical-screen measurement or improvement claim. The previously
 recorded giant-paragraph layout/edit cost remains unresolved. The numeric report
 is ignored `dist/counters-performance.json`.
+
+## Adaptive large-text mode (2026-11-16)
+
+Large-document mode is implemented in both clients from 512 KiB UTF-8. Its shared
+policy centralizes existing syntax/search/tools/statistics/history byte budgets
+and the new 64 KiB pointer-word scan limit. Oversized word double click no longer
+flattens a giant TUI line; Mac uses the same bounded word-selection adapter,
+including expansion of both endpoints during word drag. Smaller selected fragments
+remain usable by local tools in documents exceeding whole-tab limits.
+
+Mac retains its native text system and source offsets. `BudgetTypesetter` limits
+wrapped first-window context to 256 Ki glyphs, rounded to composed characters.
+Automatic prepares full native context for distant selection/paste and reuses it
+within that source revision; a prefix edit can return to bounded context. This
+avoids repeatedly reflowing unchanged text during start/end navigation. Native
+installation-time temporary EOF selections are ignored. On forces chunking and
+Off restores standard layout. Bidi text, no-wrap and oversized composed clusters
+retain standard context. A quiet lightning icon and tooltip explain mode state;
+TUI status/F11 disclose large-text state and the selected-tool budget.
+
+`scripts/check.sh` passed 141 Rust tests, formatting/Clippy, release builds, **53
+real PTY scenarios**, the Secret Drop helper and all native smokes. Final native
+selection/context refinements were followed by another complete native smoke and
+the large/counter PTY suites; final formatting/Clippy also passed. New coverage:
+
+- UTF-8 threshold crossings through edit/Undo, revision-bound bidi decisions,
+  invalid UTF-16/surrogate positions and bounded word selection.
+- Native single-paragraph first-load policy, prepared-context reuse on navigation,
+  a prefix edit returning to bounded context, Unicode crossing a chunk boundary,
+  NUL/CRLF, actual native caret/pointer geometry, word drag, full copy, delete,
+  Undo/Redo, byte-exact save, mode/wrap changes, tabs, private exclusion/grants and
+  narrow light/dark views. Synthetic snapshots are under ignored `dist/large-ui/`.
+- Real-PTY 512 KiB threshold/Undo, 10 MiB numbered word-selection refusal, clear
+  search/multicursor/tool limit errors, a small JSON selection transformed inside
+  the large file and reverted/saved exactly, plus large private recovery exclusion.
+
+The following are **medians of three fresh synthetic 10 MiB minified processes**,
+with three repeated EOF inputs per process. The baseline executable was copied
+from the `df2b899` development app before this work. These are CPU/bitmap work
+observations, not physical latency, cold-launch percentiles or a Sublime comparison.
+
+| Operation | Before | Adaptive Auto |
+| --- | ---: | ---: |
+| Show through first bitmap | 1,107.599 ms | 185.691 ms |
+| First typing at start | 976.278 ms | 61.930 ms |
+| First Backspace at start | 967.827 ms | 54.384 ms |
+| First EOF reveal after those edits | 8.281 ms | 979.654 ms |
+| Median EOF typing | 17.826 ms | 19.608 ms |
+
+The EOF result is a disclosed trade-off: full paragraph work is deferred until it
+is needed, rather than done before the first viewport/input. Once prepared, the
+same-revision start/end reveals in the candidate took about 4.116 / 3.392 ms. On
+forces chunks and can make a first distant reveal slower; Automatic avoids repeated
+small-context prefix work on this path. These results do not close the M6 latency
+or memory gates. Users can choose Off for standard native presentation.
+
+One actual 10 MiB synthetic clipboard-paste sample observed first-frame work of
+1,160.152 ms in Auto and 1,153.412 ms in Off. The next prefix input observed
+61.058 / 1,006.732 ms, while repeat EOF reveals were 3.400 / 3.122 ms. These single
+paste samples establish functional coverage and the adaptive path, not a paste
+latency percentile or a guaranteed performance equivalence.
+
+A separate final four-fixture sample observed first-frame work of 60.351 / 190.150
+ms for 1/10 MiB minified text and 21.169 / 23.948 ms for 1/10 MiB logs. Raw summaries
+are ignored `dist/large-before.json`, `large-current.json`, `large-paste-auto.json`,
+`large-paste-off.json` and `large-final-matrix.json`. Fixtures use isolated synthetic
+pasteboards, temporary recovery/files and in-memory source; no real clipboard or
+user recovery content was accessed. No permanent background prelayout, polling or
+source truncation was added. General peak memory, contextual/pathological Unicode,
+IME/accessibility, Linux and multi-terminal qualification remain M6 work.
 
 ## Initial performance observations
 

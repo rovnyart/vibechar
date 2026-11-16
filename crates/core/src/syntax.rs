@@ -19,8 +19,8 @@ use syntect::{
     parsing::{ParseState, SyntaxReference, SyntaxSet},
 };
 
-const MAX_BYTES: usize = 512 * 1024;
-const MAX_LINE: usize = 8192;
+const MAX_BYTES: usize = crate::limits::SYNTAX_BYTES;
+const MAX_LINE: usize = crate::limits::SYNTAX_LINE_BYTES;
 const MAX_LINES: usize = 10_000;
 const MAX_SPANS: usize = 20_000;
 const SLICE: Duration = Duration::from_millis(160);

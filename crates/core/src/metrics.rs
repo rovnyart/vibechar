@@ -16,7 +16,7 @@ const INLINE: usize = 4096;
 #[cfg(test)]
 #[path = "metrics_tests.rs"]
 mod tests;
-const MAX_BYTES: usize = 64 * 1024 * 1024;
+const MAX_BYTES: usize = crate::limits::METRICS_BYTES;
 
 #[derive(Clone, Default, Debug, Serialize, PartialEq, Eq)]
 pub struct Extent {
@@ -27,6 +27,7 @@ pub struct Extent {
 }
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Frame {
+    pub large: bool,
     pub document: u64,
     pub revision: u64,
     pub serial: u64,
@@ -133,6 +134,7 @@ impl Engine {
             line_end = last + 1;
         }
         let mut frame = Frame {
+            large: doc.is_large(),
             document: doc.id(),
             revision: doc.revision(),
             serial,

@@ -1,7 +1,7 @@
 //! Rope-local grapheme navigation and bounded, sparse logical-line geometry.
 use crate::Document;
 use ropey::RopeSlice;
-use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
+use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete, UnicodeSegmentation};
 use unicode_width::UnicodeWidthStr;
 
 #[cfg(test)]
@@ -384,6 +384,27 @@ pub(crate) fn count_text(text: RopeSlice<'_>, cancel: impl Fn() -> bool) -> Opti
 }
 
 impl Document {
+    /// Whole word/punctuation/space under a pointer; never flatten a giant line.
+    pub fn word_selection(&self, position: usize) -> Result<std::ops::Range<usize>, &'static str> {
+        if position > self.len_chars() {
+            return Err("Invalid caret");
+        }
+        let line = self.line_index(position);
+        let range = self.line_range(line);
+        let slice = self.text.slice(range.clone());
+        if slice.len_bytes() > crate::limits::WORD_LINE_BYTES {
+            return Err("Long line · drag to select a fragment");
+        }
+        let mut start = range.start;
+        for word in slice.to_string().split_word_bounds() {
+            let end = start + word.chars().count();
+            if position >= start && position < end {
+                return Ok(start..end);
+            }
+            start = end;
+        }
+        Ok(position..position)
+    }
     pub fn wrapped_row_at(&self, position: usize, width: usize) -> usize {
         let line = self.line_index(position);
         let range = self.line_range(line);

@@ -8,6 +8,7 @@ rust-version.workspace = true
 ropey.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
+unicode-bidi.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 libc.workspace = true

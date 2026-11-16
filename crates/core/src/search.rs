@@ -14,7 +14,7 @@ use std::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-pub const MAX_SOURCE: usize = 4 * 1024 * 1024;
+pub const MAX_SOURCE: usize = crate::limits::SEARCH_BYTES;
 pub const MAX_MATCHES: usize = 10_000;
 pub const MAX_QUERY: usize = 1024;
 pub const MAX_REPLACEMENT: usize = 64 * 1024;

@@ -41,6 +41,8 @@ window; no dashboard, card grid, or permanent AI chat panel is required.
 - [x] Quiet line/column indicators, visible in narrow/private layouts; visual wrap toggle.
 - [x] Logical line-number gutter with warm active-line accent and quiet continuation
   dots; adaptive selection/text counters and a click-to-open numerical detail table.
+- [x] Quiet large-text indicator, automatic/manual Mac layout policy and visible
+  operation limits; preserve the canvas, logical offsets and private labels.
 - [x] Opaque text canvas; use native materials only where they improve chrome.
 - [ ] Preserve native selection, IME, clipboard, and accessibility.
 

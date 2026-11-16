@@ -15,6 +15,9 @@ def main():
     parser.add_argument("--samples",type=int,default=30)
     parser.add_argument("--timeout",type=float,default=50)
     parser.add_argument("--kind",choices=["minified","logs"])
+    parser.add_argument("--wrap",choices=["auto","on","off"],default="auto")
+    parser.add_argument("--large-mode",choices=["auto","on","off"],default="auto")
+    parser.add_argument("--load",choices=["open","paste"],default="open")
     parser.add_argument("--mib",type=int,choices=[1,10])
     parser.add_argument("--repeat",type=int,default=1,help="Fresh processes per fixture")
     options=parser.parse_args()
@@ -26,7 +29,7 @@ def main():
             for mib in [options.mib] if options.mib else [1,10]:
                 print(f"AppKit fixture: {kind}, {mib} MiB, run {run+1}/{options.repeat}",file=sys.stderr,flush=True)
                 result=subprocess.run([str(options.binary),"--profile-appkit","--kind",kind,
-                                       "--mib",str(mib),"--samples",str(options.samples)],
+                                       "--mib",str(mib),"--samples",str(options.samples),"--wrap",options.wrap,"--large-mode",options.large_mode,"--load",options.load],
                                       stdout=subprocess.PIPE,text=True,check=True,timeout=options.timeout)
                 results.append(json.loads(result.stdout))
     print(json.dumps(results,indent=2))

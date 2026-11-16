@@ -12,6 +12,12 @@ typedef struct VcDocument VcDocument;
 VcDocument *vc_document_new(const uint8_t *text, size_t length);
 void vc_document_free(VcDocument *document);
 size_t vc_document_length(const VcDocument *document);
+bool vc_document_large(const VcDocument *document);
+size_t vc_native_paragraph_budget(void);
+// Returns zero when native paragraph context is needed for bidi text.
+size_t vc_document_native_budget(const VcDocument *document);
+// Bounded pointer-word selection in UTF-16. False for invalid or >64 KiB lines.
+bool vc_document_word_range(const VcDocument *document, size_t offset, size_t *start, size_t *length);
 // Logical line content length in UTF-16 units at a UTF-16 offset. SIZE_MAX if invalid.
 size_t vc_document_line_length(const VcDocument *document, size_t utf16_offset);
 size_t vc_document_line_count(const VcDocument *document);
