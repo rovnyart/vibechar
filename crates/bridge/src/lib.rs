@@ -172,6 +172,21 @@ pub unsafe extern "C" fn vc_multi_edit(
         let Some(text) = input(text, length) else {
             return 0;
         };
+        if matches!(kind, 4 | 6 | 7) {
+            let action = match kind {
+                4 => vibechar_core::editing::Action::Newline,
+                6 => vibechar_core::editing::Action::Tab,
+                _ => vibechar_core::editing::Action::Outdent,
+            };
+            return match multi.0.editing(doc, action) {
+                Ok(true) => 1,
+                Ok(false) => 2,
+                Err(error) => {
+                    multi.0.report_error(error);
+                    0
+                }
+            };
+        }
         if kind == 5 {
             return match multi.0.paste(doc, text) {
                 Ok(true) => 1,
@@ -182,15 +197,13 @@ pub unsafe extern "C" fn vc_multi_edit(
                 }
             };
         }
-        let newline = kind == 4;
         let kind = match kind {
-            0 | 4 => vibechar_core::EditKind::Isolated,
+            0 => vibechar_core::EditKind::Isolated,
             1 => vibechar_core::EditKind::Typing,
             2 => vibechar_core::EditKind::Backspace,
             3 => vibechar_core::EditKind::DeleteForward,
             _ => return 0,
         };
-        let text = if newline { doc.newline() } else { text };
         match multi.0.edit(doc, text, kind) {
             Ok(true) => 1,
             Ok(false) => 2,
@@ -544,6 +557,89 @@ pub unsafe extern "C" fn vc_document_line_length(
         };
         let range = doc.line_range(doc.line_index(position));
         doc.utf16_from_char(range.end).unwrap() - doc.utf16_from_char(range.start).unwrap()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_position(
+    document: *const VcDocument,
+    offset: usize,
+    line: *mut usize,
+    column: *mut usize,
+) -> bool {
+    guard(|| {
+        let (Some(doc), Some(line), Some(column)) =
+            (document.as_ref(), line.as_mut(), column.as_mut())
+        else {
+            return false;
+        };
+        let Ok(at) = doc.char_from_utf16(offset) else {
+            return false;
+        };
+        *line = doc.line_index(at) + 1;
+        *column = doc.display_column(at) + 1;
+        true
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_editing(
+    document: *mut VcDocument,
+    start: usize,
+    length: usize,
+    action: u32,
+) -> *mut VcHistory {
+    guard(|| {
+        let Some(doc) = document.as_mut() else {
+            return ptr::null_mut();
+        };
+        let Some(end) = start.checked_add(length) else {
+            return ptr::null_mut();
+        };
+        let (Ok(start), Ok(end)) = (doc.char_from_utf16(start), doc.char_from_utf16(end)) else {
+            return ptr::null_mut();
+        };
+        let action = match action {
+            1 => vibechar_core::editing::Action::Tab,
+            2 => vibechar_core::editing::Action::Outdent,
+            3 => vibechar_core::editing::Action::Newline,
+            _ => return ptr::null_mut(),
+        };
+        let Ok(plan) = doc.editing_plan(
+            &[vibechar_core::multi::Selection {
+                anchor: start,
+                head: end,
+            }],
+            action,
+        ) else {
+            return ptr::null_mut();
+        };
+        let source_length = doc.utf16_from_char(doc.len_chars()).unwrap();
+        let mut edits = Some(Vec::new());
+        let mut budget = 1024 * 1024usize - 256;
+        for edit in plan.edits.iter().rev() {
+            let cost = edit.text.len().saturating_mul(6).saturating_add(128);
+            let Some(changes) = edits.as_mut() else {
+                break;
+            };
+            if cost > budget || changes.len() >= 4096 {
+                edits = None;
+                break;
+            }
+            budget -= cost;
+            let start = doc.utf16_from_char(edit.range.start).unwrap();
+            changes.push(serde_json::json!({"start":start,"length":doc.utf16_from_char(edit.range.end).unwrap()-start,"text":edit.text}));
+        }
+        let Ok(changed) = doc.replace_many(&plan.edits) else {
+            return ptr::null_mut();
+        };
+        let s = &plan.selections[0];
+        let r = s.range();
+        let start = doc.utf16_from_char(r.start).unwrap();
+        let json=serde_json::json!({"changed":changed,"start":start,"length":doc.utf16_from_char(r.end).unwrap()-start,
+            "history":{"cursor":doc.utf16_from_char(s.head).unwrap(),"source_length":source_length,
+            "target_length":doc.utf16_from_char(doc.len_chars()).unwrap(),"edits":edits}}).to_string();
+        Box::into_raw(Box::new(VcHistory(json)))
     })
 }
 
@@ -1216,6 +1312,46 @@ pub unsafe extern "C" fn vc_session_restore(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn indentation_frame_and_position_validate_utf16_and_preserve_one_history_step() {
+        unsafe {
+            let source = "я\t👩‍💻e\u{301}\r\nx";
+            let doc = vc_document_new(source.as_ptr(), source.len());
+            let (mut line, mut column) = (0, 0);
+            assert!(vc_document_position(doc, 7, &mut line, &mut column));
+            assert_eq!((line, column), (1, 7));
+            assert!(!vc_document_position(doc, 3, &mut line, &mut column));
+            assert!(vc_document_editing(doc, 3, 0, 1).is_null());
+            assert!(vc_document_editing(doc, 0, usize::MAX, 1).is_null());
+            assert!(vc_document_editing(doc, 0, 0, 99).is_null());
+            assert_eq!((*doc).revision(), 0);
+            let frame = history_json(vc_document_editing(doc, 0, 11, 1));
+            assert_eq!(frame["start"], 4);
+            assert_eq!(frame["length"], 11);
+            assert_eq!(frame["history"]["edits"][0]["text"], "    ");
+            assert_eq!((*doc).text(), format!("    {source}"));
+            let mut cursor = 0;
+            assert!(vc_document_undo(doc, &mut cursor));
+            assert_eq!((*doc).text(), source);
+            assert!(!vc_document_dirty(doc));
+            vc_document_free(doc);
+        }
+    }
+    #[test]
+    fn large_indentation_frame_falls_back_after_applying_once() {
+        unsafe {
+            let source = "x\n".repeat(5000);
+            let doc = vc_document_new(source.as_ptr(), source.len());
+            let frame = history_json(vc_document_editing(doc, 0, source.len(), 1));
+            assert!(frame["history"]["edits"].is_null());
+            assert_eq!((*doc).revision(), 1);
+            assert_eq!((*doc).text(), "    x\n".repeat(5000));
+            let mut at = 0;
+            assert!(vc_document_undo(doc, &mut at));
+            assert_eq!((*doc).text(), source);
+            vc_document_free(doc);
+        }
+    }
     unsafe fn history_json(frame: *mut VcHistory) -> serde_json::Value {
         assert!(!frame.is_null());
         let length = vc_history_json(frame, ptr::null_mut(), 0);

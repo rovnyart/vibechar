@@ -18,6 +18,8 @@ mod multi;
 mod selection;
 #[path = "tools.rs"]
 pub(crate) mod tools;
+#[path = "wrapping.rs"]
+mod wrapping;
 
 pub struct Editor {
     pub session: Session,
@@ -26,6 +28,9 @@ pub struct Editor {
     pointer: selection::Pointer,
     pub top: usize,
     pub left: usize,
+    pub wrap: bool,
+    wrap_top: usize,
+    wrap_end: bool,
     pub message: String,
     pub recovery_status: &'static str,
     pub save_prompt: Option<String>,
@@ -57,6 +62,9 @@ impl Editor {
             pointer: selection::Pointer::default(),
             top: 0,
             left: 0,
+            wrap: false,
+            wrap_top: 0,
+            wrap_end: false,
             message: String::new(),
             recovery_status: "Saving locally…",
             save_prompt: None,
@@ -134,6 +142,7 @@ impl Editor {
             .is_ok()
         {
             self.cursor = start + text.chars().count();
+            self.wrap_end = false;
             self.anchor = None;
             self.pointer = selection::Pointer::default();
             self.reveal_cursor = true;
@@ -226,7 +235,7 @@ impl Editor {
             {
                 self.insert_with_kind(&ch.to_string(), EditKind::Typing, false)
             }
-            KeyCode::Enter => self.insert(self.document().newline()),
+            KeyCode::Enter => self.editing(vibechar_core::editing::Action::Newline),
             KeyCode::F(4) => self.save_as(),
             KeyCode::F(2) => {
                 self.multi.clear();
@@ -245,8 +254,14 @@ impl Editor {
                 self.session.revoke_all_drops();
                 self.message = "All agent access closed in this editor.".into();
             }
-            KeyCode::Tab => self.insert("    "),
+            KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.editing(vibechar_core::editing::Action::Outdent)
+            }
+            KeyCode::Tab => self.editing(vibechar_core::editing::Action::Tab),
+            KeyCode::BackTab => self.editing(vibechar_core::editing::Action::Outdent),
+            KeyCode::F(10) => self.toggle_wrap(),
             KeyCode::Backspace => {
+                self.wrap_end = false;
                 if self.delete_selection() {
                     return false;
                 }
@@ -263,6 +278,7 @@ impl Editor {
                 }
             }
             KeyCode::Delete => {
+                self.wrap_end = false;
                 if self.delete_selection() {
                     return false;
                 }
@@ -280,6 +296,10 @@ impl Editor {
     }
 
     pub fn update_viewport(&mut self, body: Rect) {
+        if self.wrap {
+            self.update_wrapped_viewport(body);
+            return;
+        }
         if body != self.viewport {
             let line = self.document().line_index(self.cursor);
             let column = self.cursor_column();
@@ -358,6 +378,7 @@ impl Editor {
         self.close_pending = false;
         match code {
             KeyCode::Char('a') => {
+                self.wrap_end = false;
                 self.multi.clear();
                 self.anchor = Some(0);
                 self.cursor = self.document().len_chars();
@@ -379,6 +400,7 @@ impl Editor {
             KeyCode::Char('z') => {
                 self.multi.clear();
                 if let Some(cursor) = self.session.active_mut().document.undo() {
+                    self.wrap_end = false;
                     self.cursor = cursor;
                     self.anchor = None;
                 }
@@ -386,6 +408,7 @@ impl Editor {
             KeyCode::Char('y') => {
                 self.multi.clear();
                 if let Some(cursor) = self.session.active_mut().document.redo() {
+                    self.wrap_end = false;
                     self.cursor = cursor;
                     self.anchor = None;
                 }
@@ -521,6 +544,10 @@ impl Editor {
     }
 
     fn vertical(&mut self, direction: isize) {
+        if self.wrap {
+            self.vertical_wrapped(direction);
+            return;
+        }
         let line = self.document().line_index(self.cursor);
         let target = line
             .saturating_add_signed(direction)
@@ -547,6 +574,8 @@ impl Editor {
         self.tools = None;
         self.restore_selection();
         self.top = 0;
+        self.wrap_top = 0;
+        self.wrap_end = false;
         self.left = 0;
         self.reveal_cursor = true;
         self.message.clear();

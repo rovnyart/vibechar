@@ -9,6 +9,10 @@ struct HistoryUpdate: Decodable {
     struct Edit: Decodable {let start:Int;let length:Int;let text:String}
     let cursor:Int;let source_length:Int;let target_length:Int;let edits:[Edit]?
 }
+struct EditingUpdate:Decodable {
+    let changed:Bool;let start:Int;let length:Int;let history:HistoryUpdate
+    var selection:NSRange {NSRange(location:start,length:length)}
+}
 
 @MainActor
 final class RustDocument {
@@ -41,6 +45,17 @@ final class RustDocument {
     var isDirty: Bool { vc_document_dirty(handle) }
     var revision: UInt64 { vc_document_revision(handle) }
     func lineLength(at offset:Int)->Int {vc_document_line_length(handle,offset)}
+    func position(at offset:Int)->(Int,Int)? {
+        var line=0,column=0
+        return vc_document_position(handle,offset,&line,&column) ? (line,column) : nil
+    }
+    func editing(_ action:UInt32,range:NSRange)->EditingUpdate? {
+        guard let frame=vc_document_editing(handle,range.location,range.length,action) else {return nil}
+        defer {vc_history_free(frame)}
+        let count=vc_history_json(frame,nil,0);var bytes=[UInt8](repeating:0,count:count)
+        precondition(bytes.withUnsafeMutableBufferPointer {vc_history_json(frame,$0.baseAddress,$0.count)}==count)
+        return try! JSONDecoder().decode(EditingUpdate.self,from:Data(bytes))
+    }
 
     var text: String {
         let count = vc_document_length(handle)

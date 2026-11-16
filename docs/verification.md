@@ -1,6 +1,6 @@
 # Prototype verification
 
-Started: 2026-11-11. Latest increment: 2026-11-13.
+Started: 2026-11-11. Latest increment: 2026-11-16.
 This records local prototype evidence, not MVP release acceptance.
 
 ## Environment
@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 120 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 130 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -26,8 +26,8 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Forty-two real PTY scenarios across the baseline, selection, find, tools,
-  multicursor, history and large-text suites,
+- Forty-six real PTY scenarios across the baseline, selection, find, tools,
+  multicursor, history, large-text and editing/wrapping suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -999,6 +999,55 @@ single observations. Reports are ignored `dist/first-show-series-{before,after}.
 and `dist/first-show-matrix-after.json`. Temporary probe sources/executables and
 the instrumented pre-fix executable were removed. User recovery and the real
 clipboard were not accessed. The remaining M1/M3/M6 performance gates stay open.
+
+### Feedback increment: indentation, wrapping and cursor position (2026-11-16)
+
+Both frontends now invoke shared Rust indentation/newline plans. Tab uses four-cell
+stops at carets and four-space prefixes for selected lines. Shift+Tab removes one
+leading tab or up to four spaces; overlapping multicursor line targets deduplicate.
+Core plans map both endpoints; TUI retains selection direction and Mac updates its
+selected range. A half-open range ending at the next line's start excludes that
+line. Enter copies leading spaces/tabs before
+the replacement start. Reading the first Rope line also fixes LF insertion into
+CRLF scratches initialized by paste/stdin. Explicit edits share one Undo step;
+no-op outdents retain revision/history/grants. Commands enforce line/output budgets.
+
+Mac receives bounded UTF-16 native patches with snapshot fallback after applying
+once. Its footer keeps logical line:column visible at 420 pt, including private
+tabs. View → Wrap Lines / Option+Cmd+W toggles actual native layout/horizontal
+scrolling. The native menu key event, wrapped/unwrapped fragment geometry, wide
+resize, Unicode/CRLF, selections, multiple carets, history and private grant behavior
+were exercised. Wrap toggles preserve text/revision/selection and grants; real
+indent edits revoke a private grant. Light/dark bitmap captures at 420/880 pt were
+generated under ignored `dist/editing-ui/`; wrapped dark/narrow and unwrapped
+light/wide captures were visually inspected.
+
+TUI F10 toggles greedy grapheme/cell wrapping. Sparse row checkpoints share the
+existing bounded line cache and invalidate affected suffixes after edits; they do
+not materialize the document's wrapped text. Drawing, mouse selection, drag/wheel
+scrolling, arrow navigation and Home/End share visual-row geometry. Logical status
+coordinates remain stable. End retains upstream affinity at a wrap boundary so
+repeating it does not advance through subsequent rows. Real newline boundaries
+avoid artificial blank rows. Mac defaults wrapped, TUI unwrapped; this session
+view preference is excluded from checkpoints and never changes file/clipboard
+bytes, dirty state or Undo. Their native word/cell break points can differ.
+
+The final full `bash scripts/check.sh` passed 130 Rust tests, formatting/Clippy,
+release builds, 46 real PTY scenarios, the independent Secret Drop helper and every
+native smoke; the signed development app was rebuilt. New Rust coverage includes
+UTF-16 rejection/positions, bounded patch fallback after applying once, indentation
+selection mapping, CRLF, multicursor history, sparse cache coarsening/invalidation,
+Unicode visual rows, resize, mouse/drag and viewport-only recovery behavior.
+
+Four new real-PTY scenarios verify block indentation/outdent/newline/Undo with
+Russian/emoji/CRLF; wrapped hit testing and copy across visual rows without added
+newlines; actual terminal resize and byte-exact save; private recovery exclusion
+and explicit save conversion; and 10 MiB wrapped tail navigation, typing/history
+and resize with an unchanged original file. The large case is regression coverage,
+not a new latency/memory qualification. All fixtures use temporary files/state and
+synthetic clipboards. User recovery and the real clipboard were not accessed.
+The previously recorded giant AppKit paragraph cost and broader IME/accessibility,
+memory, Linux and release qualification remain open.
 
 ## Initial performance observations
 

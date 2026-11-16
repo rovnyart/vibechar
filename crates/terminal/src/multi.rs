@@ -2,6 +2,7 @@ use super::*;
 
 impl Editor {
     pub(super) fn sync_multi(&mut self) {
+        self.wrap_end = false;
         if let Some(primary) = self.multi.primary() {
             self.cursor = primary.head;
             self.anchor = (primary.anchor != primary.head).then_some(primary.anchor);

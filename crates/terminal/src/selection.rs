@@ -50,6 +50,7 @@ impl Editor {
         self.pointer = Pointer::default();
     }
     fn set_caret(&mut self, position: usize, extend: bool) {
+        self.wrap_end = false;
         if extend {
             self.anchor.get_or_insert(self.cursor);
         } else {
@@ -93,6 +94,8 @@ impl Editor {
             KeyCode::Home => {
                 if control {
                     0
+                } else if self.wrap {
+                    self.wrapped_edge(false)
                 } else {
                     self.document()
                         .line_start(self.document().line_index(self.cursor))
@@ -101,6 +104,8 @@ impl Editor {
             KeyCode::End => {
                 if control {
                     self.document().len_chars()
+                } else if self.wrap {
+                    self.wrapped_edge(true)
                 } else {
                     self.line_end()
                 }
@@ -112,6 +117,7 @@ impl Editor {
             _ => return false,
         };
         self.set_caret(target, extend);
+        self.wrap_end = self.wrap && key.code == KeyCode::End && !control;
         true
     }
     pub(super) fn delete_selection(&mut self) -> bool {
@@ -127,6 +133,7 @@ impl Editor {
             .is_ok()
         {
             self.cursor = range.start;
+            self.wrap_end = false;
             self.anchor = None;
             self.pointer = Pointer::default();
             self.reveal_cursor = true;
@@ -222,6 +229,14 @@ impl Editor {
                 self.cancel_private_quit();
                 self.close_pending = false;
                 self.pointer.last_click = None;
+                if self.wrap {
+                    self.scroll_wrapped(if event.kind == MouseEventKind::ScrollUp {
+                        -3
+                    } else {
+                        3
+                    });
+                    return;
+                }
                 let max_top = self
                     .document()
                     .line_count()
@@ -234,6 +249,7 @@ impl Editor {
                 self.reveal_cursor = false;
             }
             MouseEventKind::Down(MouseButton::Left) => {
+                self.wrap_end = false;
                 self.pump_multi();
                 if self.multi.has_queued_input() {
                     self.message = "Finishing matching · click again shortly".into();
@@ -277,6 +293,21 @@ impl Editor {
     fn mouse_position(&self, column: u16, row: u16, nearest: bool) -> usize {
         let row = row.clamp(self.viewport.y, self.viewport.bottom() - 1);
         let column = column.clamp(self.viewport.x, self.viewport.right() - 1);
+        if self.wrap {
+            let rows = self.screen_rows(usize::from(self.viewport.height));
+            let Some(visual) = rows.get(usize::from(row - self.viewport.y)) else {
+                return self.document().len_chars();
+            };
+            let start = self.document().line_start(visual.line) + visual.window.character;
+            let end = start + visual.window.text.chars().count();
+            return self
+                .position_at_column(
+                    visual.line,
+                    visual.window.column + usize::from(column - self.viewport.x),
+                    nearest,
+                )
+                .clamp(start, end);
+        }
         let line = self.top + usize::from(row - self.viewport.y);
         if line >= self.document().line_count() {
             return self.document().len_chars();
@@ -337,6 +368,16 @@ impl Editor {
             return;
         };
         let (column, row) = (drag.column, drag.row);
+        if self.wrap {
+            if row < self.viewport.y {
+                self.scroll_wrapped(-1);
+            }
+            if row >= self.viewport.bottom() {
+                self.scroll_wrapped(1);
+            }
+            self.extend_drag(column, row);
+            return;
+        }
         let max_top = self
             .document()
             .line_count()

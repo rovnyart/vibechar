@@ -12,6 +12,10 @@ struct VibecharApp {
             AppDelegate.firstPresentationSmokeTest()
             return
         }
+        if CommandLine.arguments.contains("--smoke-editing") {
+            AppDelegate.editingSmokeTest()
+            return
+        }
         if CommandLine.arguments.contains("--profile-snapshots") {
             profileSnapshotCopies()
             return
@@ -51,6 +55,7 @@ struct VibecharApp {
             AppDelegate.inputSmokeTest()
             AppDelegate.presentationHistorySmokeTest()
             AppDelegate.firstPresentationSmokeTest()
+            AppDelegate.editingSmokeTest()
             AppDelegate.closeSmokeTest()
             AppDelegate.saveAsSmokeTest()
             AppDelegate.syntaxSmokeTest()
@@ -173,6 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         return controller
     }()
     private var fontSize: CGFloat = 15
+    private var wrapLines = true
     private var closingWindow = false
     private var recovery: SessionRecovery?
     private var pendingSave: DispatchWorkItem?
@@ -316,6 +322,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         print("First presentation native smoke passed: stable initial width, Unicode/CRLF/NUL, first input/history, copy-all, tab/caret restoration, private, narrow and light/dark")
     }
 
+    static func editingSmokeTest() {
+        _ = NSApplication.shared
+        let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false);app.makeMenus()
+        defer {app.closeAllAgentAccess();app.syntaxWork?.cancel();app.syntaxTimer?.invalidate();app.multiController.cancel();app.clipboard.clearContents();app.window.delegate=nil;app.window.close()}
+        func check(_ text:String) {precondition(app.document.text==text && app.textView.string==text,"Shared editing and native storage must agree")}
+        func command(_ selector:Selector) {app.textView.doCommand(by:selector)}
+        func toggleWrap() {
+            let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:[.command,.option],timestamp:0,windowNumber:app.window.windowNumber,context:nil,characters:"w",charactersIgnoringModifiers:"w",isARepeat:false,keyCode:13)!
+            precondition(NSApp.mainMenu!.performKeyEquivalent(with:event),"Wrap shortcut must dispatch through the native menu")
+        }
+        let sample="  я👩‍💻\r\n\tb\r\nlast"
+        app.session.open(sample);app.document.markSaved();app.showActiveBuffer()
+        let end=(sample as NSString).range(of:"last").location
+        app.textView.setSelectedRange(NSRange(location:0,length:end))
+        command(#selector(NSResponder.insertTab(_:)));check("      я👩‍💻\r\n    \tb\r\nlast")
+        let indentedSelection=app.textView.selectedRange()
+        app.applyHistory(redo:false);check(sample);precondition(!app.document.isDirty)
+        app.applyHistory(redo:true)
+        app.textView.setSelectedRange(indentedSelection)
+        command(#selector(NSResponder.insertBacktab(_:)));check(sample)
+        app.textView.setSelectedRange(NSRange(location:1,length:0));command(#selector(NSResponder.insertTab(_:)))
+        check("     я👩‍💻\r\n\tb\r\nlast");precondition(app.footer.position.stringValue=="1:5")
+        app.applyHistory(redo:false);check(sample)
+        app.textView.setSelectedRange(NSRange(location:8,length:0));command(#selector(NSResponder.insertNewline(_:)))
+        check("  я👩‍💻\r\n  \r\n\tb\r\nlast");precondition(app.footer.position.stringValue=="2:3")
+        app.applyHistory(redo:false);check(sample)
+
+        let long=String(repeating:"  👩‍💻x",count:40)+"\r\nend"
+        app.session.open(long);app.document.markSaved();app.showActiveBuffer()
+        let selection=NSRange(location:40,length:8);app.textView.setSelectedRange(selection)
+        let revision=app.document.revision
+        let output=ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map {URL(fileURLWithPath:$0,isDirectory:true)}
+        if let output {try! FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)}
+        for (name,appearance) in [("light",NSAppearance.Name.aqua),("dark",.darkAqua)] {
+            app.window.appearance=NSAppearance(named:appearance)
+            for width in [420,880] {
+                app.window.setContentSize(NSSize(width:width,height:600));app.window.contentView!.layoutSubtreeIfNeeded()
+                var heights:[CGFloat]=[]
+                for wrapped in [true,false] {
+                    if app.wrapLines != wrapped {toggleWrap()}
+                    app.textView.layoutManager!.ensureLayout(for:app.textView.textContainer!)
+                    let glyph=app.textView.layoutManager!.glyphIndexForCharacter(at:(long as NSString).range(of:"\r\n").location-1)
+                    heights.append(app.textView.layoutManager!.lineFragmentRect(forGlyphAt:glyph,effectiveRange:nil).minY)
+                    check(long);precondition(app.document.revision==revision && !app.document.isDirty && app.textView.selectedRange()==selection)
+                    precondition(app.textView.textContainer!.widthTracksTextView==wrapped && app.textView.enclosingScrollView!.hasHorizontalScroller == !wrapped)
+                    let root=app.window.contentView!;root.layoutSubtreeIfNeeded()
+                    precondition(app.footer.bounds.contains(app.footer.position.frame) && !app.footer.position.isHidden)
+                    if let output {
+                        app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                            let bitmap=root.bitmapImageRepForCachingDisplay(in:root.bounds)!
+                            root.cacheDisplay(in:root.bounds,to:bitmap)
+                            try! bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("editing-\(wrapped ? "wrap" : "nowrap")-\(name)-\(width).png"))
+                        }
+                    }
+                }
+                precondition(heights[0]>heights[1],"Wrapping must change the actual native line geometry")
+            }
+        }
+        app.session.open("short");app.showActiveBuffer()
+        if app.wrapLines {toggleWrap()}
+        app.window.setContentSize(NSSize(width:1600,height:600));app.window.contentView!.layoutSubtreeIfNeeded()
+        precondition(app.textView.frame.width>=app.textView.enclosingScrollView!.contentSize.width,"Unwrapped editor must fill an expanded viewport")
+        app.newPrivateScratch();app.textView.insertText("  foo\r\n\tfoo",replacementRange:NSRange(location:NSNotFound,length:0))
+        let privateSource=app.document.text
+        _=try! app.session.shareForAgent(executable:"/synthetic/vibechar");precondition(app.session.dropActive)
+        let privateRevision=app.document.revision
+        toggleWrap();precondition(app.session.dropActive && app.document.revision==privateRevision)
+        app.textView.setSelectedRange(NSRange(location:2,length:3));app.selectAllOccurrences()
+        let deadline=Date(timeIntervalSinceNow:5)
+        while app.multiController.state.busy {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.multiController.poll();precondition(Date()<deadline)}
+        precondition(app.multiController.state.selections.count==2)
+        command(#selector(NSResponder.insertTab(_:)));check("      foo\r\n    \tfoo");precondition(!app.session.dropActive)
+        command(#selector(NSResponder.insertBacktab(_:)));check(privateSource)
+        command(#selector(NSResponder.insertNewline(_:)));check("  \r\n  \r\n\t\r\n\t")
+        app.applyHistory(redo:false);check(privateSource)
+        print("Editing native smoke passed: shared Tab/Shift+Tab/Enter, UTF-16/CRLF, one Undo, position, actual wrap geometry, resize/light/dark, selections, multiple carets and private grant behavior")
+    }
+
     static func presentationHistorySmokeTest() {
         let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false)
         defer {app.syntaxWork?.cancel();app.syntaxGeneration &+= 1;app.syntaxTimer?.invalidate();app.multiController.cancel();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()}
@@ -441,6 +525,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.delegate = self
         textView.onBreakUndoGroup = { [weak self] in self?.document.breakUndoGroup() }
+        textView.onEditingAction = { [weak self] action in self?.performEditing(action) ?? false }
         textView.setAccessibilityLabel("Text editor")
         textView.setAccessibilityHelp("Type or paste text. Command-T creates a tab. Command-S saves a file.")
         applyTypography()
@@ -591,6 +676,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         previousMatchItem.keyEquivalentModifierMask = [.command,.shift]; previousMatchItem.target=self; edit.addItem(previousMatchItem)
         addMenu("Edit", submenu: edit, to: menu)
         let view = NSMenu(title: "View")
+        let wrap=NSMenuItem(title:"Wrap Lines",action:#selector(toggleWrapLines),keyEquivalent:"w")
+        wrap.keyEquivalentModifierMask=[.command,.option];wrap.target=self;view.addItem(wrap)
+        view.addItem(.separator())
         let language = NSMenuItem(title: "Choose Language…", action: #selector(showLanguagePicker), keyEquivalent: "l")
         language.keyEquivalentModifierMask = [.command, .control]
         language.target = self
@@ -662,10 +750,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     func textViewDidChangeSelection(_ notification: Notification) {
         updateLayoutPolicy(at:textView.selectedRange().location)
         multiController.selectionChanged()
+        updatePosition()
         if !textView.isPerformingEdit && !multiController.syncing {
             document.breakUndoGroup()
             scheduleSessionSave(quiet: true)
         }
+    }
+
+    private func performEditing(_ action:UInt32)->Bool {
+        if textView.hasMarkedText() {return false}
+        guard multipleInputReady() else {return true}
+        guard let update=document.editing(action,range:textView.selectedRange()) else {NSSound.beep();return true}
+        if !textView.applyHistoryUpdate(update.history) {textView.setPlainText(document.text)}
+        textView.setSelectedRange(update.selection)
+        textView.scrollRangeToVisible(NSRange(location:update.history.cursor,length:0))
+        updatePosition()
+        if update.changed {textDidChange(Notification(name:NSText.didChangeNotification))}
+        return true
+    }
+    private func updatePosition() {
+        let offset=multiController.state.current?.head ?? textView.selectedRange().location
+        if let (line,column)=document.position(at:offset) {footer.showPosition(line:line,column:column)}
+    }
+    @objc private func toggleWrapLines() {
+        wrapLines.toggle()
+        guard let scroll=textView.enclosingScrollView,let container=textView.textContainer else {return}
+        textView.isHorizontallyResizable = !wrapLines
+        textView.autoresizingMask = wrapLines ? [.width] : []
+        container.widthTracksTextView=wrapLines
+        if wrapLines {
+            textView.setFrameSize(NSSize(width:scroll.contentSize.width,height:textView.frame.height))
+        }
+        container.containerSize=NSSize(width:wrapLines ? max(1,scroll.contentSize.width-2*textView.textContainerInset.width) : CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude)
+        scroll.hasHorizontalScroller = !wrapLines
+        textView.scrollRangeToVisible(NSRange(location:textView.selectedRange().location,length:0))
+        textView.needsDisplay=true
     }
 
     private func updateLayoutPolicy(at position:Int) {
@@ -794,6 +913,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func refreshTitle() {
+        updatePosition()
         window.title = "\(session.label(session.active)) — vibechar"
         window.isDocumentEdited = session.isModifiedFile(session.active)
         header.update(tabs: (0..<session.count).map {
@@ -987,6 +1107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleWrapLines) {menuItem.state=wrapLines ? .on : .off}
         if menuItem.action == #selector(selectNumberedBuffer(_:)) {
             return menuItem.tag == 9 || (menuItem.tag >= 1 && menuItem.tag <= session.count)
         }

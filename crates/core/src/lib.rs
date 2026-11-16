@@ -1,6 +1,7 @@
 //! Shared document storage and edit history for the native and terminal clients.
 
 pub mod checkpoint;
+pub mod editing;
 pub mod handoff;
 pub mod multi;
 pub mod search;
@@ -500,7 +501,16 @@ impl Document {
     }
 
     pub fn newline(&self) -> &'static str {
-        if self.crlf {
+        // Scratches may receive their first line endings by paste/stdin rather
+        // than construction. Read the first Rope line without copying/scanning it.
+        let first = self.text.line(0);
+        let n = first.len_chars();
+        let crlf = if n > 0 && first.char(n - 1) == '\n' {
+            n > 1 && first.char(n - 2) == '\r'
+        } else {
+            self.crlf
+        };
+        if crlf {
             "\r\n"
         } else {
             "\n"

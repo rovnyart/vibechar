@@ -12,6 +12,7 @@ enum Pending {
     Edit(String, EditKind),
     Paste(String),
     Move(u32, bool),
+    Editing(crate::editing::Action),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -294,6 +295,7 @@ impl Multi {
                     self.edit(document, &text, kind).map(|_| ())
                 }
                 Pending::Move(direction, extend) => self.navigate(document, direction, extend),
+                Pending::Editing(action) => self.editing(document, action).map(|_| ()),
                 Pending::Paste(text) => {
                     self.queued_bytes -= text.len();
                     self.paste(document, &text).map(|_| ())
@@ -356,6 +358,32 @@ impl Multi {
             result.push_str(&text);
         }
         Ok((!result.is_empty()).then_some(result))
+    }
+    pub fn editing(
+        &mut self,
+        document: &mut Document,
+        action: crate::editing::Action,
+    ) -> Result<bool, String> {
+        self.valid(document)?;
+        if self.matching() {
+            self.enqueue(Pending::Editing(action))?;
+            return Ok(false);
+        }
+        let plan = document.editing_plan(&self.selections, action)?;
+        let changed = document
+            .replace_many(&plan.edits)
+            .map_err(|_| "Invalid indentation ranges")?;
+        self.selections = plan.selections;
+        self.revision = document.revision();
+        self.engine = None;
+        self.needle = None;
+        self.next = 0;
+        self.all = false;
+        self.message = None;
+        self.last_kind = None;
+        self.normalize();
+        self.serial += 1;
+        Ok(changed)
     }
     pub fn edit(
         &mut self,

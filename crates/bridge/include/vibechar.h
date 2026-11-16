@@ -14,6 +14,8 @@ void vc_document_free(VcDocument *document);
 size_t vc_document_length(const VcDocument *document);
 // Logical line content length in UTF-16 units at a UTF-16 offset. SIZE_MAX if invalid.
 size_t vc_document_line_length(const VcDocument *document, size_t utf16_offset);
+// Logical 1-based line and display column; tab stops are four cells.
+bool vc_document_position(const VcDocument *document, size_t utf16_offset, size_t *line, size_t *column);
 // Caller owns the output buffer. Returns false if capacity is insufficient.
 bool vc_document_copy(const VcDocument *document, uint8_t *output, size_t capacity);
 bool vc_document_replace(VcDocument *document, size_t utf16_start, size_t utf16_length,
@@ -25,6 +27,9 @@ void vc_document_break_undo_group(VcDocument *document);
 bool vc_document_undo(VcDocument *document, size_t *utf16_cursor);
 bool vc_document_redo(VcDocument *document, size_t *utf16_cursor);
 typedef struct VcHistory VcHistory;
+// Apply indentation (1 Tab, 2 outdent, 3 newline), returning native patches and
+// mapped selection. Null means rejected input; the document is unchanged.
+VcHistory *vc_document_editing(VcDocument *document, size_t start, size_t length, uint32_t action);
 // Apply exactly once; own the result until free. Null means no history/invalid handle.
 // UTF-16 replay-order edits are bounded to 1 MiB estimated JSON / 4,096 records.
 // edits:null requests a full snapshot fallback; the history operation is already applied.
@@ -65,6 +70,7 @@ bool vc_multi_adopt(VcMulti *multi, VcDocument *document, uint64_t document_id, 
 // Transient metadata only: selections, primary, busy, message. No source text.
 size_t vc_multi_state(const VcMulti *multi, const VcDocument *document, uint8_t *output, size_t capacity);
 // kind 0 isolated, 1 typing, 2 backspace, 3 delete forward, 4 newline, 5 smart paste.
+// Also 6 indent/Tab, 7 outdent; 4 newline inherits each target's indentation.
 // 1 changed, 2 no-op, 0 invalid/stale/limited. All targets share one undo transaction.
 int32_t vc_multi_edit(VcMulti *multi, VcDocument *document, const uint8_t *text, size_t length, uint32_t kind);
 // Directions: 0 left, 1 right, 2 up, 3 down, 4 line start, 5 line end, 6/7 document bounds.

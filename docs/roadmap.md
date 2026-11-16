@@ -123,7 +123,11 @@ are measured with larger documents.
   steps in the shared engine, preserving one oversized atomic operation.
 - [x] TUI keyboard/mouse selections, word double click, drag autoscroll, clipboard,
   selection replacement/deletion and per-tab/restart direction preservation.
-- [ ] Word navigation and indentation improvements; qualify selection/clipboard
+- [x] Shared Tab/Shift+Tab block indentation and per-caret stops, inherited indentation
+  on Enter, CRLF-aware scratches, mapped selections/multicursors and atomic Undo.
+- [x] Visual wrap toggles in both clients, logical line/column footer, TUI visual-row
+  mouse/selection/navigation and bounded sparse wrapping geometry.
+- [ ] Word navigation improvements; qualify selection/clipboard
   across terminal emulators and Linux.
 - [ ] IME composition, accessibility, keyboard layout, and UTF-16/grapheme tests.
 - [x] Decide same-machine simultaneous editing: separate sessions in MVP; no silent

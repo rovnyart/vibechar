@@ -133,6 +133,23 @@ moving work from show into drawing or typing is not a presentation improvement.
 
 ## Bridge ownership
 
+Indentation and inherited-newline input use `Document::editing_plan`. It produces
+sorted prefix/replacement edits and mapped selections before the caller applies
+one atomic transaction. Ranges ending at a following line's start exclude that
+line; multicursor targets deduplicate touched lines. Commands use four-cell tab
+stops, preserve hard tabs/line endings and enforce 100,000-line / 8 MiB insertion
+limits. The native bridge returns bounded replay-order UTF-16 patches plus the
+new selection; a missing patch list requests the existing full-snapshot fallback
+after applying once. Empty outdents do not change history or grants.
+
+TUI soft wrapping projects logical lines into greedy grapheme-safe visual rows.
+The existing per-document line cache also retains sparse row-start checkpoints,
+coarsening at 4,096 points per cached line and retaining up to eight lines. Edits
+invalidate only affected suffixes. Only visible row text is copied. Drawing, pointer
+hit testing, scrolling and keyboard navigation share that projection. Mac retains
+native layout. Wrap state is a client-session view preference, excluded from
+document revisions/checkpoints; status columns come from shared logical geometry.
+
 Expose opaque document and session handles. The creator frees an owned handle
 exactly once. Session documents are borrowed until the next session mutation and
 must not be freed independently; Swift resolves the active pointer for each call.

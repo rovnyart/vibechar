@@ -163,14 +163,14 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         .as_ref()
         .and_then(|f| f.frame.as_ref())
         .filter(|f| f.revision == editor.document().revision());
-    let lines: Vec<_> = (editor.top
-        ..(editor.top + usize::from(body.height)).min(editor.document().line_count()))
-        .map(|index| {
+    let lines: Vec<_> = editor
+        .screen_rows(usize::from(body.height))
+        .into_iter()
+        .map(|row| {
+            let index = row.line;
+            let window = row.window;
             let range = editor.document().line_range(index);
             let (start, end) = (range.start, range.end);
-            let window = editor
-                .document()
-                .line_window(index, editor.left, usize::from(body.width));
             let hits = if multiple {
                 multi_ranges
                     .iter()
@@ -208,12 +208,20 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 });
             paint_line(
                 &window.text,
-                (editor.left, usize::from(body.width)),
+                (
+                    if editor.wrap {
+                        window.column
+                    } else {
+                        editor.left
+                    },
+                    usize::from(body.width),
+                ),
                 paint.map(|p| p.as_ref()),
                 editor.light_syntax,
                 (
                     selection.start.saturating_sub(start)..selection.end.saturating_sub(start),
-                    index + 1 < editor.document().line_count()
+                    row.last
+                        && index + 1 < editor.document().line_count()
                         && (selection.start <= end && selection.end > end
                             || multi_ranges.iter().any(|r| r.start <= end && r.end > end)),
                 ),
@@ -251,6 +259,11 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 if frame.limited { " · preview" } else { "" }
             )
         },
+    );
+    let language = format!(
+        "{} · {}",
+        language,
+        if editor.wrap { "Wrap" } else { "No wrap" }
     );
     frame.render_widget(
         Paragraph::new(format!(
@@ -366,17 +379,10 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 area.y,
             ));
         }
-    } else if editor.save_prompt.is_none()
-        && !body.is_empty()
-        && line >= editor.top
-        && line < editor.top + usize::from(body.height)
-        && column >= editor.left
-        && column < editor.left + usize::from(body.width)
-    {
-        frame.set_cursor_position((
-            body.x + (column - editor.left) as u16,
-            body.y + (line - editor.top) as u16,
-        ));
+    } else if editor.save_prompt.is_none() && !body.is_empty() {
+        if let Some((x, y)) = editor.screen_cursor() {
+            frame.set_cursor_position((body.x + x as u16, body.y + y as u16));
+        }
     }
     if let Some(palette) = &editor.tools {
         draw_tools(frame, palette, editor.light_syntax);

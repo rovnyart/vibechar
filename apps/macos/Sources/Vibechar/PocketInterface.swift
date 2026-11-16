@@ -68,6 +68,7 @@ final class PocketTextView: NSTextView {
     private var editDepth = 0
     var isPerformingEdit: Bool { editDepth > 0 }
     var onBreakUndoGroup: (() -> Void)?
+    var onEditingAction: ((UInt32)->Bool)?
     var onEscape: (() -> Bool)?
     var onMultiInsert: ((String,UInt32)->Bool)?
     var onMultiPaste: ((String)->Bool)?
@@ -157,11 +158,18 @@ final class PocketTextView: NSTextView {
     }
     override func insertNewline(_ sender: Any?) {
         if onMultiInsert?("",4)==true {return}
+        if onEditingAction?(3)==true {return}
         performEdit(.isolated) { super.insertNewline(sender) }
     }
     override func insertTab(_ sender: Any?) {
-        if onMultiInsert?("\t",0)==true {return}
+        if onMultiInsert?("",6)==true {return}
+        if onEditingAction?(1)==true {return}
         performEdit(.isolated) { super.insertTab(sender) }
+    }
+    override func insertBacktab(_ sender:Any?) {
+        if onMultiInsert?("",7)==true {return}
+        if onEditingAction?(2)==true {return}
+        performEdit(.isolated) {super.insertBacktab(sender)}
     }
 
     override func copy(_ sender:Any?) {
@@ -183,7 +191,7 @@ final class PocketTextView: NSTextView {
         let extending=name.contains("AndModifySelection")
         let base=name.replacingOccurrences(of:"AndModifySelection",with:"")
         if let direction=commands[base],onMultiMove?(direction,extending)==true {return}
-        if !["insertNewline:","insertTab:","deleteBackward:","deleteForward:","cancelOperation:"].contains(name) && onMultiReady?()==false {NSSound.beep();return}
+        if !["insertNewline:","insertTab:","insertBacktab:","deleteBackward:","deleteForward:","cancelOperation:"].contains(name) && onMultiReady?()==false {NSSound.beep();return}
         super.doCommand(by:selector)
     }
 
@@ -444,6 +452,7 @@ final class PocketHeader: NSView {
 final class PocketFooter: NSView {
     let status = NSTextField(labelWithString: "Saved locally")
     let detail = NSTextField(labelWithString: "15 pt  ·  UTF-8")
+    let position = NSTextField(labelWithString: "1:1")
     let languageButton = NSButton(title: "Auto · Text", target: nil, action: nil)
     var onLanguage: (() -> Void)?
     private var syntaxName = "Text"
@@ -461,7 +470,7 @@ final class PocketFooter: NSView {
     override var isFlipped: Bool { true }
     override init(frame: NSRect) {
         super.init(frame: frame)
-        for label in [status, detail] {
+        for label in [status, detail, position] {
             label.font = .systemFont(ofSize: 11)
             label.textColor = PocketPalette.secondary
             label.lineBreakMode = .byTruncatingTail
@@ -470,6 +479,9 @@ final class PocketFooter: NSView {
         status.setAccessibilityLabel("Session recovery")
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.alignment = .right
+        position.alignment = .right
+        position.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular)
+        position.setAccessibilityLabel("Cursor position")
         for button in [give, stop, languageButton] {
             button.isBordered = false
             button.font = .systemFont(ofSize: 11, weight: .medium)
@@ -491,6 +503,12 @@ final class PocketFooter: NSView {
         status.toolTip = "Ordinary tabs are saved locally, separately from your files. Private tabs are excluded. ⌘S saves a file."
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func showPosition(line:Int,column:Int) {
+        position.stringValue="\(line):\(column)"
+        position.toolTip="Line \(line), column \(column) · Logical lines, four-column tab stops"
+        position.setAccessibilityValue("Line \(line), column \(column)")
+        needsLayout=true
+    }
     func showSyntax(_ name: String, automatic: Bool, reason: String, limited: Bool) {
         syntaxName = name; syntaxAuto = automatic
         languageButton.toolTip = "\(automatic ? "Automatic" : "Pinned") · \(reason)\(limited ? " · Color preview limited for this text" : "") · Click to search languages"
@@ -524,12 +542,14 @@ final class PocketFooter: NSView {
         let compact = privateTab && bounds.width < 650
         let languageWidth: CGFloat = compact ? 92 : 142
         let details: CGFloat = bounds.width >= 800 ? 94 : 0
+        let positionWidth:CGFloat = min(100,max(52,position.fittingSize.width+12))
         let actions: CGFloat = privateTab ? (agentUses == nil ? 104 : 144) : 0
         languageButton.title = syntaxAuto && !compact ? "Auto · \(syntaxName)" : syntaxName
         languageButton.frame = NSRect(x: bounds.width - 16 - languageWidth, y: 4, width: languageWidth, height: 24)
         detail.isHidden = details == 0
         detail.frame = NSRect(x: languageButton.frame.minX - details - 8, y: 8, width: max(0, details - 8), height: 16)
-        let actionX = languageButton.frame.minX - details - (actions == 0 ? 0 : 8) - actions
+        position.frame=NSRect(x:languageButton.frame.minX-details-positionWidth-8,y:8,width:positionWidth-8,height:16)
+        let actionX = position.frame.minX - (actions == 0 ? 0 : 8) - actions
         give.frame = NSRect(x: actionX, y: 4, width: 104, height: 24)
         stop.frame = NSRect(x: actionX + 104, y: 4, width: 40, height: 24)
         status.frame = NSRect(x: 26, y: 8, width: max(0, actionX - 38), height: 16)

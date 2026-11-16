@@ -41,6 +41,13 @@ struct Line {
     index: usize,
     stride: usize,
     points: Vec<Point>,
+    wrap: Option<Wrapping>,
+}
+
+struct Wrapping {
+    width: usize,
+    stride: usize,
+    points: Vec<(usize, Point)>,
 }
 
 #[derive(Default)]
@@ -56,6 +63,10 @@ impl Cache {
             entry
                 .points
                 .retain(|p| p.character < character || p.byte == 0);
+            if let Some(wrap) = &mut entry.wrap {
+                wrap.points
+                    .retain(|(_, p)| p.character < character || p.byte == 0);
+            }
         }
     }
 
@@ -71,6 +82,7 @@ impl Cache {
                 index,
                 stride: STRIDE,
                 points: vec![Point::default()],
+                wrap: None,
             });
         }
         self.lines.last_mut().unwrap()
@@ -98,6 +110,64 @@ impl Target {
 }
 
 impl Line {
+    fn wrapped(
+        &mut self,
+        text: RopeSlice<'_>,
+        width: usize,
+        target: usize,
+        by_character: bool,
+    ) -> Option<(usize, Point)> {
+        let width = width.max(1);
+        if self.wrap.as_ref().is_none_or(|w| w.width != width) {
+            self.wrap = Some(Wrapping {
+                width,
+                stride: 1,
+                points: vec![(0, Point::default())],
+            });
+        }
+        let cache = self.wrap.as_mut().unwrap();
+        let index = cache
+            .points
+            .partition_point(|(row, p)| {
+                if by_character {
+                    p.character <= target
+                } else {
+                    *row <= target
+                }
+            })
+            .saturating_sub(1);
+        let (mut row, mut point) = cache.points[index];
+        loop {
+            if !by_character && row == target {
+                return Some((row, point));
+            }
+            let Some(next) = wrap_next(text, point, width) else {
+                return if by_character {
+                    Some((row, point))
+                } else {
+                    None
+                };
+            };
+            if by_character && next.character > target {
+                return Some((row, point));
+            }
+            row += 1;
+            point = next;
+            if row > cache.points.last().unwrap().0
+                && (row % cache.stride == 0 || point.byte == text.len_bytes())
+            {
+                if cache.points.len() == MAX_POINTS {
+                    let mut i = 0;
+                    cache.points.retain(|_| {
+                        i += 1;
+                        i % 2 == 1
+                    });
+                    cache.stride = cache.stride.saturating_mul(2);
+                }
+                cache.points.push((row, point));
+            }
+        }
+    }
     fn record(&mut self, point: Point, end: usize) {
         let last = *self.points.last().unwrap();
         if point.byte > last.byte && (point.byte - last.byte >= self.stride || point.byte == end) {
@@ -138,6 +208,36 @@ impl Line {
         }
         point
     }
+}
+
+// Greedy cell wrapping: keep graphemes whole and retain logical tab stops. A
+// full final row has an empty continuation for the insertion caret at EOF.
+fn wrap_next(text: RopeSlice<'_>, start: Point, width: usize) -> Option<Point> {
+    if start.byte == text.len_bytes() {
+        return None;
+    }
+    let mut point = start;
+    let mut walker = Walker::new(text, start.byte);
+    let limit = start.column.saturating_add(width);
+    while point.byte < text.len_bytes() {
+        let ascii = walker.ascii(limit.saturating_sub(point.column));
+        if ascii > 0 {
+            point.byte += ascii;
+            point.character += ascii;
+            point.utf16 += ascii;
+            point.column += ascii;
+        } else {
+            let next = walker.next(point);
+            if next.column > limit && point.byte > start.byte {
+                return Some(point);
+            }
+            point = next;
+        }
+        if point.column >= limit {
+            return Some(point);
+        }
+    }
+    None
 }
 
 // Cursor chunks are borrowed from the Rope. Only a grapheme crossing chunks
@@ -245,6 +345,57 @@ impl<'a> Walker<'a> {
 }
 
 impl Document {
+    pub fn wrapped_row_at(&self, position: usize, width: usize) -> usize {
+        let line = self.line_index(position);
+        let range = self.line_range(line);
+        let (row, point) = self
+            .layout
+            .borrow_mut()
+            .line(line)
+            .wrapped(
+                self.text.slice(range.clone()),
+                width,
+                position.min(range.end) - range.start,
+                true,
+            )
+            .unwrap();
+        if line + 1 < self.line_count()
+            && row > 0
+            && point.byte == self.text.slice(range).len_bytes()
+        {
+            row - 1
+        } else {
+            row
+        }
+    }
+
+    /// Bounded text for one visual row, with logical character/UTF-16/cell origins.
+    pub fn wrapped_window(&self, line: usize, row: usize, width: usize) -> Option<LineWindow> {
+        if line >= self.line_count() {
+            return None;
+        }
+        let text = self.text.slice(self.line_range(line));
+        let (_, start) = self
+            .layout
+            .borrow_mut()
+            .line(line)
+            .wrapped(text, width, row, false)?;
+        if line + 1 < self.line_count() && row > 0 && start.byte == text.len_bytes() {
+            return None;
+        }
+        let end = wrap_next(text, start, width.max(1)).unwrap_or_else(|| {
+            self.layout
+                .borrow_mut()
+                .line(line)
+                .locate(text, Target::Character(text.len_chars()))
+        });
+        Some(LineWindow {
+            text: text.byte_slice(start.byte..end.byte).to_string(),
+            character: start.character,
+            utf16: start.utf16,
+            column: start.column,
+        })
+    }
     pub(crate) fn invalidate_layout(&self, position: usize) {
         let line = self.line_index(position);
         self.layout

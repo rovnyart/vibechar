@@ -1,4 +1,65 @@
 use super::*;
+
+#[test]
+fn wrapped_rows_keep_graphemes_tabs_crlf_and_eof_caret() {
+    for source in ["ab界c", "👩‍💻e\u{301}\tlast\r\nnext", "", "abcdefgh", "\t界"] {
+        let d = Document::new(source);
+        for width in [1, 3, 4, 7, 80] {
+            for line in 0..d.line_count() {
+                let mut joined = String::new();
+                let mut row = 0;
+                while let Some(w) = d.wrapped_window(line, row, width) {
+                    assert_eq!(
+                        d.wrapped_row_at(d.line_start(line) + w.character, width),
+                        row
+                    );
+                    assert!(d.is_grapheme_boundary(d.line_start(line) + w.character));
+                    joined.push_str(&w.text);
+                    row += 1;
+                    assert!(row <= source.len() + 1);
+                }
+                assert_eq!(joined, d.line(line));
+                let last = d.wrapped_row_at(d.line_range(line).end, width);
+                assert_eq!(last + 1, row);
+            }
+        }
+    }
+    let d = Document::new("ab界c");
+    assert_eq!(d.wrapped_window(0, 0, 3).unwrap().text, "ab");
+    assert_eq!(d.wrapped_window(0, 1, 3).unwrap().text, "界c");
+    assert_eq!(d.wrapped_window(0, 2, 3).unwrap().text, "");
+}
+
+#[test]
+fn sparse_wrapping_survives_edits_undo_and_width_changes() {
+    let mut d = Document::new(&"x".repeat(512 * 1024));
+    assert_eq!(d.wrapped_row_at(d.len_chars(), 4), 128 * 1024);
+    assert!(
+        d.layout.borrow().lines[0]
+            .wrap
+            .as_ref()
+            .unwrap()
+            .points
+            .len()
+            <= MAX_POINTS
+    );
+    let at = d.len_chars() - 10;
+    d.replace(at..at, "界").unwrap();
+    for width in [4, 9, 80] {
+        let reference = Document::new(&d.text());
+        for position in [0, at - 1, at, at + 1, d.len_chars()] {
+            let row = d.wrapped_row_at(position, width);
+            assert_eq!(row, reference.wrapped_row_at(position, width));
+            assert_eq!(
+                d.wrapped_window(0, row, width).unwrap().text,
+                reference.wrapped_window(0, row, width).unwrap().text
+            );
+        }
+    }
+    d.undo();
+    assert_eq!(d.wrapped_row_at(d.len_chars(), 4), 128 * 1024);
+    assert!(!d.is_dirty());
+}
 use crate::{EditKind, TextEdit};
 use unicode_segmentation::UnicodeSegmentation;
 

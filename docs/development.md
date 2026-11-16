@@ -169,6 +169,34 @@ and waits for the final save. Explicitly closing an edited tab asks before remov
 it from the saved session. If persisting the last tab's removal fails, Keep Editing
 leaves the original tab intact; Close Anyway can leave an older session on disk.
 
+### Indentation, wrapping and position
+
+Both clients use the same Rust editing commands. Tab at a caret inserts spaces
+to the next four-column stop. With selected text it indents every touched logical
+line by four spaces; a selection ending exactly at the next line's start excludes
+that line. Shift+Tab removes one leading tab or up to four leading spaces. Selected
+text stays selected, and multiple selections touching the same line indent it
+once. Enter replaces the selection with a newline and copies the leading spaces/
+tabs before its start. Existing LF/CRLF style is used, including in pasted scratches.
+Pasting does not auto-indent or rewrite the clipboard. Each explicit command is
+one shared Undo transaction. An outdent with nothing to remove is a no-op.
+
+Mac: **View → Wrap Lines / Option+Cmd+W** toggles native line wrapping and horizontal
+scrolling. TUI: **F10** toggles cell wrapping without splitting graphemes. Mac starts
+wrapped and TUI starts unwrapped, preserving their existing defaults. The toggle
+applies to the current editor session across tabs; it is not stored in recovery.
+Wrapping changes presentation only: saved/copied text, line endings, selection,
+history, dirty state and Secret Drop grants are preserved. TUI mouse hit testing,
+drag scrolling, Up/Down and Home/End use the visual rows when wrapping is enabled;
+Ctrl+Home/End still target the whole document.
+
+The footer shows 1-based logical **line:column**, independent of visual wrapping.
+Columns use four-cell tab stops and Unicode grapheme display widths. Mac shows
+the selection start, or the primary multicursor head; the terminal follows its
+active selection head. Mac keeps this indicator visible in narrow/private layouts;
+the font-size/UTF-8 detail yields space first. The indicator tooltip/accessibility
+value expands the compact numbers into a full line/column description.
+
 Mac cursor/selection changes checkpoint quietly, without changing the text-save
 status or postponing a queued text write. Repeated selection notifications with
 the same range schedule nothing; private selection changes schedule no recovery.
