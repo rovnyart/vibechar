@@ -195,7 +195,53 @@ impl Editor {
     }
 
     pub fn mouse(&mut self, event: MouseEvent) {
-        if self.tools.is_some() {
+        if self.stats_open
+            || self.tools.is_some()
+            || self.save_prompt.is_some()
+            || self.language_prompt.is_some()
+        {
+            return;
+        }
+        if self.line_numbers && self.gutter.contains((event.column, event.row).into()) {
+            if event.kind == MouseEventKind::Down(MouseButton::Left) {
+                self.pump_multi();
+                if self.multi.has_queued_input() {
+                    return;
+                }
+                if let Some(row) = self
+                    .screen_rows(usize::from(self.viewport.height))
+                    .get(usize::from(event.row - self.viewport.y))
+                {
+                    if let Some(find) = &mut self.find {
+                        find.focused = false;
+                        find.preview = None;
+                    }
+                    self.cancel_private_quit();
+                    self.close_pending = false;
+                    let start = self.document().line_start(row.line);
+                    let end = if row.line + 1 < self.document().line_count() {
+                        self.document().line_start(row.line + 1)
+                    } else {
+                        self.document().len_chars()
+                    };
+                    self.multi.clear();
+                    self.pointer = Pointer::default();
+                    self.anchor = Some(end);
+                    self.cursor = start;
+                    self.reveal_cursor = false;
+                    self.wrap_end = false;
+                    self.session.active_mut().document.break_undo_group();
+                }
+                return;
+            }
+            if matches!(
+                event.kind,
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+            ) {
+                let mut event = event;
+                event.column = self.viewport.x;
+                self.mouse_at(event, Instant::now());
+            }
             return;
         }
         if self.find_mouse(event) {

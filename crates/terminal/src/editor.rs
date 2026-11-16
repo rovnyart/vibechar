@@ -29,6 +29,10 @@ pub struct Editor {
     pub top: usize,
     pub left: usize,
     pub wrap: bool,
+    pub line_numbers: bool,
+    pub stats_open: bool,
+    pub gutter: Rect,
+    pub metrics: vibechar_core::metrics::Engine,
     wrap_top: usize,
     wrap_end: bool,
     pub message: String,
@@ -63,6 +67,10 @@ impl Editor {
             top: 0,
             left: 0,
             wrap: false,
+            line_numbers: !std::env::var("VIBECHAR_LINE_NUMBERS").is_ok_and(|v| v == "0"),
+            stats_open: false,
+            gutter: Rect::default(),
+            metrics: Default::default(),
             wrap_top: 0,
             wrap_end: false,
             message: String::new(),
@@ -90,6 +98,7 @@ impl Editor {
         self.insert_with_kind(text, EditKind::Isolated, false);
     }
     pub fn paste(&mut self, text: &str) {
+        self.stats_open = false;
         self.session.active_mut().document.break_undo_group();
         self.insert_with_kind(text, EditKind::Isolated, true);
     }
@@ -158,6 +167,12 @@ impl Editor {
         if key.kind == KeyEventKind::Release {
             return false;
         }
+        if self.stats_open {
+            self.stats_open = false;
+            if matches!(key.code, KeyCode::Esc | KeyCode::F(11)) {
+                return false;
+            }
+        }
         let direct_edit = matches!(
             key.code,
             KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete
@@ -188,6 +203,24 @@ impl Editor {
         }
         if self.handle_tools_key(key) {
             return false;
+        }
+        if self.save_prompt.is_none() && self.language_prompt.is_none() {
+            match key.code {
+                KeyCode::F(11) => {
+                    self.close_pending = false;
+                    self.pointer = selection::Pointer::default();
+                    self.stats_open = true;
+                    return false;
+                }
+                KeyCode::F(12) => {
+                    self.close_pending = false;
+                    self.pointer = selection::Pointer::default();
+                    self.line_numbers = !self.line_numbers;
+                    self.reveal_cursor = true;
+                    return false;
+                }
+                _ => {}
+            }
         }
         if self.handle_find_key(key) {
             return false;

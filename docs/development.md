@@ -565,6 +565,45 @@ range plus an optional selection_head endpoint, compatible with version 1
 checkpoints. Older ranges default to their end as the active caret. Private
 selection metadata is filtered with the rest of the private buffer.
 
+## Line numbers and counters
+
+Line numbers start enabled in both clients. Mac **View → Line Numbers (⌥⌘N)**
+and TUI **F12** toggle them for the current client session. The active logical
+line is accented; a dot marks a visual continuation. Clicking a number selects
+the whole source line, including its newline, without inserting a newline at wraps.
+
+The footer shows text/selection counts and the logical cursor position. Click the
+Mac counter or press TUI **F11** for document/selected characters, words, lines and
+UTF-8 bytes plus selection/caret totals. Escape/F11 closes the terminal panel;
+typing closes it and continues editing. Narrow windows use compact counts; the
+detail panel retains exact numbers.
+
+Characters are extended graphemes: `👩‍💻`, `é` and CRLF each count once. Words
+are runs of letters/numbers/underscores, not linguistic tokenization. Selected
+overlaps and touched lines count once; ending at the next line's start excludes
+that line. An empty document has one line. A final newline adds an empty logical
+line. Cursor columns still use logical cell geometry/four-column tab stops.
+
+Counting above 4 KiB runs in the shared background engine; exact byte/line metadata
+appears immediately. Up to 64 MiB / 500 ms per scan is allowed, with cooperative
+cancellation between chunks/graphemes. A dash means a detailed count exceeded the
+budget; an ellipsis means it is pending. Statistics do not write text or change
+Undo, dirty/recovery state or private grants. Timers stop when counting finishes.
+
+```sh
+python3 scripts/test-counters.py
+dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-counters
+# Optional snapshots of synthetic fixtures only:
+VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/counters-ui" \
+  dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-counters
+```
+
+The optional snapshot mode writes offscreen images of synthetic fixtures only;
+it uses no real clipboard or user recovery state and does not order a window.
+Legacy PTY coordinate fixtures disable the gutter via `VIBECHAR_LINE_NUMBERS=0`;
+the dedicated counters suite explicitly tests it enabled, including wrapping,
+mouse selection, private/narrow layout and a 10 MiB file.
+
 ## Layout
 
 ```text

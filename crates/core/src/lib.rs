@@ -3,6 +3,7 @@
 pub mod checkpoint;
 pub mod editing;
 pub mod handoff;
+pub mod metrics;
 pub mod multi;
 pub mod search;
 pub mod session;

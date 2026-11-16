@@ -20,7 +20,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 0
             }
     });
-    let [header, find_area, body, status, footer] = Layout::vertical([
+    let [header, find_area, mut body, status, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(find_height),
         Constraint::Min(1),
@@ -114,7 +114,30 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
             }
         }
     }
+    let digits = editor.document().line_count().to_string().len().max(2) as u16;
+    let gutter_width = if editor.line_numbers {
+        (digits + 2).min(body.width.saturating_sub(1))
+    } else {
+        0
+    };
+    editor.gutter = ratatui::layout::Rect::new(body.x, body.y, gutter_width, body.height);
+    body.x += gutter_width;
+    body.width -= gutter_width;
     editor.update_viewport(body);
+    let metric_ranges = if editor.multi.active(editor.document()) {
+        editor
+            .multi
+            .selections()
+            .iter()
+            .map(|s| s.range())
+            .collect::<Vec<_>>()
+    } else {
+        vec![editor.selection()]
+    };
+    editor
+        .metrics
+        .submit(&editor.session.active().document, &metric_ranges);
+    let metrics = editor.metrics.frame(editor.document());
     let line = editor.document().line_index(editor.cursor);
     let column = editor.cursor_column();
 
@@ -163,11 +186,37 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         .as_ref()
         .and_then(|f| f.frame.as_ref())
         .filter(|f| f.revision == editor.document().revision());
+    let mut numbers = Vec::new();
+    let mut previous = None;
     let lines: Vec<_> = editor
         .screen_rows(usize::from(body.height))
         .into_iter()
         .map(|row| {
             let index = row.line;
+            let text = if previous == Some(index) {
+                "·".into()
+            } else {
+                (index + 1).to_string()
+            };
+            previous = Some(index);
+            let color = if index == line {
+                if editor.light_syntax {
+                    Color::Rgb(189, 76, 43)
+                } else {
+                    Color::Rgb(244, 154, 107)
+                }
+            } else if editor.light_syntax {
+                Color::Rgb(140, 143, 135)
+            } else {
+                Color::Rgb(105, 110, 102)
+            };
+            numbers.push(Line::styled(
+                format!(
+                    "{text:>width$} ",
+                    width = gutter_width.saturating_sub(1) as usize
+                ),
+                Style::default().fg(color),
+            ));
             let window = row.window;
             let range = editor.document().line_range(index);
             let (start, end) = (range.start, range.end);
@@ -231,6 +280,9 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), body);
+    if gutter_width > 0 {
+        frame.render_widget(Paragraph::new(numbers), editor.gutter);
+    }
     let recovery = if editor.session.active().is_private() {
         if let Some(uses) = editor.document().drop_uses() {
             format!("PRIVATE · Agent access open · {uses} uses · F9 stop")
@@ -265,43 +317,49 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         language,
         if editor.wrap { "Wrap" } else { "No wrap" }
     );
-    frame.render_widget(
-        Paragraph::new(format!(
-            " {}  · {}:{}{}  {}",
+    let summary = metrics
+        .as_ref()
+        .map(|m| m.summary(status.width < 70))
+        .unwrap_or_default();
+    let summary = if !multiple {
+        summary
+            .strip_prefix("1 selection · ")
+            .unwrap_or(&summary)
+            .to_owned()
+    } else {
+        summary
+    };
+    let statustext = if status.width < 70 {
+        format!(
+            " {}{}:{} · {}",
+            if editor.session.active().is_private() {
+                "PRIVATE · "
+            } else {
+                ""
+            },
+            line + 1,
+            column + 1,
+            summary
+        )
+    } else {
+        format!(
+            " {} · {}:{} · {} · {}",
             recovery,
             line + 1,
             column + 1,
-            if multiple {
-                format!(
-                    " · {} {}",
-                    multi_ranges.len(),
-                    if multi_ranges.iter().all(|r| r.is_empty()) {
-                        if multi_ranges.len() == 1 {
-                            "caret"
-                        } else {
-                            "carets"
-                        }
-                    } else if multi_ranges.len() == 1 {
-                        "selection"
-                    } else {
-                        "selections"
-                    }
-                )
-            } else if selection.is_empty() {
-                String::new()
-            } else {
-                " · selected".into()
-            },
-            language,
-        ))
-        .style(Style::default().fg(Color::DarkGray)),
+            summary,
+            language
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(statustext).style(Style::default().fg(Color::DarkGray)),
         status,
     );
     let prompt = editor.save_prompt.as_ref().map_or_else(
         || {
             if editor.message.is_empty() {
                 if multiple {" ^D next ^L all · arrows move · Shift selects · ^C/^X/^V · Esc single selection".into()}
-                else {" ^D next ^L all ^K tools ^F find ^R replace · ^S save F2 lang F6 next ^G agent ^Q quit".into()}
+                else {" ^S save ^F find ^K tools · F10 wrap F11 stats F12 # · ^D next · ^Q quit".into()}
             } else {
                 format!(" {}", editor.message)
             }
@@ -362,7 +420,11 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
         Paragraph::new(prompt).style(Style::default().fg(Color::Rgb(245, 158, 66))),
         footer,
     );
-    if let Some(find) = editor.find.as_ref().filter(|f| f.focused) {
+    if let Some(find) = editor
+        .find
+        .as_ref()
+        .filter(|f| f.focused && !editor.stats_open)
+    {
         let input = if find.replace_focus {
             &find.replacement
         } else {
@@ -379,7 +441,7 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
                 area.y,
             ));
         }
-    } else if editor.save_prompt.is_none() && !body.is_empty() {
+    } else if !editor.stats_open && editor.save_prompt.is_none() && !body.is_empty() {
         if let Some((x, y)) = editor.screen_cursor() {
             frame.set_cursor_position((body.x + x as u16, body.y + y as u16));
         }
@@ -387,6 +449,89 @@ pub fn draw(frame: &mut Frame, editor: &mut Editor) {
     if let Some(palette) = &editor.tools {
         draw_tools(frame, palette, editor.light_syntax);
     }
+    if editor.stats_open {
+        if let Some(stats) = metrics {
+            draw_statistics(frame, &stats, editor.light_syntax);
+        }
+    }
+}
+
+fn draw_statistics(frame: &mut Frame, stats: &vibechar_core::metrics::Frame, light: bool) {
+    let screen = frame.area();
+    let width = screen.width.min(66);
+    let height = screen.height.min(16);
+    let area = ratatui::layout::Rect::new(
+        screen.x + (screen.width - width) / 2,
+        screen.bottom() - height,
+        width,
+        height,
+    );
+    let block = Block::default()
+        .title(" V_ Text statistics · F11 / Esc ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .style(
+            Style::default()
+                .fg(if light {
+                    Color::Rgb(40, 43, 41)
+                } else {
+                    Color::Rgb(227, 229, 223)
+                })
+                .bg(if light {
+                    Color::Rgb(252, 251, 248)
+                } else {
+                    Color::Rgb(32, 33, 31)
+                }),
+        );
+    let inner = block.inner(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+    let n = |v: Option<usize>| {
+        v.map(vibechar_core::metrics::number).unwrap_or_else(|| {
+            if stats.busy {
+                "…".into()
+            } else {
+                "—".into()
+            }
+        })
+    };
+    let col = usize::from(inner.width.saturating_sub(15) / 2).max(3);
+    let row = |label: &str, total: String, selected: String| {
+        Line::raw(format!(" {label:12} {total:>col$} {selected:>col$}"))
+    };
+    let lines = vec![
+        row("", "Document".into(), "Selected".into()),
+        row(
+            "Characters",
+            n(stats.total.characters),
+            n(stats.selected.characters),
+        ),
+        row("Words", n(stats.total.words), n(stats.selected.words)),
+        row(
+            "Lines",
+            stats.total.lines.to_string(),
+            stats.selected.lines.to_string(),
+        ),
+        row(
+            "UTF-8 bytes",
+            vibechar_core::metrics::number(stats.total.bytes),
+            vibechar_core::metrics::number(stats.selected.bytes),
+        ),
+        Line::raw(""),
+        Line::raw(format!(
+            " {} selections · {} carets",
+            stats.selections, stats.carets
+        )),
+        Line::raw(""),
+        Line::raw(" Characters = graphemes; CRLF counts once."),
+        Line::raw(" Words = letters, numbers, underscores."),
+        Line::raw(if stats.limited {
+            " Some counts exceed the analysis budget."
+        } else {
+            " Local only · typing closes this panel."
+        }),
+    ];
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_tools(frame: &mut Frame, palette: &crate::editor::tools::Palette, light: bool) {
@@ -667,7 +812,137 @@ fn visible_line(text: &str, left: usize, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
     use ratatui::{backend::TestBackend, Terminal};
+
+    fn row(terminal: &Terminal<TestBackend>, y: u16) -> String {
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect()
+    }
+    fn click(editor: &mut Editor, column: u16, row: u16) {
+        editor.mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        });
+    }
+    #[test]
+    fn numbered_wrapped_rows_clicks_and_toggles_preserve_document_state() {
+        let source = "abcdefghijklmnopqrstuvwx\r\nlast\r\n";
+        let mut editor = Editor::new(source, None);
+        editor.line_numbers = true;
+        editor.recovery_status = "Saved locally";
+        let mark = editor.recovery_mark();
+        let mut terminal = Terminal::new(TestBackend::new(16, 10)).unwrap();
+        editor.handle(KeyEvent::new(KeyCode::F(10), KeyModifiers::NONE));
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        assert!(row(&terminal, 1).starts_with("  1 abcdef"));
+        assert!(row(&terminal, 2).starts_with("  · mnopqr"));
+        assert!(row(&terminal, 3).starts_with("  2 last"));
+        assert!(row(&terminal, 4).starts_with("  3 "));
+        assert_eq!(
+            terminal.backend().buffer()[(2, 1)].fg,
+            Color::Rgb(244, 154, 107)
+        );
+        click(&mut editor, 1, 2); // Continuation number selects the complete logical line.
+        assert_eq!(editor.selection(), 0..26);
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        let stats = editor.metrics.frame(editor.document()).unwrap();
+        assert_eq!(
+            (stats.selected.characters, stats.selected.lines),
+            (Some(25), 1)
+        );
+        click(&mut editor, 6, 3); // Gutter is excluded from text hit testing.
+        assert_eq!(editor.selection(), 28..28);
+        let range = editor.selection();
+        editor.handle(KeyEvent::new(KeyCode::F(12), KeyModifiers::NONE));
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        assert_eq!(editor.gutter.width, 0);
+        assert_eq!(editor.selection(), range);
+        editor.handle(KeyEvent::new(KeyCode::F(12), KeyModifiers::NONE));
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        assert!(editor.recovery_mark() == mark);
+        assert_eq!(editor.document().text(), source);
+    }
+    #[test]
+    fn statistics_overlay_counts_graphemes_and_keeps_mouse_and_find_cursor_quiet() {
+        let mut editor = Editor::new("👩‍💻e\u{301}\r\nlast", None);
+        editor.line_numbers = true;
+        editor.handle(KeyEvent::new(KeyCode::Right, KeyModifiers::SHIFT));
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        assert!(row(&terminal, 22).contains("1 char selected · 1 line"));
+        let stats = editor.metrics.frame(editor.document()).unwrap();
+        assert_eq!(
+            (stats.selected.characters, stats.selected.bytes),
+            (Some(1), 11)
+        );
+        let mark = editor.recovery_mark();
+        editor.handle(KeyEvent::new(KeyCode::F(11), KeyModifiers::NONE));
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        assert!(row(&terminal, 8).contains("Text statistics"));
+        let selected = editor.selection();
+        click(&mut editor, 1, 2);
+        assert_eq!(editor.selection(), selected);
+        editor.handle(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!editor.stats_open && editor.recovery_mark() == mark);
+        editor.handle(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        click(&mut editor, 1, 2); // Number column takes focus from Find.
+        assert!(!editor.find.as_ref().unwrap().focused);
+        editor.stats_open = true;
+        editor.handle(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert!(!editor.stats_open);
+        assert_eq!(editor.document().text(), "xlast");
+        editor.handle(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+        editor.handle(KeyEvent::new(KeyCode::F(11), KeyModifiers::NONE));
+        assert!(editor.stats_open);
+        editor.paste("query");
+        assert!(!editor.stats_open);
+        assert_eq!(editor.find.as_ref().unwrap().needle.text, "query");
+        assert_eq!(editor.document().text(), "xlast");
+    }
+    #[test]
+    fn narrow_private_statistics_and_scrolling_numbers_remain_view_only() {
+        let source = (1..60).map(|n| format!("row {n}\n")).collect::<String>();
+        let mut editor = Editor::new("", None);
+        editor.session.open_private();
+        editor.insert(&source);
+        editor.line_numbers = true;
+        editor.cursor = 0;
+        let mark = editor.recovery_mark();
+        let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        assert!(row(&terminal, 10).contains("PRIVATE · 1:1"));
+        assert!(row(&terminal, 10).contains("ch · 60 ln"));
+        editor.mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 1,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        });
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        assert!(row(&terminal, 1).starts_with("  4 row 4"));
+        assert_eq!(editor.cursor, 0);
+        editor.handle(KeyEvent::new(KeyCode::F(11), KeyModifiers::NONE));
+        terminal.draw(|f| draw(f, &mut editor)).unwrap();
+        let screen = (0..12)
+            .map(|y| row(&terminal, y))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            screen.contains("Document")
+                && screen.contains("Selected")
+                && screen.contains("UTF-8 bytes")
+        );
+        assert!(editor.recovery_mark() == mark);
+        assert_eq!(editor.document().text(), source);
+    }
 
     #[test]
     fn windowed_render_matches_full_lines_for_unicode_selections_and_find() {
@@ -704,6 +979,7 @@ mod tests {
             "x".repeat(1000)
         );
         let mut editor = Editor::new(&source, Some("synthetic.json".into()));
+        editor.line_numbers = false;
         editor.session.submit_syntax();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
@@ -757,6 +1033,7 @@ mod tests {
         use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
         let source = (0..40).map(|n| format!("row {n:02}\n")).collect::<String>();
         let mut editor = Editor::new(&source, None);
+        editor.line_numbers = false;
         let mut terminal = Terminal::new(TestBackend::new(20, 8)).unwrap();
         terminal.draw(|frame| draw(frame, &mut editor)).unwrap();
         editor.mouse(MouseEvent {
@@ -787,6 +1064,7 @@ mod tests {
     #[test]
     fn renders_a_unicode_document_and_keeps_cursor_visible_after_resize() {
         let mut editor = Editor::new("я\n界界界界界界界界", None);
+        editor.line_numbers = false;
         editor.cursor = editor.document().len_chars();
         let mut terminal = Terminal::new(TestBackend::new(16, 5)).unwrap();
         terminal.draw(|frame| draw(frame, &mut editor)).unwrap();
@@ -808,6 +1086,7 @@ mod tests {
     #[test]
     fn private_mode_is_visible_without_using_text_as_a_tab_title() {
         let mut editor = Editor::new("", None);
+        editor.line_numbers = false;
         editor.session.open_private();
         editor.insert("PRIVATE_VIEW_FIXTURE");
         editor.recovery_status = "Saved locally";

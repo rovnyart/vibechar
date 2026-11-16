@@ -45,6 +45,12 @@ final class RustDocument {
     var isDirty: Bool { vc_document_dirty(handle) }
     var revision: UInt64 { vc_document_revision(handle) }
     func lineLength(at offset:Int)->Int {vc_document_line_length(handle,offset)}
+    var lineCount:Int {vc_document_line_count(handle)}
+    func lineIndex(at offset:Int)->Int {vc_document_line_index(handle,offset)}
+    func lineRange(_ line:Int)->NSRange? {
+        var start=0,length=0
+        return vc_document_line_range(handle,line,&start,&length) ? NSRange(location:start,length:length) : nil
+    }
     func position(at offset:Int)->(Int,Int)? {
         var line=0,column=0
         return vc_document_position(handle,offset,&line,&column) ? (line,column) : nil

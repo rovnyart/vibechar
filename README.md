@@ -72,6 +72,13 @@ trackpad scrolling moves the viewport independently of the caret and does not
 write recovery; selection/caret navigation checkpoints quietly without flashing
 Saving locally in both clients.
 
+Logical line numbers are enabled in both clients, with an active-line accent and
+dots for wrapped continuations. Click a number to select its whole source line.
+The footer counts text/selected graphemes, with words, lines, UTF-8 bytes and
+selection/caret totals available by clicking the Mac counter or pressing TUI
+**F11**. Toggle numbers with Mac **Option+Cmd+N** or TUI **F12**. Larger counts
+run in the shared background engine; see the [counter semantics and limits](docs/development.md#line-numbers-and-counters).
+
 Find/replace now shares a local Rust worker in both clients: literal or regex,
 case matching, highlighted results and wraparound navigation. On Mac use **Cmd+F**
 or **Option+Cmd+F** for replacement, then **All…** to preview a batch. In the TUI

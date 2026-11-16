@@ -10,6 +10,111 @@ use vibechar_core::{checkpoint::Checkpoint, session::Session, Document};
 
 pub type VcDocument = Document;
 pub struct VcHistory(String);
+pub struct VcMetrics(vibechar_core::metrics::Engine);
+
+#[no_mangle]
+pub extern "C" fn vc_metrics_new() -> *mut VcMetrics {
+    guard(|| Box::into_raw(Box::new(VcMetrics(Default::default()))))
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_metrics_free(metrics: *mut VcMetrics) {
+    if !metrics.is_null() {
+        drop(Box::from_raw(metrics));
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_metrics_submit(
+    metrics: *mut VcMetrics,
+    document: *const VcDocument,
+    starts: *const usize,
+    lengths: *const usize,
+    count: usize,
+) -> bool {
+    guard(|| {
+        let (Some(metrics), Some(doc)) = (metrics.as_mut(), document.as_ref()) else {
+            return false;
+        };
+        if count == 0 || count > 1000 || starts.is_null() || lengths.is_null() {
+            return false;
+        }
+        let (starts, lengths) = (
+            std::slice::from_raw_parts(starts, count),
+            std::slice::from_raw_parts(lengths, count),
+        );
+        let mut ranges = Vec::with_capacity(count);
+        for (&start, &length) in starts.iter().zip(lengths) {
+            let Some(end) = start.checked_add(length) else {
+                return false;
+            };
+            let (Ok(start), Ok(end)) = (doc.char_from_utf16(start), doc.char_from_utf16(end))
+            else {
+                return false;
+            };
+            ranges.push(start..end);
+        }
+        metrics.0.submit(doc, &ranges);
+        true
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_metrics_state(
+    metrics: *const VcMetrics,
+    document: *const VcDocument,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        let (Some(metrics), Some(doc)) = (metrics.as_ref(), document.as_ref()) else {
+            return 0;
+        };
+        let Some(frame) = metrics.0.frame(doc) else {
+            return 0;
+        };
+        copy_metadata(&serde_json::to_string(&frame).unwrap(), output, capacity)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_line_count(document: *const VcDocument) -> usize {
+    guard(|| document.as_ref().map_or(0, |d| d.line_count()))
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_line_index(
+    document: *const VcDocument,
+    offset: usize,
+) -> usize {
+    guard(|| {
+        document
+            .as_ref()
+            .and_then(|d| d.char_from_utf16(offset).ok().map(|p| d.line_index(p)))
+            .unwrap_or(usize::MAX)
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_document_line_range(
+    document: *const VcDocument,
+    line: usize,
+    start: *mut usize,
+    length: *mut usize,
+) -> bool {
+    guard(|| {
+        let (Some(doc), Some(start), Some(length)) =
+            (document.as_ref(), start.as_mut(), length.as_mut())
+        else {
+            return false;
+        };
+        if line >= doc.line_count() {
+            return false;
+        }
+        *start = doc.utf16_from_char(doc.line_start(line)).unwrap();
+        let end = if line + 1 < doc.line_count() {
+            doc.line_start(line + 1)
+        } else {
+            doc.len_chars()
+        };
+        *length = doc.utf16_from_char(end).unwrap() - *start;
+        true
+    })
+}
 pub struct VcSyntaxFrame(std::sync::Arc<vibechar_core::syntax::Frame>);
 pub struct VcSearch(vibechar_core::search::Engine);
 pub struct VcSearchFrame(std::sync::Arc<vibechar_core::search::Frame>);
@@ -1312,6 +1417,51 @@ pub unsafe extern "C" fn vc_session_restore(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numerical_metrics_and_line_metadata_validate_utf16() {
+        unsafe {
+            let source = "я👩‍💻e\u{301}\r\nx";
+            let doc = vc_document_new(source.as_ptr(), source.len());
+            assert_eq!(vc_document_line_count(doc), 2);
+            assert_eq!(vc_document_line_index(doc, 2), usize::MAX);
+            let (mut start, mut length) = (0, 0);
+            assert!(vc_document_line_range(doc, 0, &mut start, &mut length));
+            assert_eq!((start, length), (0, 10));
+            assert!(vc_document_line_range(doc, 1, &mut start, &mut length));
+            assert_eq!((start, length), (10, 1));
+            assert!(!vc_document_line_range(doc, 2, &mut start, &mut length));
+            let metrics = vc_metrics_new();
+            assert!(!vc_metrics_submit(
+                metrics,
+                doc,
+                [2].as_ptr(),
+                [1].as_ptr(),
+                1
+            ));
+            assert!(vc_metrics_submit(
+                metrics,
+                doc,
+                [1, 6].as_ptr(),
+                [5, 2].as_ptr(),
+                2
+            ));
+            let count = vc_metrics_state(metrics, doc, ptr::null_mut(), 0);
+            let mut bytes = vec![0; count];
+            assert_eq!(
+                vc_metrics_state(metrics, doc, bytes.as_mut_ptr(), count),
+                count
+            );
+            let frame: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(frame["total"]["characters"], 5);
+            assert_eq!(frame["selected"]["characters"], 2);
+            assert_eq!(frame["selected"]["lines"], 1);
+            assert_eq!(frame["targets"], 2);
+            assert!(!String::from_utf8(bytes).unwrap().contains("я"));
+            assert_eq!(vc_document_revision(doc), 0);
+            vc_metrics_free(metrics);
+            vc_document_free(doc);
+        }
+    }
     #[test]
     fn indentation_frame_and_position_validate_utf16_and_preserve_one_history_step() {
         unsafe {

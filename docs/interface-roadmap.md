@@ -39,6 +39,8 @@ window; no dashboard, card grid, or permanent AI chat panel is required.
 - [ ] Check Russian/English prose, JSON, code, emoji, and long lines side by side.
 - [x] Text zoom through View; display the current size quietly in the footer.
 - [x] Quiet line/column indicators, visible in narrow/private layouts; visual wrap toggle.
+- [x] Logical line-number gutter with warm active-line accent and quiet continuation
+  dots; adaptive selection/text counters and a click-to-open numerical detail table.
 - [x] Opaque text canvas; use native materials only where they improve chrome.
 - [ ] Preserve native selection, IME, clipboard, and accessibility.
 

@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 130 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 138 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -26,8 +26,8 @@ This records local prototype evidence, not MVP release acceptance.
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Forty-six real PTY scenarios across the baseline, selection, find, tools,
-  multicursor, history, large-text and editing/wrapping suites,
+- Fifty real PTY scenarios across the baseline, selection, find, tools,
+  multicursor, history, large-text, editing/wrapping and counters suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
   failed read-only save preserving the previous destination; two independently
@@ -1048,6 +1048,53 @@ not a new latency/memory qualification. All fixtures use temporary files/state a
 synthetic clipboards. User recovery and the real clipboard were not accessed.
 The previously recorded giant AppKit paragraph cost and broader IME/accessibility,
 memory, Linux and release qualification remain open.
+
+## Line numbers and shared text statistics (2026-11-16)
+
+Both clients now start with a logical line-number gutter, current-line accent and
+quiet continuation dots for visual wraps. Clicking a number selects the entire
+source line, including its ending. Mac View → Line Numbers (⌥⌘N) and TUI F12 toggle
+the gutter without editing or saving text. The footer adds adaptive text/selection
+counts alongside the existing logical cursor position. Click the Mac counter or
+press TUI F11 for an exact document-versus-selection table: characters, words,
+logical lines, UTF-8 bytes and selection/caret counts. Escape/F11 dismisses the TUI
+panel; typing or paste closes it and continues in the previously focused field.
+
+Character counts use extended graphemes (`👩‍💻`, `é` and CRLF each count once),
+not scalar/UTF-16 counts or AI tokens. Word counts use runs of letters, numbers or
+underscores. Overlapping selected text and touched lines count once. An empty
+document has one logical line; a final newline creates an empty final line.
+Counts above 4 KiB use a lazy background Rope worker, revision/selection checks
+and cooperative 64 MiB / 500 ms analysis budgets. Exact line/byte metadata remains
+available when a detailed count is unavailable. This does not qualify pathological
+single-grapheme timing or a general process-memory ceiling.
+
+The full `scripts/check.sh` passed 138 Rust tests, formatting/Clippy, release builds,
+50 real PTY scenarios, the independent Secret Drop helper and all native smokes.
+After the final TUI panel/paste/focus adjustment, formatting/Clippy, all 138 Rust
+tests, release builds, counters/find/tools PTY suites and native smokes were rerun.
+New coverage includes chunk-crossing Unicode counting, overlapping selections,
+stale-result rejection/cancellation/disposal, bridge UTF-16 validation, numbered
+wrapped hit testing and scrolling, narrow private layouts and unchanged recovery
+marks. Four dedicated real-PTY cases verify byte-exact CRLF line copy, body hit
+testing after the gutter, toggles, detailed counts, Unicode/multicursor counts,
+actual resize/private exclusion, panel paste/Undo and a 10 MiB background count.
+
+The native counter smoke checks empty/trailing lines, selected emoji/bytes/words,
+wrapped fragments, scrolling, gutter clicks, narrow/light/dark geometry, private
+multiselection and grant preservation. Bitmap inspection caught ruler paint
+escaping its bounds and covering sibling content; explicit clipping fixes it.
+A regression check compares header pixels with the ruler shown/hidden. Synthetic
+final snapshots are reproducible under ignored `dist/counters-ui/`. No user recovery
+or real clipboard content was read. Broader IME/accessibility and Linux acceptance
+remain open.
+
+A single synthetic 10 MiB minified AppKit sample with numbers/counters enabled
+observed 1,111.438 ms through the first bitmap frame, 964.469 ms first typing at the
+start and 956.231 ms first Backspace. This is a regression spot check, not a latency
+percentile, physical-screen measurement or improvement claim. The previously
+recorded giant-paragraph layout/edit cost remains unresolved. The numeric report
+is ignored `dist/counters-performance.json`.
 
 ## Initial performance observations
 

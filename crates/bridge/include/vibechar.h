@@ -14,6 +14,11 @@ void vc_document_free(VcDocument *document);
 size_t vc_document_length(const VcDocument *document);
 // Logical line content length in UTF-16 units at a UTF-16 offset. SIZE_MAX if invalid.
 size_t vc_document_line_length(const VcDocument *document, size_t utf16_offset);
+size_t vc_document_line_count(const VcDocument *document);
+// Zero-based logical line at a UTF-16 offset, or SIZE_MAX if invalid.
+size_t vc_document_line_index(const VcDocument *document, size_t utf16_offset);
+// Full logical line (including its ending) in UTF-16. Invalid lines fail.
+bool vc_document_line_range(const VcDocument *document, size_t line, size_t *start, size_t *length);
 // Logical 1-based line and display column; tab stops are four cells.
 bool vc_document_position(const VcDocument *document, size_t utf16_offset, size_t *line, size_t *column);
 // Caller owns the output buffer. Returns false if capacity is insufficient.
@@ -39,6 +44,14 @@ void vc_history_free(VcHistory *history);
 bool vc_document_dirty(const VcDocument *document);
 uint64_t vc_document_revision(const VcDocument *document);
 void vc_document_mark_saved(VcDocument *document);
+typedef struct VcMetrics VcMetrics;
+VcMetrics *vc_metrics_new(void);
+void vc_metrics_free(VcMetrics *metrics);
+// Copy 1–1,000 UTF-16 ranges; invalid/split-surrogate ranges fail. No document mutation.
+bool vc_metrics_submit(VcMetrics *metrics, const VcDocument *document,
+                       const size_t *starts, const size_t *lengths, size_t count);
+// Numerical metadata only; no text is serialized or persisted.
+size_t vc_metrics_state(const VcMetrics *metrics, const VcDocument *document, uint8_t *output, size_t capacity);
 
 typedef struct VcSearch VcSearch;
 typedef struct VcSearchFrame VcSearchFrame;

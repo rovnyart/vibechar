@@ -33,6 +33,8 @@ class Session:
             fcntl.ioctl(self.slave, termios.TIOCSCTTY, 0)
 
         self.started = time.perf_counter()
+        # Legacy pointer fixtures use the complete terminal width for text.
+        # test-counters.py overrides this to exercise the default enabled gutter.
         self.process = subprocess.Popen(
             [str(binary), *map(str, arguments)],
             stdin=self.slave if piped is None else subprocess.PIPE,
@@ -40,7 +42,7 @@ class Session:
             stderr=self.slave,
             pass_fds=(self.slave,),
             preexec_fn=controlling_terminal,
-            env={**os.environ, "TERM": "xterm-256color", "VIBECHAR_STATE_DIR": str(self.state), **(extra_env or {})},
+            env={**os.environ, "TERM": "xterm-256color", "VIBECHAR_STATE_DIR": str(self.state), "VIBECHAR_LINE_NUMBERS": "0", **(extra_env or {})},
         )
         if piped is not None:
             self.process.stdin.write(piped)

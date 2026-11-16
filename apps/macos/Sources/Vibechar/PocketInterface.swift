@@ -453,6 +453,9 @@ final class PocketFooter: NSView {
     let status = NSTextField(labelWithString: "Saved locally")
     let detail = NSTextField(labelWithString: "15 pt  ·  UTF-8")
     let position = NSTextField(labelWithString: "1:1")
+    let counts = NSButton(title:"0 chars",target:nil,action:nil)
+    private var metrics:TextMetrics?
+    var onMetrics:((NSView)->Void)?
     let languageButton = NSButton(title: "Auto · Text", target: nil, action: nil)
     var onLanguage: (() -> Void)?
     private var syntaxName = "Text"
@@ -482,6 +485,10 @@ final class PocketFooter: NSView {
         position.alignment = .right
         position.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular)
         position.setAccessibilityLabel("Cursor position")
+        counts.isBordered=false;counts.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular)
+        counts.contentTintColor=PocketPalette.secondary;counts.cell?.lineBreakMode = .byTruncatingTail
+        counts.target=self;counts.action=#selector(showMetricsDetails);counts.setAccessibilityLabel("Text statistics")
+        addSubview(counts)
         for button in [give, stop, languageButton] {
             button.isBordered = false
             button.font = .systemFont(ofSize: 11, weight: .medium)
@@ -509,6 +516,12 @@ final class PocketFooter: NSView {
         position.setAccessibilityValue("Line \(line), column \(column)")
         needsLayout=true
     }
+    func showMetrics(_ value:TextMetrics?) {
+        metrics=value;counts.toolTip=(value?.details ?? "Counting text…")+"\nClick for details"
+        counts.setAccessibilityValue(value?.summary(compact:false) ?? "Counting text")
+        needsLayout=true
+    }
+    @objc private func showMetricsDetails() {onMetrics?(counts)}
     func showSyntax(_ name: String, automatic: Bool, reason: String, limited: Bool) {
         syntaxName = name; syntaxAuto = automatic
         languageButton.toolTip = "\(automatic ? "Automatic" : "Pinned") · \(reason)\(limited ? " · Color preview limited for this text" : "") · Click to search languages"
@@ -539,19 +552,25 @@ final class PocketFooter: NSView {
     }
     override func layout() {
         super.layout()
-        let compact = privateTab && bounds.width < 650
-        let languageWidth: CGFloat = compact ? 92 : 142
-        let details: CGFloat = bounds.width >= 800 ? 94 : 0
-        let positionWidth:CGFloat = min(100,max(52,position.fittingSize.width+12))
-        let actions: CGFloat = privateTab ? (agentUses == nil ? 104 : 144) : 0
+        let compact = bounds.width < 650
+        let languageWidth: CGFloat = compact ? 80 : 142
+        let details: CGFloat = bounds.width >= 1100 ? 94 : 0
+        let positionWidth:CGFloat = compact ? min(48,max(36,position.fittingSize.width+8)) : min(100,max(52,position.fittingSize.width+12))
+        let countsWidth:CGFloat = compact ? 64 : min(220,max(140,bounds.width*0.21))
+        let giveWidth:CGFloat = compact ? 64 : 104
+        let stopWidth:CGFloat = compact ? 32 : 40
+        let actions: CGFloat = privateTab ? giveWidth+(agentUses == nil ? 0 : stopWidth) : 0
+        give.title=agentUses == nil ? (compact ? "Give" : "Give to Agent") : (compact ? "Copy" : "Copy Again")
+        counts.title=metrics?.summary(compact:compact) ?? "Counting…"
         languageButton.title = syntaxAuto && !compact ? "Auto · \(syntaxName)" : syntaxName
         languageButton.frame = NSRect(x: bounds.width - 16 - languageWidth, y: 4, width: languageWidth, height: 24)
         detail.isHidden = details == 0
         detail.frame = NSRect(x: languageButton.frame.minX - details - 8, y: 8, width: max(0, details - 8), height: 16)
         position.frame=NSRect(x:languageButton.frame.minX-details-positionWidth-8,y:8,width:positionWidth-8,height:16)
-        let actionX = position.frame.minX - (actions == 0 ? 0 : 8) - actions
-        give.frame = NSRect(x: actionX, y: 4, width: 104, height: 24)
-        stop.frame = NSRect(x: actionX + 104, y: 4, width: 40, height: 24)
+        counts.frame=NSRect(x:position.frame.minX-countsWidth-8,y:4,width:countsWidth,height:24)
+        let actionX = counts.frame.minX - (actions == 0 ? 0 : 8) - actions
+        give.frame = NSRect(x: actionX, y: 4, width: giveWidth, height: 24)
+        stop.frame = NSRect(x: actionX + giveWidth, y: 4, width: stopWidth, height: 24)
         status.frame = NSRect(x: 26, y: 8, width: max(0, actionX - 38), height: 16)
     }
     override func draw(_ dirtyRect: NSRect) {

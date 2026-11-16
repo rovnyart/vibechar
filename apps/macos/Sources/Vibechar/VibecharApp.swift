@@ -16,6 +16,10 @@ struct VibecharApp {
             AppDelegate.editingSmokeTest()
             return
         }
+        if CommandLine.arguments.contains("--smoke-counters") {
+            AppDelegate.countersSmokeTest()
+            return
+        }
         if CommandLine.arguments.contains("--profile-snapshots") {
             profileSnapshotCopies()
             return
@@ -56,6 +60,7 @@ struct VibecharApp {
             AppDelegate.presentationHistorySmokeTest()
             AppDelegate.firstPresentationSmokeTest()
             AppDelegate.editingSmokeTest()
+            AppDelegate.countersSmokeTest()
             AppDelegate.closeSmokeTest()
             AppDelegate.saveAsSmokeTest()
             AppDelegate.syntaxSmokeTest()
@@ -142,6 +147,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private let textView = PocketTextView()
     private let header = PocketHeader()
     private let footer = PocketFooter()
+    private let metrics=RustMetrics()
+    private var metricsTimer:Timer?
+    private var metricsPopover:NSPopover?
+    private var lineNumbers:PocketLineNumbers?
+    private var showLineNumbers=true
+    private var stopping=false
     private let findBar = FindBar()
     private var toolPalette: ToolPalette?
     private lazy var multiController:MultiController = {
@@ -153,9 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         controller.didUpdate={ [weak self] state in
             guard let self else {return}
             self.footer.operationError=state.message
-            let count=state.selections.count
-            let noun=state.selections.allSatisfy {$0.length==0} ? (count==1 ? "caret" : "carets") : (count==1 ? "selection" : "selections")
-            self.footer.multiStatus=state.busy ? "Finding matches…" : state.active ? "\(count) \(noun) · Esc to leave" : nil
+            self.footer.multiStatus=state.busy ? "Finding matches…" : nil
+            self.updateStatistics()
             self.scheduleSessionSave(quiet:true)
         }
         return controller
@@ -536,6 +546,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(syntaxViewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         scroll.documentView = textView
+        let gutter=PocketLineNumbers(scroll:scroll,editor:textView,document:document)
+        lineNumbers=gutter;scroll.verticalRulerView=gutter;scroll.hasVerticalRuler=true;scroll.rulersVisible=true
+        scroll.hasHorizontalRuler=false
+        gutter.onSelect={ [weak self] line in
+            guard let self,self.multipleInputReady(),let range=self.document.lineRange(line) else {return}
+            self.multiController.cancel();self.textView.setSelectedRange(range);self.window.makeFirstResponder(self.textView)
+        }
         scroll.backgroundColor = PocketPalette.canvas
         scroll.translatesAutoresizingMaskIntoConstraints = false
         header.translatesAutoresizingMaskIntoConstraints = false
@@ -546,6 +563,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         footer.onGive = { [weak self] in self?.copyForAgent() }
         footer.onStop = { [weak self] in self?.closeAgentAccess() }
         footer.onLanguage = { [weak self] in self?.showLanguagePicker() }
+        footer.onMetrics={ [weak self] anchor in self?.showStatistics(relativeTo:anchor) }
         content.appearanceChanged = { [weak self] in self?.applyTypography() }
         content.addSubview(header)
         findBar.translatesAutoresizingMaskIntoConstraints = false
@@ -599,6 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             storage.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: storage.length))
         }
         footer.detail.stringValue = "\(Int(fontSize)) pt  ·  UTF-8"
+        lineNumbers?.refresh()
         textView.needsDisplay = true
         paintSyntax()
     }
@@ -676,6 +695,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         previousMatchItem.keyEquivalentModifierMask = [.command,.shift]; previousMatchItem.target=self; edit.addItem(previousMatchItem)
         addMenu("Edit", submenu: edit, to: menu)
         let view = NSMenu(title: "View")
+        let numbers=NSMenuItem(title:"Line Numbers",action:#selector(toggleLineNumbers),keyEquivalent:"n")
+        numbers.keyEquivalentModifierMask=[.command,.option];numbers.target=self;view.addItem(numbers)
         let wrap=NSMenuItem(title:"Wrap Lines",action:#selector(toggleWrapLines),keyEquivalent:"w")
         wrap.keyEquivalentModifierMask=[.command,.option];wrap.target=self;view.addItem(wrap)
         view.addItem(.separator())
@@ -771,10 +792,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private func updatePosition() {
         let offset=multiController.state.current?.head ?? textView.selectedRange().location
         if let (line,column)=document.position(at:offset) {footer.showPosition(line:line,column:column)}
+        lineNumbers?.activeLine=max(0,document.lineIndex(at:offset))
+        lineNumbers?.refresh();updateStatistics()
+    }
+    private func updateStatistics() {
+        guard !stopping else {return}
+        let ranges=multiController.active ? multiController.state.selections.map(\.range) : [textView.selectedRange()]
+        metrics.submit(document,ranges:ranges);refreshStatistics()
+    }
+    private func refreshStatistics() {
+        let frame=metrics.frame(document);footer.showMetrics(frame)
+        if let controller=metricsPopover?.contentViewController as? MetricsPopover {controller.update(frame)}
+        if frame?.busy==true {
+            if metricsTimer==nil {metricsTimer=Timer.scheduledTimer(withTimeInterval:0.025,repeats:true) { [weak self] timer in
+                MainActor.assumeIsolated {guard let self else {timer.invalidate();return};self.refreshStatistics()}
+            }}
+        } else {metricsTimer?.invalidate();metricsTimer=nil}
+    }
+    private func showStatistics(relativeTo anchor:NSView) {
+        metricsPopover?.performClose(nil)
+        let popover=NSPopover();popover.behavior = .transient;popover.animates=false
+        popover.contentViewController=MetricsPopover(metrics.frame(document))
+        metricsPopover=popover;popover.show(relativeTo:anchor.bounds,of:anchor,preferredEdge:.maxY)
+    }
+    @objc private func toggleLineNumbers() {
+        showLineNumbers.toggle();textView.enclosingScrollView?.rulersVisible=showLineNumbers
+        textView.scrollRangeToVisible(NSRange(location:textView.selectedRange().location,length:0))
     }
     @objc private func toggleWrapLines() {
         wrapLines.toggle()
         guard let scroll=textView.enclosingScrollView,let container=textView.textContainer else {return}
+        textView.minSize=NSSize(width:wrapLines ? 0 : scroll.contentSize.width,height:0)
         textView.isHorizontallyResizable = !wrapLines
         textView.autoresizingMask = wrapLines ? [.width] : []
         container.widthTracksTextView=wrapLines
@@ -827,7 +875,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         if !busy { syntaxTimer?.invalidate(); syntaxTimer = nil }
         return busy
     }
-    @objc private func syntaxViewportChanged() { paintSyntax(); findController.paint();multiController.paint() }
+    @objc private func syntaxViewportChanged() {
+        if !wrapLines,let scroll=textView.enclosingScrollView {
+            let width=scroll.contentSize.width
+            if textView.minSize.width != width {textView.minSize=NSSize(width:width,height:0)}
+            if textView.frame.width<width {textView.setFrameSize(NSSize(width:width,height:textView.frame.height))}
+        }
+        lineNumbers?.needsDisplay=true;paintSyntax();findController.paint();multiController.paint()
+    }
     @objc private func addNextOccurrence() {openOccurrences(all:false)}
     @objc private func selectAllOccurrences() {openOccurrences(all:true)}
     private func openOccurrences(all:Bool) {
@@ -1043,6 +1098,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         footer.operationError = nil
         syntaxFrame = nil; syntaxSerial = 0
         footer.showSyntax(session.language.isEmpty ? "Text" : session.language, automatic: session.language.isEmpty, reason: session.language.isEmpty ? "Detects file names and pasted text locally" : "Pinned for this tab", limited: false)
+        lineNumbers?.refresh();textView.enclosingScrollView?.tile()
         updateLayoutPolicy(at:session.selection.location)
         textView.setPlainText(document.text)
         textView.setSelectedRange(session.selection)
@@ -1107,6 +1163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleLineNumbers) {menuItem.state=showLineNumbers ? .on : .off}
         if menuItem.action == #selector(toggleWrapLines) {menuItem.state=wrapLines ? .on : .off}
         if menuItem.action == #selector(selectNumberedBuffer(_:)) {
             return menuItem.tag == 9 || (menuItem.tag >= 1 && menuItem.tag <= session.count)
@@ -1192,9 +1249,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         (closingWindow || saveBeforeQuitting()) ? .terminateNow : .terminateCancel
     }
     func applicationWillTerminate(_ notification: Notification) {
+        stopping=true
         // AppKit terminates the process without guaranteeing Swift/Rust deinit.
         closeAllAgentAccess()
         syntaxWork?.cancel(); syntaxTimer?.invalidate()
+        metricsTimer?.invalidate();metricsTimer=nil;metricsPopover?.performClose(nil)
         findController.close()
         multiController.cancel()
         toolPalette?.close(); toolPalette=nil
@@ -1256,6 +1315,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "vibechar", .applicationVersion: "0.1.0 · Preview"])
+    }
+
+    static func countersSmokeTest() {
+        _ = NSApplication.shared
+        let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false);app.makeMenus()
+        defer {app.metricsTimer?.invalidate();app.closeAllAgentAccess();app.syntaxWork?.cancel();app.syntaxTimer?.invalidate();app.multiController.cancel();app.clipboard.clearContents();app.window.delegate=nil;app.window.close()}
+        func ready()->TextMetrics {
+            let end=Date(timeIntervalSinceNow:8)
+            while app.metrics.frame(app.document)?.busy != false {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.refreshStatistics();precondition(Date()<end)}
+            return app.metrics.frame(app.document)!
+        }
+        let output=ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map {URL(fileURLWithPath:$0,isDirectory:true)}
+        if let output {try! FileManager.default.createDirectory(at:output,withIntermediateDirectories:true)}
+        @discardableResult func render(_ name:String)->NSBitmapImageRep {
+            let root=app.window.contentView!;root.layoutSubtreeIfNeeded()
+            let bitmap=root.bitmapImageRepForCachingDisplay(in:root.bounds)!
+            app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                root.cacheDisplay(in:root.bounds,to:bitmap)
+                if let output {try! bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent(name+".png"))}
+            }
+            return bitmap
+        }
+        app.showActiveBuffer()
+        precondition(ready().total.characters==0 && app.document.lineCount==1)
+        render("counters-empty")
+        let source="one 👩‍💻e\u{301}\r\nsecond\r\n"
+        app.session.open(source);app.showActiveBuffer()
+        precondition(ready().total.characters==14 && ready().total.lines==3 && ready().total.words==3)
+        app.textView.setSelectedRange(NSRange(location:4,length:5))
+        precondition(ready().selected.characters==1 && ready().selected.bytes==11)
+        app.textView.setSelectedRange(NSRange(location:9,length:2));precondition(ready().selected.characters==1)
+        let long=String(repeating:"Long line 👩‍💻 · ",count:18)+"\r\n"+(1...120).map {"line \($0)"}.joined(separator:"\r\n")+"\r\n"
+        app.session.open(long);app.showActiveBuffer();let revision=app.document.revision
+        for (theme,appearance) in [("light",NSAppearance.Name.aqua),("dark",.darkAqua)] {
+            app.window.appearance=NSAppearance(named:appearance)
+            for width in [420,880] {
+                app.window.setContentSize(NSSize(width:width,height:600))
+                app.textView.setSelectedRange(NSRange(location:0,length:36));_=ready()
+                render("counters-\(theme)-\(width)")
+                precondition(app.footer.bounds.contains(app.footer.counts.frame))
+                precondition(app.footer.bounds.contains(app.footer.position.frame))
+                precondition(!app.footer.counts.frame.intersects(app.footer.position.frame))
+                precondition(app.textView.enclosingScrollView!.rulersVisible && !app.textView.enclosingScrollView!.hasHorizontalRuler)
+            }
+        }
+        let range=app.document.lineRange(100)!
+        app.textView.setSelectedRange(NSRange(location:range.location,length:0));app.textView.scrollRangeToVisible(app.textView.selectedRange());_=ready();render("counters-scrolled")
+        precondition(app.lineNumbers!.activeLine==100)
+        let layout=app.textView.layoutManager!
+        let glyph=layout.glyphIndexForCharacter(at:range.location)
+        let fragment=layout.lineFragmentRect(forGlyphAt:glyph,effectiveRange:nil)
+        let point=app.lineNumbers!.convert(NSPoint(x:0,y:fragment.midY+app.textView.textContainerOrigin.y),from:app.textView)
+        let windowPoint=app.lineNumbers!.convert(NSPoint(x:app.lineNumbers!.bounds.midX,y:point.y),to:nil)
+        let event=NSEvent.mouseEvent(with:.leftMouseDown,location:windowPoint,modifierFlags:[],timestamp:0,windowNumber:app.window.windowNumber,context:nil,eventNumber:1,clickCount:1,pressure:1)!
+        app.lineNumbers!.mouseDown(with:event)
+        precondition(app.textView.selectedRange()==range && ready().selected.lines==1)
+        let selected=app.textView.selectedRange()
+        func headerPixels(_ bitmap:NSBitmapImageRep)->Data {
+            let scale=CGFloat(bitmap.pixelsHigh)/app.window.contentView!.bounds.height
+            let crop=bitmap.cgImage!.cropping(to:NSRect(x:0,y:0,width:CGFloat(bitmap.pixelsWide),height:app.header.bounds.height*scale))!
+            return NSBitmapImageRep(cgImage:crop).representation(using:.png,properties:[:])!
+        }
+        let numberedHeader=headerPixels(render("counters-numbered"))
+        app.toggleLineNumbers();precondition(!app.textView.enclosingScrollView!.rulersVisible)
+        precondition(numberedHeader==headerPixels(render("counters-unnumbered")),"Ruler paint must never cover the header outside its bounds")
+        app.toggleLineNumbers();precondition(app.document.revision==revision && app.textView.selectedRange()==selected && app.document.text==long)
+        app.newPrivateScratch();app.textView.insertText("foo foo",replacementRange:NSRange(location:NSNotFound,length:0))
+        _=try! app.session.shareForAgent(executable:"/synthetic/vibechar")
+        app.refreshTitle()
+        app.textView.setSelectedRange(NSRange(location:0,length:3));app.selectAllOccurrences()
+        let end=Date(timeIntervalSinceNow:5)
+        while app.multiController.state.busy {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.multiController.poll();precondition(Date()<end)}
+        let frame=ready();precondition(frame.targets==2 && frame.selected.characters==6 && frame.selected.lines==1)
+        app.window.setContentSize(NSSize(width:420,height:600));render("counters-private")
+        precondition(app.session.dropActive && app.footer.bounds.contains(app.footer.counts.frame))
+        let controller=MetricsPopover(frame)
+        if let output {
+            let root=controller.view;root.appearance=NSAppearance(named:.darkAqua)
+            let bitmap=root.bitmapImageRepForCachingDisplay(in:root.bounds)!;root.cacheDisplay(in:root.bounds,to:bitmap)
+            try! bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("counters-details.png"))
+        }
+        print("Counters/gutter native smoke passed: graphemes/CRLF, selection/bytes/words, wrapped numbers, scroll, gutter click, toggle, private multicursor, narrow themes and numerical details")
     }
 
     static func quietSelectionSmokeTest() {
@@ -1961,7 +2102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 let view = app.window.contentView!
                 view.layoutSubtreeIfNeeded()
                 precondition(abs(view.bounds.width - CGFloat(width)) < 1, "Secret Drop must fit the actual narrow window")
-                let buttons = app.footer.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden && $0 !== app.footer.languageButton }
+                let buttons = app.footer.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden && $0 !== app.footer.languageButton && $0 !== app.footer.counts }
                 precondition(buttons.count == 2 && !buttons[0].frame.intersects(buttons[1].frame))
                 precondition(buttons.allSatisfy { app.footer.bounds.contains($0.frame) })
                 for button in buttons {
@@ -2020,7 +2161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.session.count == countBeforeSave && app.textView.selectedRange() == selectionBeforeSave)
         precondition(app.session.fileURL == savedFile && app.session.label(app.session.active) == "saved.txt")
         precondition(!app.session.needsCloseConfirmation && !app.footer.status.stringValue.contains("Private"))
-        precondition(app.footer.subviews.compactMap { $0 as? NSButton }.filter { $0 !== app.footer.languageButton }.allSatisfy { $0.isHidden })
+        precondition(app.footer.subviews.compactMap { $0 as? NSButton }.filter { $0 !== app.footer.languageButton && $0 !== app.footer.counts }.allSatisfy { $0.isHidden })
         precondition(useDrop("raise Exception('CHILD_MUST_NOT_START')").0 == 1)
         let checkpointURL = savedFolder.appendingPathComponent("session.json")
         precondition(app.session.checkpoint().save(to: checkpointURL))

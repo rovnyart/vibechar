@@ -344,6 +344,45 @@ impl<'a> Walker<'a> {
     }
 }
 
+/// Count without flattening the Rope. Work is bounded/cancellable between chunks;
+/// a word is a run of graphemes containing letters, numbers or underscores.
+pub(crate) fn count_text(text: RopeSlice<'_>, cancel: impl Fn() -> bool) -> Option<(usize, usize)> {
+    let mut walker = Walker::new(text, 0);
+    let (mut byte, mut characters, mut words, mut in_word) = (0, 0, 0, false);
+    while byte < text.len_bytes() {
+        if cancel() {
+            return None;
+        }
+        let ascii = walker.ascii(4096);
+        if ascii > 0 {
+            characters += ascii;
+            for chunk in text.byte_slice(byte..byte + ascii).chunks() {
+                for b in chunk.bytes() {
+                    let word = b.is_ascii_alphanumeric() || b == b'_';
+                    if word && !in_word {
+                        words += 1;
+                    }
+                    in_word = word;
+                }
+            }
+            byte += ascii;
+        } else {
+            let end = walker.boundary(true).unwrap_or(text.len_bytes());
+            let word = text
+                .byte_slice(byte..end)
+                .chars()
+                .any(|c| c.is_alphanumeric() || c == '_');
+            if word && !in_word {
+                words += 1;
+            }
+            in_word = word;
+            characters += 1;
+            byte = end;
+        }
+    }
+    Some((characters, words))
+}
+
 impl Document {
     pub fn wrapped_row_at(&self, position: usize, width: usize) -> usize {
         let line = self.line_index(position);

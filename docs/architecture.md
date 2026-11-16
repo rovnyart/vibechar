@@ -131,6 +131,40 @@ full selection, tab/caret restoration, private tabs, resizing and appearance.
 The profiler includes the first bitmap draw and first input at the beginning:
 moving work from show into drawing or typing is not a presentation improvement.
 
+## Line numbers and numerical statistics
+
+The Mac gutter is an `NSRulerView` driven by visible native line fragments; logical
+line indexes/ranges come from Rope metadata through the bridge. The TUI paints a
+separate gutter from its existing visual-row projection and subtracts its width
+before hit testing/wrapping. Both draw logical numbers, accent the current line,
+use dots for wrapped continuations, and select the full logical line (including its
+ending) on a number click. Visibility is a client-session view preference; it does
+not change text, history, recovery status or grants.
+
+`metrics::Engine` owns revision/selection-bound **numeric-only** frames. It counts
+extended grapheme clusters (including one CRLF), words as runs of graphemes
+containing letters/numbers/underscores, logical lines and UTF-8 bytes. Nonempty
+selection ranges are merged before counting; touched line intervals are unioned,
+excluding the next line when a selection ends exactly at its start. Empty text
+has one document line and zero selected lines. Targets/selections/carets are counted
+separately. Bytes are metadata for the source text, not a disk-file size promise.
+
+Up to 4 KiB is counted inline; larger scans use a lazy background worker over an
+immutable Rope snapshot without flattening. Document totals are reused for cursor
+and selection changes. Document/revision epochs cancel obsolete source work;
+selection serials cancel obsolete selection work without starving document totals.
+Scans stop at 64 MiB or an elapsed 500 ms budget (checked between chunks/graphemes).
+Oversized/pathological input retains exact line/byte metadata and shows unavailable
+character/word counts, never a partial total. As with existing grapheme navigation,
+one pathological cluster/context can exceed a cooperative cancellation interval.
+No numeric frame serializes source text. Workers sleep on a condition variable;
+clients poll every 25 ms only while counting, then stop. This is independent of the
+existing recovery, syntax, search and explicitly open Secret Drop timers.
+
+Mac shows compact primary counts, exact details in a live popover and a tooltip;
+TUI uses a width-adaptive status line and F11 details. Neither moves the caret or
+marks the document edited when updating counts.
+
 ## Bridge ownership
 
 Indentation and inherited-newline input use `Document::editing_plan`. It produces

@@ -271,6 +271,7 @@ mod tests {
         e.handle(KeyEvent::new(code, flags));
     }
     fn draw(e: &mut Editor, width: u16, height: u16) {
+        e.line_numbers = false;
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
         terminal.draw(|f| crate::view::draw(f, e)).unwrap();

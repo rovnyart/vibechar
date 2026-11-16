@@ -127,6 +127,9 @@ are measured with larger documents.
   on Enter, CRLF-aware scratches, mapped selections/multicursors and atomic Undo.
 - [x] Visual wrap toggles in both clients, logical line/column footer, TUI visual-row
   mouse/selection/navigation and bounded sparse wrapping geometry.
+- [x] Logical line numbers with active-line accent, wrap continuation markers and
+  click-to-select-line in both clients; shared grapheme/word/line/byte counters,
+  selection unions and multicursor totals, with bounded background counting.
 - [ ] Word navigation improvements; qualify selection/clipboard
   across terminal emulators and Linux.
 - [ ] IME composition, accessibility, keyboard layout, and UTF-16/grapheme tests.
