@@ -15,6 +15,7 @@ struct VibecharApp {
         if CommandLine.arguments.contains("--smoke-rewrite") { rewriteSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-examples") { exampleSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-recipes") { recipeSmokeTest(); return }
+        if CommandLine.arguments.contains("--smoke-launcher") { AppDelegate.launcherSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-first-presentation") {
             AppDelegate.firstPresentationSmokeTest()
             return
@@ -84,6 +85,7 @@ struct VibecharApp {
             rewriteSmokeTest()
             exampleSmokeTest()
             recipeSmokeTest()
+            AppDelegate.launcherSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -166,6 +168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private let exampleFactory: (@MainActor (RustSession, NSRange) throws -> ExampleModel)?
     private let recipeStore: RecipeStore
     private var recipeWindow: RecipeWindowController?
+    private var pendingOpenFiles: [URL] = []
+    private var commandInstallBusy = false
     private var fileURL: URL? { session.fileURL }
     private var window: NSWindow!
     private let textView = PocketTextView()
@@ -525,6 +529,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         makeMenus()
         makeWindow()
         showActiveBuffer()
+        let pending = pendingOpenFiles; pendingOpenFiles = []
+        for url in pending { do { try openRequestedFile(url) } catch { NSApp.presentError(error) } }
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(textView)
         NSApp.activate(ignoringOtherApps: true)
@@ -695,6 +701,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         appMenu.addItem(withTitle: "About vibechar", action: #selector(showAbout), keyEquivalent: "")
         appMenu.addItem(.separator())
         addItem("Settings…", action: #selector(showAISettings), key: ",", to: appMenu)
+        addItem("Install vc Command…",action: #selector(installCommand),key: "",to: appMenu)
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit vibechar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         addMenu("vibechar", submenu: appMenu, to: menu)
@@ -1262,12 +1269,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let text = try String(contentsOf: url, encoding: .utf8)
-            session.rememberSelection(textView.selectedRange())
-            session.open(text, url: url)
-            showActiveBuffer()
+            try openRequestedFile(url)
         }
         catch { NSApp.presentError(error) }
+    }
+
+    private func openRequestedFile(_ requested: URL) throws {
+        let url = requested.standardizedFileURL
+        guard url.isFileURL else { throw RewriteFailure(message: "Choose a local text file.") }
+        if window == nil { pendingOpenFiles.append(url); return }
+        guard multipleInputReady() else { throw RewriteFailure(message: "Matching is finishing. Try opening the file again.") }
+        for index in 0..<session.count where session.fileURL(index)?.standardizedFileURL == url {
+            switchBuffer(to: index); window.makeKeyAndOrderFront(nil); return
+        }
+        let text = FileManager.default.fileExists(atPath: url.path) ? try String(contentsOf: url,encoding: .utf8) : ""
+        session.rememberSelection(textView.selectedRange()); session.open(text,url: url)
+        showActiveBuffer(); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(textView)
+    }
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        do { for path in filenames { try openRequestedFile(URL(fileURLWithPath: path)) }; sender.reply(toOpenOrPrint: .success) }
+        catch { sender.reply(toOpenOrPrint: .failure); NSApp.presentError(error) }
+    }
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let components = URLComponents(url: url,resolvingAgainstBaseURL: false),
+                  components.scheme == "vibechar", components.host == "open",
+                  let items = components.queryItems, items.count == 1,
+                  items[0].name == "path", let path = items[0].value,
+                  path.hasPrefix("/"), !path.contains("\0") else { continue }
+            do { try openRequestedFile(URL(fileURLWithPath: path)) } catch { NSApp.presentError(error) }
+        }
+    }
+    @objc private func installCommand() {
+        guard !commandInstallBusy else { return }; commandInstallBusy = true
+        let executable = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/vc")
+        Task { [weak self] in
+            let result = await Task.detached { () -> Result<String,Error> in
+                do {
+                    let task = Process(), pipe = Pipe(); task.executableURL = executable; task.arguments = ["--install"]
+                    task.standardOutput = pipe; task.standardError = pipe
+                    try task.run(); let data = pipe.fileHandleForReading.readDataToEndOfFile(); task.waitUntilExit()
+                    let message = String(decoding: data,as: UTF8.self)
+                    guard task.terminationStatus == 0 else { throw RewriteFailure(message: message) }
+                    return .success(message)
+                } catch { return .failure(error) }
+            }.value
+            guard let self else { return }; self.commandInstallBusy = false
+            let alert = NSAlert()
+            switch result {
+            case .success(let message): alert.messageText = "vc is ready"; alert.informativeText = message
+            case .failure(let error): alert.messageText = "Couldn't install vc"; alert.informativeText = error.localizedDescription
+            }
+            alert.runModal()
+        }
+    }
+
+    static func launcherSmokeTest() {
+        let previousMenu = NSApp.mainMenu, clipboard = NSPasteboard.withUniqueName()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-launch-\(UUID().uuidString)")
+        try! FileManager.default.createDirectory(at: directory,withIntermediateDirectories: true)
+        let app = AppDelegate(clipboard: clipboard)
+        defer {
+            app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+            app.textView.delegate = nil; app.window.delegate = nil; app.window.close()
+            clipboard.releaseGlobally(); NSApp.mainMenu = previousMenu; try? FileManager.default.removeItem(at: directory)
+        }
+        let file = directory.appendingPathComponent("я 🦀 &?#.txt")
+        try! "Hello 🦀\r\n".write(to: file,atomically: true,encoding: .utf8)
+        try! app.openRequestedFile(file); precondition(app.pendingOpenFiles.count == 1)
+        app.makeWindow(restoreFrame: false); app.makeMenus()
+        for url in app.pendingOpenFiles { try! app.openRequestedFile(url) }; app.pendingOpenFiles = []
+        precondition(app.document.text == "Hello 🦀\r\n" && app.session.fileURL == file)
+        let count = app.session.count; try! app.openRequestedFile(file); precondition(app.session.count == count)
+        let fresh = directory.appendingPathComponent("new file.txt")
+        var uri = URLComponents(); uri.scheme = "vibechar"; uri.host = "open"; uri.queryItems = [.init(name: "path",value: fresh.path)]
+        app.application(NSApp,open: [uri.url!]); precondition(app.document.text.isEmpty && app.session.fileURL == fresh)
+        precondition(!FileManager.default.fileExists(atPath: fresh.path))
+        app.application(NSApp,open: [URL(string: "vibechar://grant/ignore-me")!]); precondition(app.session.fileURL == fresh)
+        let menu = NSApp.mainMenu!.items.first!.submenu!
+        precondition(menu.items.contains { $0.action == #selector(installCommand) })
+        print("Launcher native smoke passed: queued/running URL opens, Unicode/CRLF, existing-tab reuse, new files, ignored grants and Install vc menu")
     }
 
     private func showActiveBuffer() {
@@ -1564,6 +1645,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(installCommand) { return !commandInstallBusy }
         if menuItem.action == #selector(closeScratch) {
             menuItem.title = (aiSettings != nil && commandWindow() === aiSettings?.window) || (rewriteWindow != nil && commandWindow() === rewriteWindow?.window) || (exampleWindow != nil && commandWindow() === exampleWindow?.window) || (recipeWindow != nil && commandWindow() === recipeWindow?.window) ? "Close Window" : "Close Tab"
         }

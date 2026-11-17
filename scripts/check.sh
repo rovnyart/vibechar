@@ -16,6 +16,7 @@ python3 scripts/test-large.py
 python3 scripts/test-editing.py
 python3 scripts/test-counters.py
 python3 scripts/test-handoff.py
+python3 scripts/test-launcher.py
 if [[ "$(uname -s)" == "Darwin" ]]; then
   bash scripts/build-mac.sh
 fi

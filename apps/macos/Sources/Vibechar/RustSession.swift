@@ -54,6 +54,10 @@ final class RustSession {
         let path = metadata { vc_session_path(handle, $0, $1) }
         return path.isEmpty ? nil : URL(fileURLWithPath: path)
     }
+    func fileURL(_ index: Int) -> URL? {
+        let path = metadata { vc_session_buffer_path(handle,index,$0,$1) }
+        return path.isEmpty ? nil : URL(fileURLWithPath: path)
+    }
 
     var selection: NSRange {
         var start = 0

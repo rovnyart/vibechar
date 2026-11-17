@@ -1,144 +1,154 @@
-# vibechar
+<p align="center">
+  <img src="apps/macos/Artwork/AppIcon.icon/Assets/Graphite.png" width="128" height="128" alt="Vibechar — graphite V_ icon">
+</p>
+<h1 align="center">Vibechar</h1>
+<p align="center"><strong>Paste a mess. Make it useful. Get on with your day.</strong></p>
+<p align="center">A tiny native text workbench for macOS and your terminal.<br>One Rust editing engine. A quiet Mac app. Optional AI when you ask for it.</p>
+<p align="center">
+  <a href="https://github.com/rovnyart/vibechar/actions/workflows/ci.yml"><img alt="Build and tests" src="https://github.com/rovnyart/vibechar/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/rovnyart/vibechar/releases"><img alt="Downloads" src="https://img.shields.io/badge/download-GitHub_Releases-F49A6B?style=flat-square"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-20211F?style=flat-square"></a>
+  <img alt="macOS 14 and later" src="https://img.shields.io/badge/macOS-14%2B-20211F?style=flat-square&logo=apple&logoColor=white">
+  <img alt="Linux terminal client" src="https://img.shields.io/badge/Linux-terminal-20211F?style=flat-square&logo=linux&logoColor=white">
+</p>
+<p align="center"><a href="#install">Install</a> · <a href="#the-good-stuff">Features</a> · <a href="#show-once-run-again">Do the Rest</a> · <a href="docs/development.md">Build from source</a> · <a href="docs/roadmap.md">Roadmap</a></p>
 
-A tiny, native text workbench for macOS and the terminal.
+<p align="center"><img src="docs/assets/mac.png" width="920" alt="Vibechar's native graphite Mac interface editing highlighted JSON"></p>
 
-Open it, paste something, shape it, take the result. Vibechar should feel immediate
-before you connect an AI provider. AI can rewrite a selected fragment with a diff
-before anything changes. The flagship goal is to turn an example edit into a
-reusable text transformation.
+## Install
 
-## Product boundaries
+```sh
+curl -fsSL https://raw.githubusercontent.com/rovnyart/vibechar/main/install.sh | sh
+```
 
-- Plain text, individual files, and disposable or persistent scratch buffers.
-- One editing engine and command model, with a native Mac UI and a terminal UI.
-- Keyboard-first editing, broad syntax highlighting, and useful local transforms.
-- Optional Mac GUI-only AI through your own OpenAI API key; explicit invocation and
-  selected context. TUI stays local with Secret Drop.
-- Projects, folder workspaces, LSP servers, plugin marketplaces, and autonomous coding
-  agents are outside the MVP.
+On **macOS**, one install includes the GUI **and** the terminal editor. On **Linux**,
+it installs the terminal editor. No sudo, account, subscription, or API key required.
+The installer verifies download checksums and validates the Mac signature and
+Gatekeeper assessment before replacing the app.
 
-## Documentation
+```sh
+vc notes.md                   # native Mac app
+vc -t notes.md                # stay in this terminal
+vc --terminal notes.md        # same thing, spelled out
+vc -- "a file with spaces.md"
+vc --install                  # set up ~/.local/bin and your shell's PATH
+```
 
-| Document | What to read it for |
-| --- | --- |
-| [Roadmap](docs/roadmap.md) | MVP scope, milestones, dependencies, and acceptance gates |
-| [Architecture](docs/architecture.md) | Shared engine, native adapters, data ownership, and AI boundaries |
-| [Design](design.md) | Interaction and visual direction for both interfaces |
-| [Interface roadmap](docs/interface-roadmap.md) | The early Mac design pass and visual acceptance gates |
-| [Secret Drop](docs/secret-drop.md) | Private clipboard-to-agent workflow and local access contract |
-| [Development](docs/development.md) | Toolchain, commands, tests, and current limitations |
-| [Verification](docs/verification.md) | Observed prototype behavior, measurements, and open gates |
+On Linux, plain `vc` opens the terminal editor. On Mac, you can also choose
+**Vibechar → Install vc Command…**. Open a new terminal after the initial PATH setup.
+Files open in the running Mac app; missing files get a tab and reach disk on Save.
 
-## Current implementation
+| Platform | Included |
+| :--- | :--- |
+| macOS 14+ · Apple Silicon | Mac app + terminal + `vc` |
+| macOS 14+ · Intel | Mac app + terminal + `vc` |
+| Linux · x86_64 | Terminal + `vc` |
 
-The shared Rust engine drives both a terminal editor and a native macOS editing
-shell. Both support multiple scratch buffers with independent text,
-cursor/selection, undo history, file destinations, and unsaved-close protection.
-Both clients save their own local sessions and restore ordinary tabs after restart. Their
-session files are separate; live synchronization is not implemented. Mac Settings
-(Cmd+,) connects your OpenAI account: Keychain storage, searchable model choice,
-explicit model refresh and **Test & Save**. Connection checks use an API-billed
-synthetic prompt. **Rewrite Selection…** (Shift+Cmd+K) sends the explicit selection
-and your instruction, previews changes, and applies them as one Undo step.
-**Keep exact** hides marked occurrences from the provider and preserves their bytes;
-private tabs use local tools. **Do the Rest…** (Option+Cmd+K) learns a structural
-rule from one before/after row, validates the example and previews local processing
-of the selected rows. Only the example pair is sent to OpenAI. Skipped rows stay
-unchanged; Apply is one Undo. **Save Recipe…** keeps a validated rule under a name;
-**Saved Recipes…** (Option+Cmd+R) searches, renames, deletes and previews those rules
-on a new line selection, entirely offline without an API key. Source rows and
-examples are not saved; literal text in the rule is retained. The first
-native Pocket interface is implemented: compact
-tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
-and quiet session status. Art accepted the first Pocket increment.
-Private scratches are now available in both clients: Shift+Cmd+N on Mac or Ctrl+P
-in the terminal. They are excluded from recovery and have generic titles. Closing
-or quitting with private text asks before discarding it. Saving a private tab makes
-it an ordinary file tab, includes it in recovery, and closes that tab's agent access.
-Cancelled or failed saves keep the tab private.
-See the roadmap for status and the development guide for runnable commands.
+Mac app: `~/Applications/Vibechar.app`. Command: `~/.local/bin/vc`.
+[Downloads & checksums](https://github.com/rovnyart/vibechar/releases) ·
+[Installation, updates and removal](docs/installation.md)
 
-Typing and repeated deletion now undo as input runs in both clients. A pause,
-navigation, paste, newline, save or changing tabs separates steps. Paste stays
-one step, and undo across a file save restores its correct modification state.
+## The good stuff
 
-Save As is available through File → Save As / Shift+Cmd+S on Mac and F4 in the
-terminal, including for files already open. A successful save attaches the new
-destination; cancellation/failure keeps the original. Existing destinations need
-replacement confirmation. Art has tested Save As and the Mac Secret Drop Give/Stop
-workflow. Routine mechanics are verified automatically; visible features remain
-hands-on feedback checkpoints.
+| | |
+| :--- | :--- |
+| **A pocket, not a project** | Scratch tabs, individual files, automatic ordinary-tab recovery. Open, paste, edit, leave. |
+| **Real native clients** | AppKit on Mac, Ratatui in the terminal, a shared Rust editing engine. |
+| **Small editing superpowers** | Multiple selections, regex find/replace, line numbers, useful selection counters, indentation and wrapping. |
+| **186 syntax grammars** | Local detection with a compact searchable override. JSON, logs, code and prose without a giant language menu. |
+| **Useful before AI** | JSON format/minify, sort/deduplicate lines, trim, Unicode case, URL encode/decode. Entirely on device. |
+| **Private scratch tabs** | Excluded from session recovery. Explicit saving turns them into ordinary file tabs. |
+| **Secret Drop** | Let a local agent use a token in a child process without pasting its value into chat. Mac and terminal. |
+| **AI with a review step** | Bring an OpenAI key on Mac. Transform a selection, inspect the diff, apply, undo. |
 
-Smart syntax is available in both clients. Auto uses the filename and conservative
-local content detection for common JSON, environment, SQL, Markdown and code pastes.
-Ambiguous fragments stay Text. Click **Auto · JSON** in the Mac footer, or use
-**Control+Cmd+L** / **F2** in the terminal, to search by language or extension and pin
-an override. Auto resets the pin. The pinned catalog has **186 visible grammars**;
-this is coverage, not a claim to infer every language from arbitrary fragments.
-Parsing runs in a background worker; ordinary pins survive restart and private
-ones are excluded from recovery. Large/minified input uses an explicit uncolored
-fallback; see [syntax limits](docs/development.md#smart-syntax).
+Projects, folder workspaces, LSP servers and plugin marketplaces are outside the
+product. Vibechar is for the text between your other tools.
 
-The terminal supports click-to-edit, Shift-navigation and drag selection, word
-double click, edge autoscroll, Ctrl+A/C/X/V, and selection replacement/Undo.
-Ordinary selections preserve their direction across tabs and restart. Wheel/
-trackpad scrolling moves the viewport independently of the caret and does not
-write recovery; selection/caret navigation checkpoints quietly without flashing
-Saving locally in both clients.
+## Show once. Run again.
 
-Logical line numbers are enabled in both clients, with an active-line accent and
-dots for wrapped continuations. Click a number to select its whole source line.
-The footer counts text/selected graphemes, with words, lines, UTF-8 bytes and
-selection/caret totals available by clicking the Mac counter or pressing TUI
-**F11**. Toggle numbers with Mac **Option+Cmd+N** or TUI **F12**. Larger counts
-run in the shared background engine; see the [counter semantics and limits](docs/development.md#line-numbers-and-counters).
+Teach **Do the Rest** one before/after row. It learns a small structural rule,
+checks that rule against your example and previews the other selected rows locally.
 
-Find/replace now shares a local Rust worker in both clients: literal or regex,
-case matching, highlighted results and wraparound navigation. On Mac use **Cmd+F**
-or **Option+Cmd+F** for replacement, then **All…** to preview a batch. In the TUI
-use **Ctrl+F / Ctrl+R**, **Tab** between fields, **F3 / Shift+F3** for navigation and
-**F5** for the batch preview; Enter confirms it and Escape cancels. Replace All is
-one Undo, and stale previews cannot overwrite subsequent edits. Queries/previews
-stay in memory, including for private tabs. See the [find limits](docs/development.md#find-and-replace).
+```text
+Before:  {"id":42,"name":"Anna"}
+After:   Anna — /users/42
 
-**Cmd+K** on Mac / **Ctrl+K** in the terminal opens a small searchable Text Tools
-palette: format/minify JSON, sort lines, remove duplicate lines, trim trailing
-whitespace, Unicode uppercase/lowercase and URL encode/decode. The list stays compact:
-scroll or use arrows, or type `case` / `url` to filter. The visible target is the
-selection, or the whole tab when nothing is selected. Arrows choose, Enter applies,
-Escape cancels; every change is one Undo.
-Commands run locally on a Rust worker, including in private tabs. JSON retains
-number precision, key order, duplicate keys and string escapes. See the
-[tool semantics and limits](docs/development.md#local-text-tools).
+The rest:
+         {"id":7,"name":"Bob"}  →  Bob — /users/7
+```
 
-Multiple selections work in both clients: **Cmd+D / Ctrl+D** selects the word at
-the caret, then adds the next occurrence. **Cmd+Shift+L / Ctrl+L** selects all;
-when Find is open it uses the current literal/regex results. Type, delete, paste
-and move/extend all carets together; input runs share Undo. Pasting N lines into N
-carets distributes one line to each, preventing duplicated copied selections.
-Escape keeps a single primary selection. Selection changes checkpoint quietly. See the
-[multicursor controls and limits](docs/development.md#multiple-selections).
+**Only the example pair goes to OpenAI.** The remaining rows stay on your machine.
+Review **Changes**, **Result**, **Rule** and **Skipped** before applying. Unmatched
+rows keep their bytes. The whole operation is one Undo.
 
-Undo/Redo history has a shared per-document retention budget in both clients:
-1,024 steps / 32 MiB of charged allocations, keeping the newest operation
-undoable even when it alone exceeds the budget. Oldest steps expire as needed.
+<p align="center"><img src="docs/assets/do-the-rest.png" width="800" alt="Do the Rest preview: one JSON example becomes a local name and URL rule, with a readable diff"></p>
 
-Large text mode activates from **512 KiB**. Mac bounds wrapped paragraph layout
-and offers **View → Large Text Mode → Automatic / On / Off**; a lightning mark
-appears beside the counter. TUI shows **Large text** and keeps its viewport-based
-renderer. Text, real newlines and file bytes are unchanged. First distant Mac
-navigation can be slower; see the [mode and operation limits](docs/development.md#large-text-mode).
+Like the result? **Save Recipe…** gives the rule a name. Next time, select new rows,
+press **⌥⌘R**, choose the recipe and preview it **offline, without an AI request**.
 
-Secret Drop is implemented in both clients. Copy a secret, then use **Agent →
-Paste Secret for Agent** (Option+Cmd+V) on Mac or **F8** in the terminal. Vibechar
-creates a private tab and replaces the clipboard with an instruction for your
-local agent. Paste it into the chat. The included `vibechar run` helper passes
-the value directly to a command's environment; the instruction contains only a
-temporary reference. No API key, account, or MCP configuration is needed.
+Recipes are bounded data, never generated shell commands or scripts. v1 supports
+whole rows, literal-delimited fields, flat JSON fields and `key=value` rows.
+Multiline records, aggregation and guessed type conversions are outside v1.
+[Exact semantics and limits](docs/development.md#do-the-rest-example-based-recipes-mac-m51)
 
-For an existing private tab, use **Give to Agent** / Shift+Cmd+C on Mac or
-Ctrl+G / F7 in the terminal. Stop, edits, successful file save, tab close, and editor exit revoke future
-access; 30 minutes without use expires it. Keep the originating editor open.
-This first increment supports agents on the same computer and OS user account.
-The command receives the real value; output masking covers literal matches,
-not arbitrary transformations. See the [access contract](docs/secret-drop.md).
+## Keep AI optional
+
+Mac **Settings…** (`⌘,`) stores your OpenAI key in Keychain. Choose a model and use
+**Test & Save**. API usage is billed to your OpenAI account.
+
+- **Rewrite Selection…** — `⇧⌘K`: selection + instruction → reviewable diff → Apply.
+- **Keep exact** — marked occurrences are hidden from the provider and restored locally.
+- **Do the Rest…** — `⌥⌘K`: demonstrate a structural transformation.
+- **Saved Recipes…** — `⌥⌘R`: replay a deterministic rule locally.
+
+AI UI and provider calls are **Mac-only**. The terminal stays a local editor with
+Secret Drop. Editing and offline recipes don't require a network connection.
+
+## Private text, practical boundaries
+
+[Secret Drop](docs/secret-drop.md) grants a local agent temporary access to private
+text as an environment variable in its child command. The value isn't included in
+the prepared chat instruction. Literal stdout/stderr matches are masked; arbitrary
+transformations or a program that sends the value elsewhere cannot be prevented.
+
+Editing the private tab, Stop, closing it, quitting or inactivity revokes access.
+Private tabs are excluded from recovery and cannot use AI actions or the recipe
+library. Ordinary saved recipes include their rule's literal text; source rows,
+teaching pairs and previews are not persisted into the recipe library.
+
+## A few keys worth learning
+
+| Action | Mac | Terminal |
+| :--- | :--- | :--- |
+| New tab | `⌘T` | `Ctrl+N` |
+| Private tab | `⇧⌘N` | `Ctrl+P` |
+| Next occurrence | `⌘D` | `Ctrl+D` |
+| Find / replace | `⌘F` / `⌥⌘F` | `Ctrl+F` / `Ctrl+R` |
+| Text tools | `⌘K` | `Ctrl+K` |
+| Save / Save As | `⌘S` / `⇧⌘S` | `Ctrl+S` / `F4` |
+| Paste secret for agent | `⌥⌘V` | `F8` |
+
+[Full controls, behavior and operation budgets](docs/development.md)
+
+## Build, test, contribute
+
+```sh
+git clone https://github.com/rovnyart/vibechar.git
+cd vibechar
+cargo build --release --workspace      # terminal + vc
+bash scripts/build-mac.sh              # native Mac bundle; Xcode 26+
+bash scripts/check.sh                 # Rust, real PTYs and native Mac smoke tests
+```
+
+Rust is pinned in `rust-toolchain.toml`. Mac builds use Swift/AppKit and Xcode's
+asset compiler. The Rust core and launcher work without Swift or Apple tooling.
+[Architecture](docs/architecture.md) · [Development](docs/development.md) ·
+[Verification](docs/verification.md) · [Release/signing guide](docs/apple-signing.md)
+
+This is a young editor. Broad performance comparisons, unusual filesystem cases,
+IME/accessibility qualification and more terminal environments remain tracked in
+the [roadmap](docs/roadmap.md). Keep backups of important text.
+
+MIT licensed. Syntax assets retain their [upstream notices](docs/syntax-licenses.md).
+UI captures use synthetic demo data; the example preview uses a local test response.
+The [Graphite icon and generation prompts](apps/macos/Artwork/README.md) are included.

@@ -147,6 +147,7 @@ VcDocument *vc_session_document(VcSession *session);
 // Return required UTF-8 byte length; copy only when output is non-null and fits.
 size_t vc_session_label(const VcSession *session, size_t index, uint8_t *output, size_t capacity);
 size_t vc_session_path(const VcSession *session, uint8_t *output, size_t capacity);
+size_t vc_session_buffer_path(const VcSession *session, size_t index, uint8_t *output, size_t capacity);
 bool vc_session_set_path(VcSession *session, const uint8_t *path, size_t length);
 // Call after a successful file write; ends private mode and revokes this tab's grant.
 bool vc_session_complete_save(VcSession *session, const uint8_t *path, size_t length);

@@ -1,11 +1,13 @@
 [workspace]
-members = ["crates/core", "crates/bridge", "crates/terminal"]
+members = ["crates/core", "crates/bridge", "crates/terminal", "crates/launcher"]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/rovnyart/vibechar"
 
 [workspace.dependencies]
 ropey = "=1.6.1"

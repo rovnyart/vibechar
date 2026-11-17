@@ -1,0 +1,56 @@
+#!/bin/sh
+# Install both Mac clients, or the terminal client on Linux. No sudo required.
+set -eu
+repository=rovnyart/vibechar
+case "$(uname -s)" in Darwin) platform=macos ;; Linux) platform=linux ;; *) echo 'Vibechar supports macOS and Linux.' >&2; exit 1 ;; esac
+case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=x86_64 ;; *) echo 'Unsupported architecture.' >&2; exit 1 ;; esac
+if [ "$platform-$arch" = linux-arm64 ]; then echo 'Linux arm64 builds are not available yet.' >&2; exit 1; fi
+tag=${VIBECHAR_VERSION:-}
+if [ -z "$tag" ]; then
+  final=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$repository/releases/latest")
+  tag=${final##*/}
+fi
+case "$tag" in ''|*[!A-Za-z0-9._+-]*) echo 'Invalid release tag.' >&2; exit 1 ;; esac
+temporary=$(mktemp -d "${TMPDIR:-/tmp/}vibechar-download.XXXXXX")
+trap 'rm -r "$temporary"' EXIT HUP INT TERM
+extension=tar.gz
+if [ "$platform" = macos ]; then extension=zip; fi
+asset="vibechar-$platform-$arch.$extension"
+base="https://github.com/$repository/releases/download/$tag"
+printf 'Downloading Vibechar %s (%s/%s)…\n' "$tag" "$platform" "$arch"
+curl -fSL "$base/$asset" -o "$temporary/$asset"
+curl -fsSL "$base/SHA256SUMS" -o "$temporary/SHA256SUMS"
+expected=$(awk -v file="$asset" '$2 == file { print $1 }' "$temporary/SHA256SUMS")
+if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$temporary/$asset" | cut -d ' ' -f1)
+else actual=$(shasum -a 256 "$temporary/$asset" | cut -d ' ' -f1); fi
+if [ ${#expected} -ne 64 ] || [ "$actual" != "$expected" ]; then echo 'Download checksum failed. Nothing was installed.' >&2; exit 1; fi
+mkdir -p "$temporary/unpacked"
+if [ "$platform" = macos ]; then
+  ditto -x -k "$temporary/$asset" "$temporary/unpacked"
+  source_app="$temporary/unpacked/Vibechar.app"
+  codesign --verify --deep --strict "$source_app"
+  spctl --assess --type execute "$source_app"
+  apps=${VIBECHAR_APP_DIR:-$HOME/Applications}
+  mkdir -p "$apps"
+  staged=$(mktemp -d "$apps/.vibechar-install.XXXXXX")
+  ditto "$source_app" "$staged/Vibechar.app"
+  if [ -e "$apps/Vibechar.app" ]; then mv "$apps/Vibechar.app" "$staged/previous.app"; fi
+  if ! mv "$staged/Vibechar.app" "$apps/Vibechar.app"; then
+    if [ -d "$staged/previous.app" ]; then mv "$staged/previous.app" "$apps/Vibechar.app"; fi
+    echo 'App installation failed; previous version restored.' >&2; exit 1
+  fi
+  rm -r "$staged"
+  "$apps/Vibechar.app/Contents/Helpers/vc" --install
+  touch "$apps/Vibechar.app"
+  echo "Installed both clients in $apps/Vibechar.app. Restart Vibechar if it is running."
+else
+  tar -xzf "$temporary/$asset" -C "$temporary/unpacked"
+  destination="$HOME/.local/share/vibechar/releases/$tag"
+  mkdir -p "$destination"
+  staged=$(mktemp -d "$destination/.next.XXXXXX")
+  cp "$temporary/unpacked/vc" "$temporary/unpacked/vibechar" "$temporary/unpacked/LICENSE" "$staged/"
+  chmod 755 "$staged/vc" "$staged/vibechar"
+  for file in vc vibechar LICENSE; do mv -f "$staged/$file" "$destination/$file"; done
+  rmdir "$staged"
+  "$destination/vc" --install
+fi

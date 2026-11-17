@@ -1320,6 +1320,24 @@ pub unsafe extern "C" fn vc_session_path(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn vc_session_buffer_path(
+    session: *const Session,
+    index: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        session
+            .as_ref()
+            .and_then(|s| s.buffers().get(index))
+            .and_then(|buffer| buffer.path.as_ref())
+            .map_or(0, |path| {
+                copy_metadata(&path.to_string_lossy(), output, capacity)
+            })
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn vc_session_set_path(
     session: *mut Session,
     path: *const u8,
