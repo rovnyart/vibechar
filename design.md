@@ -107,7 +107,8 @@ while progressing through the remaining M2 behavior work.
 - Undo/redo follows input runs, not individual keystrokes. Pause, navigation,
   selection, newlines, paste and save establish deliberate boundaries; typing,
   backspace and forward delete stay distinct. A pasted fragment is one step.
-- AI starts from a command or selection. No automatic calls while typing.
+- AI is Mac GUI-only for MVP; TUI retains local editing and Secret Drop.
+- AI starts from a Mac command or selection. No automatic calls while typing.
 - Example workflow: edit an item → invoke "Do the rest" → choose target → preview.
 - Preview keeps the original accessible; accept is a deliberate action and one undo.
 - Local recipes show that they run locally; AI instructions show that they call a model.
@@ -123,7 +124,11 @@ On Mac, closing the last tab by its × or Cmd+W closes the window and exits, ins
 of creating another visible scratch. Discard checks still apply. The red window
 button and Cmd+Q preserve ordinary tabs for the next launch.
 A quiet "Saved locally" state distinguishes recovery from exporting a file.
-Key setup appears only when an AI action is invoked.
+Mac Settings → AI (Cmd+,) is always reachable, without first-launch onboarding.
+The first AI increment provides a masked Keychain key, model choice and an explicit
+connection test using synthetic text. If a later AI action needs setup, it opens
+this same settings surface. Test/model refresh does not read editor or clipboard
+content; disclose that a selected-model test is API-billed.
 Private scratches are created explicitly with Shift+Cmd+N on Mac or Ctrl+P in the
 terminal. Use a generic title, a lock on Mac, and a persistent "not recovered" label.
 The shared checkpoint excludes their text, paths, and selections before worker

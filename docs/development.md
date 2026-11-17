@@ -214,7 +214,7 @@ modification dot is independent from the footer's local session-save status.
 View provides text zoom (Zoom In/Out and Cmd+0 reset), an appearance submenu
 (Follow System/Light/Dark), and full screen. Appearance and the normal window frame
 persist locally. The canvas uses native AppKit input and an opaque light/dark
-surface. AI actions, line numbers, and native line/column indicators remain
+surface. Line numbers and native line/column indicators are implemented. AI remains
 later work; the design studies showed illustrative future interactions.
 
 The build's native smoke test checks tab geometry at 420–1600 pt, active-tab
@@ -678,7 +678,9 @@ docs/              roadmap, architecture, development, verification evidence
 
 ## M1 limitations
 
-The app is an early prototype. AI and global hotkeys are later milestones.
+The app is an early prototype. AI and global hotkeys are later milestones. AI is
+planned only for the Mac GUI: Settings/key/model/connection test first, then
+selection rewriting and previews. TUI remains a local editor with Secret Drop.
 Shared multicursors and TUI selection/clipboard are implemented; acceptance across terminal
 emulators/Linux and native IME composition qualification remain pending. No
 dedicated settings window exists; recovery uses a versioned JSON checkpoint.

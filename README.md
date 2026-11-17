@@ -11,7 +11,8 @@ into a reusable text transformation, with a preview before anything changes.
 - Plain text, individual files, and disposable or persistent scratch buffers.
 - One editing engine and command model, with a native Mac UI and a terminal UI.
 - Keyboard-first editing, broad syntax highlighting, and useful local transforms.
-- Optional AI through your own OpenAI API key; explicit invocation and selected context.
+- Optional Mac GUI-only AI through your own OpenAI API key; explicit invocation and
+  selected context. TUI stays local with Secret Drop.
 - Projects, folder workspaces, LSP servers, plugin marketplaces, and autonomous coding
   agents are outside the MVP.
 
@@ -34,7 +35,9 @@ shell. Both support multiple scratch buffers with independent text,
 cursor/selection, undo history, file destinations, and unsaved-close protection.
 Both clients save their own local sessions and restore ordinary tabs after restart. Their
 session files are separate; live synchronization is not implemented. AI is still
-ahead. The first native Pocket interface is implemented: compact
+ahead. The next AI increment is Mac Settings: Keychain key storage, connection
+testing and model selection; rewriting/previews follow separately. The first
+native Pocket interface is implemented: compact
 tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
 and quiet session status. Art accepted the first Pocket increment.
 Private scratches are now available in both clients: Shift+Cmd+N on Mac or Ctrl+P

@@ -3,10 +3,11 @@
 ## Shared engine, native interfaces
 
 ```text
-AppKit / Swift ── small C ABI ──┐
-                              ├── Rust engine ── documents / history / commands
-Terminal UI / Rust ────────────┘                ├─ local transforms / proposals
-                                               └─ explicit AI adapter (later)
+AppKit / Swift ── optional OpenAI adapter + Keychain (later, Mac only)
+       │
+       └── small C ABI ──┐
+                        ├── Rust engine ── documents / history / commands
+Terminal UI / Rust ──────┘                 └─ local transforms / proposals / recipes
 ```
 
 The Rust engine owns committed text and undo history. Both interfaces submit
@@ -459,14 +460,28 @@ and privacy properties, visible in the command palette.
 
 ## AI boundary (M4–M5)
 
-One optional OpenAI adapter is enough initially. Use the Responses API and supported
-structured outputs for recipe proposals; confirm model availability at implementation.
-Do not add provider frameworks or an agent runtime. Network work never holds the
-document/UI thread. Cancellation and revision validation protect in-flight edits.
+Scope updated 2026-11-17: provider networking and AI interaction are Mac GUI-only.
+Use a small asynchronous native adapter (URLSession) for OpenAI Responses and model
+discovery, with Keychain credential storage. TUI has no AI settings, OpenAI
+environment-key lookup or provider calls of its own. Rust still owns proposals, recipe validation, source revision
+checks and atomic document/history application. No provider framework or agent runtime
+is needed. Supported structured outputs for recipes are a later M5 concern.
 
-The key lives in macOS Keychain, or only in the environment of a Linux TUI session;
-never write it to a project config, logs, snapshots, or action files. Provider requests
-are explicitly invoked and scoped. A private document cannot produce an AI request.
+M4.1 implements Settings → AI only: masked key entry, replace/delete, model choice
+and an explicit connection test. Non-secret model ID belongs in normal preferences;
+the key never belongs in config, logs, snapshots, recipes or raw error diagnostics.
+Model discovery supplies IDs/availability; compatibility comes from a small supported
+text-model catalog, confirmed against current official docs at implementation time.
+Model-list permission failures are separate from invalid credentials. Testing a
+selected model sends a small fixed synthetic input through Responses, with bounded
+output, timeout/cancellation and no editor/clipboard context. Disclose API billing.
+Changing key/model invalidates stale results; failed tests do not erase a working
+saved configuration. All provider I/O is explicitly invoked and stays off the UI
+thread. Automated tests use fixtures and isolated Keychain service entries.
+
+M4.2 adds Mac rewriting/previews. Cancellation and revision checks protect in-flight
+edits. A private document cannot produce an AI request; the global Settings test
+is independent of documents and sends synthetic input only.
 Secret detection can assist the user later, but cannot enforce these promises alone.
 
 ## Reference documentation
@@ -476,3 +491,5 @@ Secret detection can assist the user later, but cannot enforce these promises al
 - [Apple text editing](https://developer.apple.com/library/archive/documentation/TextFonts/Conceptual/CocoaTextArchitecture/TextEditing/TextEditing.html)
 - [Syntect](https://github.com/trishume/syntect)
 - [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)
+- [OpenAI model discovery](https://developers.openai.com/api/reference/resources/models/methods/list)
+- [OpenAI Responses](https://developers.openai.com/api/reference/resources/responses/methods/create)

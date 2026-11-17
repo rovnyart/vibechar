@@ -50,8 +50,12 @@ a prompt or a script. Recognition of arbitrary editing intent is not promised.
 
 ### Optional AI
 
-- User-supplied OpenAI key; macOS Keychain storage and an explicit session-only
-  environment-variable path for Linux terminal use. No mandatory Vibechar account.
+- Scope updated 2026-11-17: AI features ship only in the macOS GUI for MVP.
+  TUI remains a local editor with Secret Drop; no provider keys or AI requests.
+- First increment: native Settings → AI (Cmd+,), user-supplied OpenAI key in
+  macOS Keychain, connection test and model selection. No Vibechar account.
+- Model discovery and a short synthetic selected-model test are explicit actions;
+  connection testing never reads editor buffers or the clipboard.
 - "Change selection": explain a transformation, receive a preview, accept/reject.
 - "Do the rest": provide original + edited example and explicitly chosen target.
 - A small local recipe language for supported structural transforms; unsupported
@@ -213,23 +217,52 @@ highlighting and commands do not block text input. Terminal styling and width
 behavior are verified in supported terminals. Primary syntax set is tested, and
 the broader imported-language count is reported honestly.
 
-### M4 — Explicit AI rewriting with trustworthy previews
+### M4 — macOS AI: connection settings, then trustworthy previews
 
-- [ ] Implement a small asynchronous OpenAI Responses API adapter; select a supported
-  model from current official docs at implementation time.
-- [ ] Key entry, Keychain access, session-only CLI credentials, provider/model setting.
+AI UI and provider networking are macOS-only. Shared Rust retains document/history,
+proposal validation and atomic apply; implementing AI in the TUI is outside MVP.
+
+#### M4.1 — Connect OpenAI in Settings (next runnable increment)
+
+- [ ] Native Settings → AI, reachable through Cmd+, with masked key entry,
+  replace/delete actions and Keychain storage. Keep keys out of ordinary settings,
+  session recovery, logs and request/error diagnostics.
+- [ ] A compact searchable choice of supported Responses text models, with a useful
+  default and saved model ID. Use current official model capabilities and account
+  discovery where permitted; do not expose an unfiltered all-purpose model catalog.
+- [ ] Explicit model refresh and Test Connection actions through a small asynchronous
+  native OpenAI adapter. A short synthetic Responses request verifies the chosen
+  model; listing models alone is not an end-to-end inference test.
+- [ ] Distinguish authentication, model access, quota/rate limit and connectivity
+  failures. Restricted model-list access must not be called an invalid key.
+- [ ] Explain that the model test is an API-billed request. Send no tab content,
+  selection or clipboard text. No background checking or requests on launch.
+- [ ] Preserve a working saved configuration if replacement/testing fails; cancel
+  or supersede stale checks after key/model edits. Test with isolated Keychain
+  entries and provider fixtures; live smoke is explicitly invoked.
+
+Exit: Art can save/replace/delete a key, refresh/choose a model, test that model
+and reopen Settings with the model selection preserved. No editor transformation
+is part of this increment. No real credentials are needed for automated tests.
+
+#### M4.2 — Change selection with a reviewable diff
+
+- [ ] Use the configured OpenAI Responses adapter for explicit selection rewriting.
 - [ ] Send only the explicit selection and context needed for the requested action.
-- [ ] Share proposal/accept/reject commands across both clients, with visible diffs.
+- [ ] Native Mac proposal/accept/reject controls with visible diffs; shared atomic apply.
 - [ ] Bind every proposal to buffer identity + source revision; reject stale proposals.
 - [ ] Cancellation, timeout, rate limits, provider refusal, output-size limits.
 - [ ] Protected spans remain byte-identical; private buffers cannot invoke providers.
 - [ ] Provider fixtures for reliable tests; opt-in live smoke test without saved secrets.
 
-Exit: the same rewrite can be reviewed in both clients. Applying is one undo step.
+Exit: a Mac rewrite can be reviewed before applying as one undo step.
 Typing during generation is always responsive. Network errors or stale replies
 cannot overwrite subsequent edits. Model-produced text is data and cannot execute.
 
 ### M5 — Flagship: demonstrate once, apply to the rest
+
+Example capture, AI inference and preview UI are macOS-only. Recipe representation,
+validation and deterministic replay belong to Rust and do not require a provider.
 
 - [ ] Explicitly capture before/after example; target the remaining lines or records.
   Start with an invoked workflow, not speculative AI calls on every manual edit.
@@ -251,7 +284,7 @@ feature only if it wins on task completion and review effort.
 ### M6 — Polish and performance qualification
 
 - [ ] Global Mac hotkey; focus/return behavior; native menus and accessibility labels.
-- [ ] Keyboard and behavior parity audit; document platform-specific shortcuts.
+- [ ] Local editing/Secret Drop parity audit; document shortcuts and Mac-only AI scope.
 - [ ] macOS Apple Silicon primary; validate TUI on macOS and Linux x86_64.
 - [ ] Measure the performance matrix below in release builds on named hardware.
 - [ ] Profile the slow paths, trim resident memory, and enforce the useful budgets.
@@ -276,8 +309,9 @@ or broken-terminal blockers. An ordinary editor session requires no network acce
 - [ ] Short demo of the flagship workflow and a known-limitations release note.
 
 Exit: Art can install the release, use either interface, recover a scratch buffer,
-connect his own key, run/review a transformation, save a local recipe, and replay
-it offline. Signing credentials and publication destination are resolved here;
+connect his own key in the Mac GUI, run/review a transformation there, save a local
+recipe, and replay it offline. TUI acceptance covers local editing and Secret Drop.
+Signing credentials and publication destination are resolved here;
 their absence does not block earlier local milestones.
 
 ## Provisional performance targets
