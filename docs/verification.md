@@ -1667,3 +1667,17 @@ selects its installed Xcode 26.3. A preflight requires arm64. The app's macOS 14
 deployment target and ARM-only archives are unchanged; the fix was also tested
 locally on macOS 26. This avoids relying on the currently unavailable macOS 26
 runner pool while keeping all release gates enabled.
+
+GitHub also failed to provision the macOS 15 ARM job in run `44141527439`;
+neither ARM image reached a build step. Linux passed completely. A separate
+local 1.0.1 build at `28cf29f` passed all native suites and both helper-version
+checks and was Developer ID signed. It is retained as
+`dist/Vibechar-1.0.1.app`, with provenance in `dist/Vibechar-1.0.1-local.json`.
+Its build directory was separate from the existing development/installed app.
+
+Local notarization is not configured: notarytool reports no Keychain profile
+for either `secry-notary` or `vibechar-notary`. The local app is therefore not
+notarized and has not been promoted to the public installer/update feed. Version
+1.0.1 remains reserved; latest public is 1.0.0 until a Mac runner is available
+or a local notarization profile is supplied. Existing signing/update checks
+have not been bypassed.
