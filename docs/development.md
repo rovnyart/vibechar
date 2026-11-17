@@ -687,8 +687,12 @@ Opening Settings, searching and selecting a model make no network requests.
 
 The key is stored as a non-synchronizing generic password in this Mac's Keychain
 (`dev.vibechar.openai`, account `api-key`, WhenUnlockedThisDeviceOnly). The model ID
-alone is saved in UserDefaults (`OpenAIModel`). Reopening Settings leaves the masked
-entry blank; paste a new key to replace the saved one. A successful test precedes
+alone is saved in UserDefaults (`OpenAIModel`). Reopening Settings shows a read-only
+preview such as `sk-…Ab12`, revealing only the fixed `sk-` prefix and last four
+characters. Short values are fully masked. **Replace** opens a blank secure input;
+**Cancel** discards the replacement and restores the saved preview. The preview is
+computed in memory and never becomes an editable key or a saved preference.
+A successful test precedes
 saving. A failed test or Keychain write keeps the working saved configuration.
 **Remove** deletes the saved key; closing Settings clears its in-memory key entries.
 Edits, Cancel or closing the window supersede pending requests. A short Keychain

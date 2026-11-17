@@ -1232,7 +1232,8 @@ New synthetic/native evidence:
   repeated removal. All test values were synthetic; the production service was
   never read. In-memory failure fixtures verified that authentication failure and
   a failed Keychain replacement preserve the saved credential/model preference.
-- Reopening settings restores the saved model and shows an empty secure field.
+- Reopening settings restores the saved model and leaves the secure replacement
+  field empty; a saved-key preview was added in the follow-up below.
   The temporary preferences domain contains no synthetic key. Closing clears the
   field/editor undo state and retained settings keys (a short Keychain commit
   already in progress finishes first). Model-availability metadata is discarded
@@ -1266,3 +1267,18 @@ No real OpenAI request was made and no real key was collected. Account/model
 access and billing must be checked through the explicit UI Test & Save action.
 It is API-billed and sends no editor/selection/clipboard content. Rewriting, diffs
 and recipes remain subsequent increments; no AI editing was added here.
+
+### Saved-key preview follow-up
+
+The saved key now appears as a read-only `sk-…Ab12` preview after saving and reopening
+Settings. Replace opens an empty secure input; Cancel restores the saved preview.
+Only the fixed `sk-` prefix and final four characters are visible, and short values
+are fully masked. The preview is derived in memory and is never used as a candidate key.
+
+`bash scripts/build-mac.sh` passed the full native smoke suite. The dedicated AI
+smoke also passed with light/dark bitmap captures, visually inspected in both themes.
+Native checks cover blank replacement disabling Test & Save, failed replacement /
+Cancel preserving the old credential and preview, successful replacement updating
+the suffix, reopen restoring it, removal clearing it, and short-value masking.
+`codesign --verify --deep --strict` passed on the rebuilt development app. All keys
+and provider responses in these checks were synthetic.

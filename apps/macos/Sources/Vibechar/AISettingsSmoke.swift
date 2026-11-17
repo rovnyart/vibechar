@@ -90,6 +90,12 @@ func aiSettingsSmokeTest() {
     precondition(vault.loads == 0, "Creating Settings must not read Keychain")
     model.open(); aiWait { model.phase == .idle }
     precondition(model.hasSavedKey && model.draftKey.isEmpty)
+    precondition(model.savedKeyPreview == "…-key")
+    precondition(AISettingsModel.maskedKeyPreview("sk-proj-synthetic-Ab12") == "sk-…Ab12")
+    precondition(AISettingsModel.maskedKeyPreview("arbitrary-secret-CD34") == "…CD34")
+    for key in ["", "sk-", "sk-Ab12", "12345678901"] {
+        precondition(AISettingsModel.maskedKeyPreview(key) == "••••••••")
+    }
     precondition(try! aiAwait { await service.counts() } == (0, 0), "Opening Settings must not contact OpenAI")
 
     model.editKey("synthetic-new-key"); model.select(AIModel.catalog[1])
@@ -108,7 +114,7 @@ func aiSettingsSmokeTest() {
     precondition((try! vault.load()) == "synthetic-new-key")
     precondition(defaults.string(forKey: AISettingsModel.modelPreference) == AIModel.catalog[1].id)
     precondition(!String(describing: defaults.persistentDomain(forName: suite)).contains("synthetic-"))
-    model.close(); precondition(!model.hasSavedKey && model.draftKey.isEmpty)
+    model.close(); precondition(!model.hasSavedKey && model.draftKey.isEmpty && model.savedKeyPreview == nil)
     model.open(); aiWait { model.phase == .idle }
     precondition(model.hasSavedKey && model.selectedModel == AIModel.catalog[1])
 
@@ -152,7 +158,8 @@ func aiSettingsSmokeTest() {
     aiHTTPClientSmokeTest()
     aiKeychainSmokeTest()
     let uiService = AIFixtureService()
-    let controller = AISettingsWindowController(model: AISettingsModel(vault: AIFixtureVault(), service: uiService, defaults: defaults))
+    let uiVault = AIFixtureVault()
+    let controller = AISettingsWindowController(model: AISettingsModel(vault: uiVault, service: uiService, defaults: defaults))
     controller.model.open(); aiWait { controller.model.phase == .idle }
     precondition(controller.keyField.stringValue.isEmpty)
     precondition(controller.testButton.keyEquivalentModifierMask == [.command])
@@ -167,23 +174,54 @@ func aiSettingsSmokeTest() {
     precondition(try! aiAwait { await uiService.counts() } == (0, 0))
     controller.searchField.stringValue = ""
     controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
-    controller.keyField.stringValue = "synthetic-ui-key"
+    controller.keyField.stringValue = "sk-proj-synthetic-ui-key-Ab12"
     controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.keyField))
     aiSettingsSnapshot(controller, name: "ready")
     try! aiAwait { await uiService.configure(failure: .quota) }
     controller.testButton.performClick(nil); aiWait { controller.model.phase == .idle }
-    precondition(controller.model.tone == .error && controller.keyField.stringValue == "synthetic-ui-key")
+    precondition(controller.model.tone == .error && controller.keyField.stringValue == "sk-proj-synthetic-ui-key-Ab12")
     aiSettingsSnapshot(controller, name: "error")
     try! aiAwait { await uiService.configure() }
     controller.testButton.performClick(nil); aiWait { controller.model.phase == .idle }
     precondition(controller.model.tone == .success && controller.keyField.stringValue.isEmpty)
+    precondition(controller.keyField.isHidden && !controller.savedKeyField.isHidden)
+    precondition(controller.savedKeyField.stringValue == "sk-…Ab12")
     controller.refreshButton.performClick(nil); aiWait { controller.model.phase == .idle }
     aiSettingsSnapshot(controller, name: "connected")
+
+    // Replacement has a blank secure input; the visible mask never becomes a candidate.
+    controller.replaceButton.performClick(nil)
+    precondition(!controller.keyField.isHidden && controller.savedKeyField.isHidden)
+    precondition(controller.keyField.stringValue.isEmpty && !controller.testButton.isEnabled)
+    controller.keyField.stringValue = "sk-proj-synthetic-replacement-CD34"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.keyField))
+    try! aiAwait { await uiService.configure(failure: .quota) }
+    controller.testButton.performClick(nil); aiWait { controller.model.phase == .idle }
+    precondition(controller.model.savedKeyPreview == "sk-…Ab12")
+    controller.replaceButton.performClick(nil)
+    precondition(controller.keyField.isHidden && controller.keyField.stringValue.isEmpty)
+    precondition(controller.savedKeyField.stringValue == "sk-…Ab12" && controller.testButton.isEnabled)
+    precondition((try! uiVault.load()) == "sk-proj-synthetic-ui-key-Ab12")
+    controller.replaceButton.performClick(nil)
+    controller.keyField.stringValue = "sk-proj-synthetic-replacement-CD34"
+    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.keyField))
+    try! aiAwait { await uiService.configure() }
+    controller.testButton.performClick(nil); aiWait { controller.model.phase == .idle }
+    precondition(controller.keyField.isHidden && controller.savedKeyField.stringValue == "sk-…CD34")
+    controller.shutdown()
+    precondition(controller.savedKeyField.stringValue.isEmpty && controller.model.savedKeyPreview == nil)
+    controller.model.open(); aiWait { controller.model.phase == .idle }
+    precondition(!controller.savedKeyField.isHidden && controller.savedKeyField.stringValue == "sk-…CD34")
+    precondition(controller.keyField.stringValue.isEmpty)
+    aiSettingsSnapshot(controller, name: "reopened")
+    controller.removeButton.performClick(nil); aiWait { controller.model.phase == .idle }
+    precondition(!controller.keyField.isHidden && controller.savedKeyField.stringValue.isEmpty && controller.replaceButton.isHidden)
+    precondition((try! uiVault.load()) == nil)
     controller.keyField.stringValue = "synthetic-ui-close"
     controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.keyField))
     AppDelegate.aiSettingsMenuSmokeTest(controller: controller)
     precondition(controller.keyField.stringValue.isEmpty && controller.model.draftKey.isEmpty)
-    precondition(try! aiAwait { await uiService.counts() } == (2, 1))
+    precondition(try! aiAwait { await uiService.counts() } == (4, 1))
     controller.shutdown()
     print("AI settings native smoke passed: isolated Keychain, HTTP fixtures, safe failures, replacement, stale checks, cancellation, model search and menu routing")
 }

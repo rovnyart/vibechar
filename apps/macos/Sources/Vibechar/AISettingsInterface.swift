@@ -34,6 +34,8 @@ private final class AIModelCell: NSTableCellView {
 final class AISettingsWindowController: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     let model: AISettingsModel
     let keyField = NSSecureTextField()
+    let savedKeyField = NSTextField()
+    let replaceButton = NSButton(title: "Replace", target: nil, action: nil)
     let searchField = NSSearchField()
     let table = NSTableView()
     let testButton = NSButton(title: "Test & Save", target: nil, action: nil)
@@ -46,6 +48,7 @@ final class AISettingsWindowController: NSWindowController, NSWindowDelegate, NS
     private let spinner = NSProgressIndicator()
     private var visibleModels = AIModel.catalog
     private var rendering = false
+    private var replacingKey = false
 
     init(model: AISettingsModel? = nil) {
         self.model = model ?? AISettingsModel()
@@ -76,6 +79,16 @@ final class AISettingsWindowController: NSWindowController, NSWindowDelegate, NS
         keyField.placeholderString = "Paste your API key"
         keyField.delegate = self; keyField.setAccessibilityLabel("OpenAI API key")
         root.addSubview(keyField)
+        savedKeyField.frame = NSRect(x: 28, y: 172, width: 316, height: 30)
+        savedKeyField.font = .monospacedSystemFont(ofSize: 13, weight: .medium)
+        savedKeyField.textColor = PocketPalette.ink; savedKeyField.backgroundColor = PocketPalette.chrome
+        savedKeyField.isEditable = false; savedKeyField.isSelectable = false
+        savedKeyField.bezelStyle = .roundedBezel
+        savedKeyField.setAccessibilityLabel("Saved OpenAI API key")
+        root.addSubview(savedKeyField)
+        replaceButton.frame = NSRect(x: 352, y: 173, width: 94, height: 28)
+        replaceButton.bezelStyle = .rounded; replaceButton.target = self; replaceButton.action = #selector(replaceKey)
+        root.addSubview(replaceButton)
         removeButton.frame = NSRect(x: 454, y: 173, width: 82, height: 28)
         removeButton.bezelStyle = .rounded; removeButton.target = self; removeButton.action = #selector(remove)
         root.addSubview(removeButton)
@@ -127,7 +140,7 @@ final class AISettingsWindowController: NSWindowController, NSWindowDelegate, NS
         testButton.keyEquivalent = "\r"; testButton.keyEquivalentModifierMask = [.command]
         root.addSubview(testButton)
         window.initialFirstResponder = keyField
-        keyField.nextKeyView = searchField; searchField.nextKeyView = table
+        keyField.nextKeyView = searchField; replaceButton.nextKeyView = searchField; searchField.nextKeyView = table
         table.nextKeyView = refreshButton; refreshButton.nextKeyView = testButton
         self.model.onChange = { [weak self] in self?.render() }
         render()
@@ -155,6 +168,13 @@ final class AISettingsWindowController: NSWindowController, NSWindowDelegate, NS
     @objc private func refresh() { model.refresh() }
     @objc private func remove() { model.removeKey() }
     @objc private func cancelRequest() { model.cancel() }
+    @objc private func replaceKey() {
+        guard model.hasSavedKey, model.editable else { return }
+        clearKeyEntry()
+        replacingKey.toggle()
+        model.editKey("")
+        window?.makeFirstResponder(replacingKey ? keyField : replaceButton)
+    }
 
     func controlTextDidChange(_ notification: Notification) {
         guard !rendering else { return }
@@ -190,16 +210,31 @@ final class AISettingsWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func render() {
         rendering = true; defer { rendering = false }
+        if !model.hasSavedKey || (model.tone == .success && model.draftKey.isEmpty) { replacingKey = false }
+        else if !model.draftKey.isEmpty { replacingKey = true }
+        let showSavedKey = model.hasSavedKey && !replacingKey
+        if showSavedKey, keyField.currentEditor() != nil { clearKeyEntry() }
         if keyField.stringValue != model.draftKey {
             keyField.stringValue = model.draftKey
             if model.draftKey.isEmpty { keyField.currentEditor()?.undoManager?.removeAllActions() }
         }
         keyField.isEnabled = model.editable; searchField.isEnabled = model.editable
-        keyField.placeholderString = model.hasSavedKey ? "Paste a new key to replace" : "Paste your API key"
-        keyHint.stringValue = model.hasSavedKey ? "Stored in Keychain · never included in your saved tabs" : "Stored only after a successful model test"
+        keyField.isHidden = showSavedKey
+        keyField.frame.size.width = model.hasSavedKey ? 316 : 418
+        keyField.placeholderString = model.hasSavedKey ? "Paste a new API key" : "Paste your API key"
+        savedKeyField.stringValue = model.savedKeyPreview ?? ""
+        savedKeyField.isHidden = !showSavedKey
+        replaceButton.isHidden = !model.hasSavedKey
+        replaceButton.isEnabled = model.editable
+        replaceButton.title = replacingKey ? "Cancel" : "Replace"
+        replaceButton.toolTip = replacingKey ? "Discard the replacement and keep your saved key" : "Replace the saved key after a successful test"
+        window?.initialFirstResponder = showSavedKey ? replaceButton : keyField
+        keyField.nextKeyView = model.hasSavedKey ? replaceButton : searchField
+        keyHint.stringValue = replacingKey ? "Your saved key stays until the new key passes its test" : model.hasSavedKey ? "Stored in Keychain · never included in your saved tabs" : "Stored only after a successful model test"
         removeButton.isEnabled = model.hasSavedKey && model.editable
-        refreshButton.isEnabled = model.canConnect && !model.requesting
-        testButton.isEnabled = model.canConnect && !model.requesting
+        let hasCandidate = model.canConnect && (!replacingKey || !model.draftKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        refreshButton.isEnabled = hasCandidate && !model.requesting
+        testButton.isEnabled = hasCandidate && !model.requesting
         cancelButton.isHidden = !model.requesting
         statusLabel.stringValue = model.status
         statusLabel.textColor = model.tone == .error ? PocketPalette.accent : model.tone == .success ? PocketPalette.ink : PocketPalette.secondary

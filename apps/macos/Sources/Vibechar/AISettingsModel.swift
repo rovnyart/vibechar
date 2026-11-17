@@ -20,6 +20,13 @@ final class AISettingsModel {
     private(set) var tone: Tone = .neutral
     var onChange: (() -> Void)?
     var hasSavedKey: Bool { savedKey != nil }
+    var savedKeyPreview: String? { savedKey.map(Self.maskedKeyPreview) }
+
+    static func maskedKeyPreview(_ key: String) -> String {
+        // Never expose a whole short/malformed value, or an arbitrary secret prefix.
+        guard key.count >= 12 else { return "••••••••" }
+        return (key.hasPrefix("sk-") ? "sk-" : "") + "…" + key.suffix(4)
+    }
     var committing: Bool { phase == .saving || phase == .deleting }
     var requesting: Bool { phase == .refreshing || phase == .testing }
     var editable: Bool { !committing && phase != .loading }
