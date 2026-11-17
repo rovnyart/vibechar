@@ -1624,7 +1624,7 @@ installed it over a Developer ID-signed 0.0.1 host, relaunched, retained scratch
 recovery and verified both helper versions plus the notarized replacement.
 
 Public acceptance checks on this Mac also passed: the actual main-branch curl
-installer performed a fresh install and reinstall into a temporary account;
+installer performed a fresh install and reinstall into a temporary home directory;
 `vc --version` and `vc -t --version` both reported 1.0.0. Code signing, the stapled
 ticket and Gatekeeper passed. All six shipped Mach-O files, including Sparkle's
 three runtime binaries, contained only arm64. CryptoKit independently accepted
