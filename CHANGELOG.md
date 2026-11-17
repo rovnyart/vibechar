@@ -48,6 +48,7 @@ are generated from Conventional Commits. Earlier `build-*` archives predate vers
 - **ci**: isolate Save As destination tests and use portable lipo arguments ([ba6e241](https://github.com/rovnyart/vibechar/commit/ba6e2416abacc7411b6cf59e370f56d2a542f0ac))
 - **ci**: isolate native AI suites and finish AppKit startup ([71b1943](https://github.com/rovnyart/vibechar/commit/71b1943792736f36a6eea2f810a89785af060786))
 - **ci**: use the normal app lifecycle for update installation ([0c47710](https://github.com/rovnyart/vibechar/commit/0c47710c32ceadf5c8dc67220ec8201d7d2f9d75))
+- **ci**: wait for complete Secret Drop clipboard references ([fa2dda9](https://github.com/rovnyart/vibechar/commit/fa2dda930b12ecd529119de66291a38c81d25442))
 
 ### Performance
 
