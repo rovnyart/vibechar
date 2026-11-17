@@ -1658,3 +1658,12 @@ and green entered full screen and returned to the ordinary window. The fixture
 was stopped and its bundle, preferences, recovery and Launch Services registration
 were removed. The user's installed app and existing editor session were not used
 for these checks. Signed release verification is recorded after the manual run.
+
+The first 1.0.1 release attempt never received a Mac machine: GitHub cancelled
+it after 15 minutes with "The job was not acquired by Runner of type hosted even
+after multiple attempts" and arm64 capacity notices. Retrying only the Mac job
+also remained queued. CI now uses GitHub's macOS 15 ARM image and explicitly
+selects its installed Xcode 26.3. A preflight requires arm64. The app's macOS 14+
+deployment target and ARM-only archives are unchanged; the fix was also tested
+locally on macOS 26. This avoids relying on the currently unavailable macOS 26
+runner pool while keeping all release gates enabled.

@@ -30,7 +30,7 @@ jobs:
         include:
           - runner: ubuntu-24.04
             target: linux-x86_64
-          - runner: macos-26
+          - runner: macos-15
             target: macos-arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -44,6 +44,8 @@ jobs:
       - name: Apple toolchain
         if: runner.os == 'macOS'
         run: |
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
           xcrun swift --version
       - uses: actions/cache@v6
