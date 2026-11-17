@@ -324,7 +324,7 @@ or broken-terminal blockers. An ordinary editor session requires no network acce
 
 - [x] CI: formatting/lint, Rust tests, bridge tests, Apple Silicon Mac and Linux TUI.
 - [x] Developer ID signed/notarized Mac archives and immutable commit-based release tags.
-- [ ] Activate and verify automatic GitHub signing after repository credentials are configured.
+- [x] Automatic GitHub signing and notarization configured and verified for Apple Silicon.
 - [ ] Independently signed release manifests and reproducible-build qualification.
 - [x] CLI release archives, one-curl installation, menu PATH setup and install/uninstall instructions.
 - [x] MIT license, third-party notices, privacy disclosure and API billing explanation.

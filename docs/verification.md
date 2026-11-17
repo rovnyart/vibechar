@@ -1544,3 +1544,19 @@ GitHub signing configuration was corrected by adding the repository variable
 [the signing verification run](https://github.com/rovnyart/vibechar/actions/runs/44103145064)
 then imported the certificate, signed, received Apple acceptance, stapled the
 ticket and passed Gatekeeper. Signing credentials remain in GitHub secrets.
+
+
+The [Apple Silicon + Linux CI run](https://github.com/rovnyart/vibechar/actions/runs/44107134279)
+passed completely at `baae5a7af6e4c782a2db0f8e04942c2e5225bfdd`, including
+certificate import, automatic Developer ID signing, Apple notarization and
+publication. The [stable release](https://github.com/rovnyart/vibechar/releases/tag/build-baae5a7af6e4)
+contains only the Apple Silicon Mac archive and Linux x86_64 terminal archive,
+their metadata and SHA256SUMS. Obsolete Mac assets were also removed from the
+pre-existing release, with its checksums and description updated.
+
+The actual public curl installer passed fresh installation and reinstallation
+from this release in a temporary home. Installed GUI launcher smoke, both client
+version/help commands, signature, stapled ticket and Gatekeeper checks passed.
+`lipo -archs` confirmed that the app, `vc` and terminal helper each contain only
+`arm64`. Temporary homes were removed; the user's PATH and editor session were
+untouched. Product versioning was not changed in this increment.
