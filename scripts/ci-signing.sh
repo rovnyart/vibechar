@@ -26,3 +26,9 @@ xcrun notarytool store-credentials vibechar-ci --keychain "$keychain" --apple-id
   --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" >/dev/null
 export VIBECHAR_SIGN_IDENTITY="$identity" VIBECHAR_NOTARY_PROFILE=vibechar-ci VIBECHAR_NOTARY_KEYCHAIN="$keychain"
 bash scripts/notarize.sh
+# Sparkle authenticates the running host and installer by Team ID. Prepare a
+# genuinely signed older host while this disposable signing keychain exists;
+# the later integration test needs no signing credentials.
+bootstrap="$(python3 scripts/test-mac-update.py --prepare-bootstrap)"
+codesign --force --sign "$identity" --options runtime --timestamp "$bootstrap"
+codesign --verify --deep --strict "$bootstrap"

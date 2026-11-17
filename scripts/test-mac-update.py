@@ -35,6 +35,21 @@ def app_pids(executable):
     return result
 
 
+def prepare_bootstrap():
+    assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true'
+    bootstrap = Path(os.environ['RUNNER_TEMP']) / 'vibechar-update-bootstrap/Vibechar.app'
+    assert not bootstrap.exists(), 'Bootstrap already exists'
+    bootstrap.parent.mkdir()
+    run('ditto', str(ROOT / 'dist/Vibechar.app'), str(bootstrap))
+    path = bootstrap / 'Contents/Info.plist'
+    plist = plistlib.loads(path.read_bytes())
+    plist.update(CFBundleVersion='0.0.1', CFBundleShortVersionString='0.0.1',
+                 NSAppTransportSecurity={'NSAllowsLocalNetworking': True})
+    path.write_bytes(plistlib.dumps(plist))
+    # ci-signing.sh signs this modified outer bundle before removing its keychain.
+    print(bootstrap)
+
+
 def main():
     assert sys.platform == 'darwin' and os.environ.get('GITHUB_ACTIONS') == 'true', 'Disposable GitHub Mac runner required'
     recovery = Path.home() / 'Library/Application Support/dev.vibechar.app'
@@ -50,7 +65,10 @@ def main():
         executable = installed / 'Contents/MacOS/Vibechar'
         # A normal app location, outside Downloads/translocation and the source bundle.
         installed.parent.mkdir()
-        run('ditto', str(ROOT / 'dist/Vibechar.app'), str(installed))
+        bootstrap = Path(os.environ['RUNNER_TEMP']) / 'vibechar-update-bootstrap/Vibechar.app'
+        assert bootstrap.is_dir(), 'Prepare and Developer ID sign the bootstrap first'
+        run('ditto', str(bootstrap), str(installed))
+        run('codesign', '--verify', '--deep', '--strict', str(installed))
         requests = []
         class Handler(SimpleHTTPRequestHandler):
             def log_message(self, *args): requests.append(self.path)
@@ -61,12 +79,7 @@ def main():
         feed_path = release / 'test-appcast.xml'
         feed.write(feed_path, encoding='utf-8', xml_declaration=True)
         plist_path = installed / 'Contents/Info.plist'
-        plist = plistlib.loads(plist_path.read_bytes())
-        plist.update(CFBundleVersion='0.0.1', CFBundleShortVersionString='0.0.1', SUFeedURL=base + '/test-appcast.xml',
-                     NSAppTransportSecurity={'NSAllowsLocalNetworking': True})
-        plist_path.write_bytes(plistlib.dumps(plist))
-        # The modified bootstrap is ad hoc; the downloaded archive stays untouched.
-        run('codesign', '--force', '--sign', '-', '--options', '0x0', str(installed))
+        assert plistlib.loads(plist_path.read_bytes())['CFBundleVersion'] == '0.0.1'
         log_path = stage / 'update.log'
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
@@ -112,6 +125,10 @@ def main():
                 except subprocess.TimeoutExpired: process.kill(); process.wait()
             server.shutdown(); server.server_close()
             feed_path.unlink(missing_ok=True)
+            import shutil
+            shutil.rmtree(bootstrap.parent)
 
 
-if __name__ == '__main__': main()
+if __name__ == '__main__':
+    if sys.argv[1:] == ['--prepare-bootstrap']: prepare_bootstrap()
+    else: main()

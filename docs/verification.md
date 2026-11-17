@@ -1603,3 +1603,12 @@ accepted `None` during truncation of the synthetic clipboard file, then passed
 that value to the helper. The fixture now waits for a nonempty parsed grant and
 retains the exact value that satisfied the wait, including the initial/fast paths.
 This changes only test synchronization, not Secret Drop behavior or permissions.
+
+Run `44124619526` passed both complete client suites and archive signing. The real
+update fixture then downloaded the candidate and exposed Sparkle's Team ID check:
+an ad-hoc bootstrap cannot connect to our Developer ID-signed installer helper
+(`SUSparkleErrorDomain` 4005). The fixture now prepares its older host while the
+disposable CI signing keychain is present and signs that outer bundle with the
+same Developer ID. The subsequent download/relaunch test has no credentials;
+the candidate ZIP remains the unmodified notarized production archive. Archive
+verification and Sparkle's connection authentication stay enabled.
