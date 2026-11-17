@@ -30,6 +30,7 @@ final class UpdateController: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     var canRestart: (() -> Bool)?
     var restartRequested = false
     var onTestAvailable: (() -> Void)?
+    var onTestError: ((Error) -> Void)?
     private(set) var engine: SPUUpdater?
     private var action: (() -> Void)?
     private var expectedBytes: UInt64 = 0
@@ -99,6 +100,7 @@ final class UpdateController: NSObject, SPUUserDriver, SPUUpdaterDelegate {
         phase = .idle; onStatus?("You're up to date",false); acknowledgement()
     }
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        onTestError?(error)
         action = nil; restartRequested = false; userRequestedInstallation = false
         phase = .failed
         onStatus?("Couldn't update · your current version is unchanged",true)

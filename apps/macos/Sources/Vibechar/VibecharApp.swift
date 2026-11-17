@@ -5,7 +5,7 @@ import Darwin
 struct VibecharApp {
     @MainActor
     static func main() {
-        if CommandLine.arguments.contains(where: { $0.hasPrefix("--smoke") }) {
+        if CommandLine.arguments.contains(where: { $0.hasPrefix("--smoke") }) && !CommandLine.arguments.contains("--smoke-update-install") {
             setbuf(stdout,nil); setbuf(stderr,nil)
             // Sheets require a launched application, including in a headless CI
             // fixture. No delegate is installed, so no user session is opened.
@@ -23,7 +23,6 @@ struct VibecharApp {
         if CommandLine.arguments.contains("--smoke-examples") { exampleSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-recipes") { recipeSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-updates") { AppDelegate.updatesSmokeTest(); return }
-        if CommandLine.arguments.contains("--smoke-update-install") { AppDelegate.updateInstallationSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-launcher") { AppDelegate.launcherSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-first-presentation") {
             AppDelegate.firstPresentationSmokeTest()
@@ -524,6 +523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--smoke-update-install") { updateInstallationSmokeTest(); return }
         var recoveryError: Error?
         do {
             let store = try SessionRecovery()
@@ -1340,26 +1340,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     // Actual replacement/relaunch runs only on a disposable GitHub Mac runner.
     // Ordinary native fixtures never open the user's default recovery directory.
-    static func updateInstallationSmokeTest() {
+    private func updateInstallationSmokeTest() {
+        setbuf(stdout,nil); setbuf(stderr,nil)
         let environment = ProcessInfo.processInfo.environment
         precondition(environment["GITHUB_ACTIONS"] == "true")
         guard let feed = environment["VIBECHAR_TEST_UPDATE_FEED"],
               let url = URL(string: feed), url.host == "127.0.0.1" else {
             preconditionFailure("Update fixture requires a loopback feed")
         }
-        let app = AppDelegate(clipboard: .withUniqueName())
-        app.recovery = try! SessionRecovery()
-        precondition(!FileManager.default.fileExists(atPath: app.recovery!.fileURL.path))
-        app.makeMenus(); app.makeWindow(restoreFrame: false); app.showActiveBuffer()
-        app.textView.insertText("UPDATE_RECOVERY_FIXTURE 🦀\n",replacementRange: NSRange(location: NSNotFound,length: 0))
-        app.window.makeKeyAndOrderFront(nil)
+        recovery = try! SessionRecovery()
+        precondition(!FileManager.default.fileExists(atPath: recovery!.fileURL.path))
+        makeMenus(); makeWindow(restoreFrame: false); showActiveBuffer()
+        textView.insertText("UPDATE_RECOVERY_FIXTURE 🦀\n",replacementRange: NSRange(location: NSNotFound,length: 0))
+        window.makeKeyAndOrderFront(nil)
         let controller = UpdateController(feedOverride: feed)
-        app.connectUpdates(controller)
-        controller.onTestAvailable = { [weak app] in app?.header.updateButton.performClick(nil) }
+        connectUpdates(controller)
+        let paint = controller.onChange
+        controller.onChange = { phase in print("Update fixture phase: \(phase)"); paint?(phase) }
+        controller.onStatus = { message,_ in print("Update fixture status: \(message)") }
+        controller.onTestError = { error in
+            print("Update fixture error: \(error as NSError)")
+            exit(1)
+        }
+        controller.onTestAvailable = { [weak self] in self?.header.updateButton.performClick(nil) }
+        print("Update fixture launched: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "unknown")")
         controller.start()
-        NSApp.delegate = app
         DispatchQueue.main.async { controller.check() }
-        withExtendedLifetime(app) { NSApp.run() }
     }
 
     static func updatesSmokeTest() {

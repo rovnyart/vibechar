@@ -45,14 +45,15 @@ def main():
     assert info['notarized']
     process = server = None
     with tempfile.TemporaryDirectory(prefix='vibechar-update-install-') as temporary:
-        stage = Path(temporary)
+        stage = Path(temporary).resolve()
         installed = stage / 'Installed/Vibechar.app'
         executable = installed / 'Contents/MacOS/Vibechar'
         # A normal app location, outside Downloads/translocation and the source bundle.
         installed.parent.mkdir()
         run('ditto', str(ROOT / 'dist/Vibechar.app'), str(installed))
+        requests = []
         class Handler(SimpleHTTPRequestHandler):
-            def log_message(self, *args): pass
+            def log_message(self, *args): requests.append(self.path)
         server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Handler, directory=str(release)))
         base = f'http://127.0.0.1:{server.server_port}'
         feed = ET.parse(release / 'appcast.xml')
@@ -97,6 +98,8 @@ def main():
                     time.sleep(1)
                 raise AssertionError('Timed out waiting for signed replacement and relaunch')
         except Exception:
+            current = plistlib.loads(plist_path.read_bytes()) if plist_path.exists() else {}
+            print(f'Update fixture: version={current.get("CFBundleVersion")}, original_exit={process.poll() if process else None}, pids={app_pids(executable)}, requests={requests}', file=sys.stderr)
             print(log_path.read_text(), file=sys.stderr)
             raise
         finally:

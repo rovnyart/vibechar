@@ -92,15 +92,6 @@ jobs:
             ~/Library/Logs/DiagnosticReports/Vibechar*.ips
             ~/Library/Logs/DiagnosticReports/Vibechar*.crash
           if-no-files-found: ignore
-      - name: Retain compiled Rust after a failed check
-        if: failure() && steps.rust-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: rust-${{ runner.os }}-${{ runner.arch }}-1.99.1-${{ hashFiles('Cargo.lock') }}
       - name: Sign and notarize trusted main builds
         if: runner.os == 'macOS' && inputs.sign
         env:
@@ -135,6 +126,15 @@ jobs:
       - name: Verify Linux installation and update
         if: runner.os == 'Linux'
         run: python3 scripts/test-installer.py dist/release/vibechar-linux-x86_64.tar.gz
+      - name: Retain compiled Rust after a failed build
+        if: failure() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ runner.arch }}-1.99.1-${{ hashFiles('Cargo.lock') }}
       - uses: actions/upload-artifact@v7
         with:
           name: vibechar-${{ matrix.target }}

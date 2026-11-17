@@ -1587,3 +1587,12 @@ Release publication is now manual-only at Art's request. Main pushes run CI;
 **Actions → Release → Run workflow** generates the changelog from Conventional
 Commits since the last stable tag and reserves the chosen version. The cancelled
 initial push-triggered run reserved 1.0.0 but did not publish it.
+
+The first manual run (`44120695033`) passed both platform suites, Apple
+notarization and Sparkle archive signing, then timed out in the relaunch fixture.
+A standalone AppKit probe confirmed that calling `finishLaunching()` and later
+`run()` with a newly assigned delegate delivers `applicationDidFinishLaunching`
+again. The fixture was reopening its own locked recovery file. It now uses the
+normal single application lifecycle, canonical temporary paths and explicit
+phase/error diagnostics. Local native suites and the 24 version/publication
+fixtures passed again before the retry; production launch behavior is unchanged.
