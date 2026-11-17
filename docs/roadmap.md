@@ -325,10 +325,10 @@ or broken-terminal blockers. An ordinary editor session requires no network acce
 - [ ] CI: formatting/lint, Rust tests, bridge tests, macOS build, Linux TUI tests.
 - [ ] macOS signed/notarized app, signed release metadata, reproducible versioning.
 - [ ] CLI release archives, install/uninstall instructions, optional Homebrew tap.
-- [ ] License choice, third-party licenses, privacy disclosure, API billing explanation.
-- [ ] Export/recovery instructions; manual update path before any automatic updater.
+- [x] MIT license, third-party notices, privacy disclosure and API billing explanation.
+- [x] Export/recovery instructions and manual reinstall/update path.
 - [ ] Clean-machine install + first-run + rollback/uninstall verification.
-- [ ] Short demo of the flagship workflow and a known-limitations release note.
+- [x] Illustrated flagship walkthrough with synthetic native captures and known limitations.
 
 Exit: Art can install the release, use either interface, recover a scratch buffer,
 connect his own key in the Mac GUI, run/review a transformation there, save a local

@@ -52,4 +52,6 @@ PLIST
 codesign "${sign_args[@]}" "$app"
 touch "$app"
 "$app/Contents/MacOS/Vibechar" --smoke-test
+"$app/Contents/MacOS/Vibechar" --smoke-first-presentation -AppleShowScrollBars Always
+"$app/Contents/MacOS/Vibechar" --smoke-editing -AppleShowScrollBars Always
 printf 'Development app: %s\n' "$app"

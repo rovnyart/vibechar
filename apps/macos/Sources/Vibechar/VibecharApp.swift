@@ -315,12 +315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     static func firstPresentationSmokeTest() {
         _ = NSApplication.shared
-        func invariant(_ condition: @autoclosure () -> Bool, _ message: String = "", line: UInt = #line) {
-            guard condition() else {
-                fputs("First presentation invariant failed at VibecharApp.swift:\(line): \(message)\n", stderr)
-                exit(1)
-            }
-        }
         final class GeometryObserver:NSObject,NSLayoutManagerDelegate {
             var loadedWidthChanges=0
             func layoutManager(_ layoutManager:NSLayoutManager,textContainer:NSTextContainer,didChangeGeometryFrom oldSize:NSSize) {
@@ -337,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 app.pendingSave?.cancel();app.multiController.cancel();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()
             }
             let source="я👩‍💻e\u{301}\0"+String(repeating:"x",count:256*1024)+"\r\nlast"
-            if privateTab {app.session.openPrivate();invariant(app.document.replace(NSRange(location:0,length:0),with:source))}
+            if privateTab {app.session.openPrivate();nativeSmokeInvariant(app.document.replace(NSRange(location:0,length:0),with:source))}
             else {app.session.open(source)}
             let index=app.session.active
             app.showActiveBuffer()
@@ -346,14 +340,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 let bitmap=surface.bitmapImageRepForCachingDisplay(in:surface.bounds)!
                 surface.cacheDisplay(in:surface.bounds,to:bitmap)
             }
-            func check(_ text:String) {invariant(app.document.text==text && app.textView.string==text)}
+            func check(_ text:String) {nativeSmokeInvariant(app.document.text==text && app.textView.string==text)}
             func checkCaret() {
                 let screen=app.textView.firstRect(forCharacterRange:app.textView.selectedRange(),actualRange:nil)
                 let rect=app.textView.convert(app.window.convertFromScreen(screen),from:nil)
-                invariant(app.textView.visibleRect.contains(NSPoint(x:rect.minX,y:rect.midY)),"Restored caret must be visible")
+                nativeSmokeInvariant(app.textView.visibleRect.contains(NSPoint(x:rect.minX,y:rect.midY)),"Restored caret must be visible")
             }
             draw();check(source);checkCaret()
-            invariant(observer.loadedWidthChanges==0,"Resolve the initial viewport before laying out loaded text")
+            nativeSmokeInvariant(observer.loadedWidthChanges==0,"Resolve the initial viewport before laying out loaded text")
             app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));draw();check("!"+source)
             app.applyHistory(redo:false);draw();check(source)
             app.applyHistory(redo:true);draw();check("!"+source)
@@ -362,11 +356,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             app.textView.scrollRangeToVisible(app.textView.selectedRange());draw();checkCaret()
             app.newScratch();draw();check("");checkCaret()
             app.switchBuffer(to:index);draw();check(source);checkCaret()
-            invariant(app.session.isPrivate==privateTab)
+            nativeSmokeInvariant(app.session.isPrivate==privateTab)
             app.textView.selectAll(nil)
-            invariant(app.textView.selectedRange().length==(source as NSString).length)
-            invariant(app.textView.writeSelection(to:app.clipboard,types:app.textView.writablePasteboardTypes),"Copy the full selection to an isolated pasteboard")
-            invariant(app.clipboard.string(forType:.string)==source)
+            nativeSmokeInvariant(app.textView.selectedRange().length==(source as NSString).length)
+            nativeSmokeInvariant(app.textView.writeSelection(to:app.clipboard,types:app.textView.writablePasteboardTypes),"Copy the full selection to an isolated pasteboard")
+            nativeSmokeInvariant(app.clipboard.string(forType:.string)==source)
             app.textView.insertText("short\n",replacementRange:NSRange(location:NSNotFound,length:0));draw();check("short\n")
             app.applyHistory(redo:false);draw();check(source)
             app.applyHistory(redo:true);draw();check("short\n")
@@ -376,7 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 app.window.appearance=NSAppearance(named:appearance)
                 for width in [420,880] {
                     app.window.setContentSize(NSSize(width:width,height:600));draw();check(source)
-                    invariant(app.document.revision==revision)
+                    nativeSmokeInvariant(app.document.revision==revision)
                 }
             }
         }
@@ -387,11 +381,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         _ = NSApplication.shared
         let app=AppDelegate(clipboard:.withUniqueName());app.makeWindow(restoreFrame:false);app.makeMenus()
         defer {app.closeAllAgentAccess();app.syntaxWork?.cancel();app.syntaxTimer?.invalidate();app.multiController.cancel();app.clipboard.clearContents();app.window.delegate=nil;app.window.close()}
-        func check(_ text:String) {precondition(app.document.text==text && app.textView.string==text,"Shared editing and native storage must agree")}
+        func check(_ text:String) {nativeSmokeInvariant(app.document.text==text && app.textView.string==text,"Shared editing and native storage must agree")}
         func command(_ selector:Selector) {app.textView.doCommand(by:selector)}
         func toggleWrap() {
             let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:[.command,.option],timestamp:0,windowNumber:app.window.windowNumber,context:nil,characters:"w",charactersIgnoringModifiers:"w",isARepeat:false,keyCode:13)!
-            precondition(NSApp.mainMenu!.performKeyEquivalent(with:event),"Wrap shortcut must dispatch through the native menu")
+            nativeSmokeInvariant(NSApp.mainMenu!.performKeyEquivalent(with:event),"Wrap shortcut must dispatch through the native menu")
         }
         let sample="  я👩‍💻\r\n\tb\r\nlast"
         app.session.open(sample);app.document.markSaved();app.showActiveBuffer()
@@ -399,15 +393,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         app.textView.setSelectedRange(NSRange(location:0,length:end))
         command(#selector(NSResponder.insertTab(_:)));check("      я👩‍💻\r\n    \tb\r\nlast")
         let indentedSelection=app.textView.selectedRange()
-        app.applyHistory(redo:false);check(sample);precondition(!app.document.isDirty)
+        app.applyHistory(redo:false);check(sample);nativeSmokeInvariant(!app.document.isDirty)
         app.applyHistory(redo:true)
         app.textView.setSelectedRange(indentedSelection)
         command(#selector(NSResponder.insertBacktab(_:)));check(sample)
         app.textView.setSelectedRange(NSRange(location:1,length:0));command(#selector(NSResponder.insertTab(_:)))
-        check("     я👩‍💻\r\n\tb\r\nlast");precondition(app.footer.position.stringValue=="1:5")
+        check("     я👩‍💻\r\n\tb\r\nlast");nativeSmokeInvariant(app.footer.position.stringValue=="1:5")
         app.applyHistory(redo:false);check(sample)
         app.textView.setSelectedRange(NSRange(location:8,length:0));command(#selector(NSResponder.insertNewline(_:)))
-        check("  я👩‍💻\r\n  \r\n\tb\r\nlast");precondition(app.footer.position.stringValue=="2:3")
+        check("  я👩‍💻\r\n  \r\n\tb\r\nlast");nativeSmokeInvariant(app.footer.position.stringValue=="2:3")
         app.applyHistory(redo:false);check(sample)
 
         let long=String(repeating:"  👩‍💻x",count:40)+"\r\nend"
@@ -426,10 +420,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                     app.textView.layoutManager!.ensureLayout(for:app.textView.textContainer!)
                     let glyph=app.textView.layoutManager!.glyphIndexForCharacter(at:(long as NSString).range(of:"\r\n").location-1)
                     heights.append(app.textView.layoutManager!.lineFragmentRect(forGlyphAt:glyph,effectiveRange:nil).minY)
-                    check(long);precondition(app.document.revision==revision && !app.document.isDirty && app.textView.selectedRange()==selection)
-                    precondition(app.textView.textContainer!.widthTracksTextView==wrapped && app.textView.enclosingScrollView!.hasHorizontalScroller == !wrapped)
+                    check(long);nativeSmokeInvariant(app.document.revision==revision && !app.document.isDirty && app.textView.selectedRange()==selection)
+                    nativeSmokeInvariant(app.textView.textContainer!.widthTracksTextView==wrapped && app.textView.enclosingScrollView!.hasHorizontalScroller == !wrapped)
                     let root=app.window.contentView!;root.layoutSubtreeIfNeeded()
-                    precondition(app.footer.bounds.contains(app.footer.position.frame) && !app.footer.position.isHidden)
+                    nativeSmokeInvariant(app.footer.bounds.contains(app.footer.position.frame) && !app.footer.position.isHidden)
                     if let output {
                         app.window.effectiveAppearance.performAsCurrentDrawingAppearance {
                             let bitmap=root.bitmapImageRepForCachingDisplay(in:root.bounds)!
@@ -438,23 +432,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                         }
                     }
                 }
-                precondition(heights[0]>heights[1],"Wrapping must change the actual native line geometry")
+                nativeSmokeInvariant(heights[0]>heights[1],"Wrapping must change the actual native line geometry")
             }
         }
         app.session.open("short");app.showActiveBuffer()
         if app.wrapLines {toggleWrap()}
         app.window.setContentSize(NSSize(width:1600,height:600));app.window.contentView!.layoutSubtreeIfNeeded()
-        precondition(app.textView.frame.width>=app.textView.enclosingScrollView!.contentSize.width,"Unwrapped editor must fill an expanded viewport")
+        nativeSmokeInvariant(app.textView.frame.width>=app.textView.enclosingScrollView!.contentView.bounds.width,"Unwrapped editor must fill an expanded viewport: frame \(app.textView.frame.width), viewport \(app.textView.enclosingScrollView!.contentView.bounds.width)")
         app.newPrivateScratch();app.textView.insertText("  foo\r\n\tfoo",replacementRange:NSRange(location:NSNotFound,length:0))
         let privateSource=app.document.text
-        _=try! app.session.shareForAgent(executable:"/synthetic/vibechar");precondition(app.session.dropActive)
+        _=try! app.session.shareForAgent(executable:"/synthetic/vibechar");nativeSmokeInvariant(app.session.dropActive)
         let privateRevision=app.document.revision
-        toggleWrap();precondition(app.session.dropActive && app.document.revision==privateRevision)
+        toggleWrap();nativeSmokeInvariant(app.session.dropActive && app.document.revision==privateRevision)
         app.textView.setSelectedRange(NSRange(location:2,length:3));app.selectAllOccurrences()
         let deadline=Date(timeIntervalSinceNow:5)
-        while app.multiController.state.busy {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.multiController.poll();precondition(Date()<deadline)}
-        precondition(app.multiController.state.selections.count==2)
-        command(#selector(NSResponder.insertTab(_:)));check("      foo\r\n    \tfoo");precondition(!app.session.dropActive)
+        while app.multiController.state.busy {RunLoop.current.run(until:Date(timeIntervalSinceNow:0.01));app.multiController.poll();nativeSmokeInvariant(Date()<deadline)}
+        nativeSmokeInvariant(app.multiController.state.selections.count==2)
+        command(#selector(NSResponder.insertTab(_:)));check("      foo\r\n    \tfoo");nativeSmokeInvariant(!app.session.dropActive)
         command(#selector(NSResponder.insertBacktab(_:)));check(privateSource)
         command(#selector(NSResponder.insertNewline(_:)));check("  \r\n  \r\n\t\r\n\t")
         app.applyHistory(redo:false);check(privateSource)
@@ -611,9 +605,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         textView.setAccessibilityHelp("Type or paste text. Command-T creates a tab. Command-S saves a file.")
         applyTypography()
 
-        let scroll = NSScrollView()
+        let scroll = PocketEditorScrollView()
         scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
+        // A classic scroller changes the text width when it first appears. Keep
+        // its space reserved so loading a giant paragraph never relays it out.
+        scroll.autohidesScrollers = NSScroller.preferredScrollerStyle == .overlay
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(syntaxViewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         scroll.documentView = textView
@@ -910,14 +906,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         expandedLayoutRevision=nil
         updateLayoutPolicy(at:textView.selectedRange().location)
         guard let scroll=textView.enclosingScrollView,let container=textView.textContainer else {return}
-        textView.minSize=NSSize(width:wrapLines ? 0 : scroll.contentSize.width,height:0)
+        textView.minSize=NSSize(width:wrapLines ? 0 : scroll.contentView.bounds.width,height:0)
         textView.isHorizontallyResizable = !wrapLines
         textView.autoresizingMask = wrapLines ? [.width] : []
         container.widthTracksTextView=wrapLines
         if wrapLines {
-            textView.setFrameSize(NSSize(width:scroll.contentSize.width,height:textView.frame.height))
+            textView.setFrameSize(NSSize(width:scroll.contentView.bounds.width,height:textView.frame.height))
         }
-        container.containerSize=NSSize(width:wrapLines ? max(1,scroll.contentSize.width-2*textView.textContainerInset.width) : CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude)
+        container.containerSize=NSSize(width:wrapLines ? max(1,scroll.contentView.bounds.width-2*textView.textContainerInset.width) : CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude)
         scroll.hasHorizontalScroller = !wrapLines
         textView.scrollRangeToVisible(NSRange(location:textView.selectedRange().location,length:0))
         textView.needsDisplay=true
@@ -990,7 +986,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
     @objc private func syntaxViewportChanged() {
         if !wrapLines,let scroll=textView.enclosingScrollView {
-            let width=scroll.contentSize.width
+            let width=scroll.contentView.bounds.width
             if textView.minSize.width != width {textView.minSize=NSSize(width:width,height:0)}
             if textView.frame.width<width {textView.setFrameSize(NSSize(width:width,height:textView.frame.height))}
         }
@@ -2799,5 +2795,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         print("Private save native smoke passed: failed/symlink saves stay private, successful save converts/revokes, recovery, repeat save")
         print("Secret Drop native smoke passed: clipboard fast path, exact injection, masking, exit status, Stop/quit")
         print("Pocket window smoke test passed: light/dark, narrow/wide, native/tab click targets, text/history")
+    }
+}
+
+// Release builds optimize Swift's assertion messages away; keep native test
+// failures actionable on CI without printing any document or credential data.
+private func nativeSmokeInvariant(_ condition: @autoclosure () -> Bool, _ message: String = "", line: UInt = #line) {
+    guard condition() else {
+        fputs("Native smoke invariant failed at VibecharApp.swift:\(line): \(message)\n", stderr)
+        exit(1)
     }
 }

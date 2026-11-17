@@ -1483,5 +1483,8 @@ README; the build never calls an image model or requires an API key.
   home directories. The user's PATH, clipboard and recovery were untouched.
 - GitHub CI covers Linux static musl binaries, Apple Silicon and Intel. Linux
   passed; Mac runner acceptance and the first public signed release are still
-  being validated. A synthetic first-presentation assertion now reports its
-  source line even in optimized builds.
+  being validated. The first-presentation test exposed a classic-scrollbar width
+  change, reproduced locally with `-AppleShowScrollBars Always`. Classic scroller
+  space is now reserved before loading text. The unwrapped editor also fits its
+  actual clip viewport after scroller/ruler tiling. The build runs dedicated
+  first-presentation and editing regressions with that system preference override.

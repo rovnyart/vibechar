@@ -63,6 +63,18 @@ final class PocketSurface: NSView {
     }
 }
 
+// Tile resolves classic scrollers and ruler widths before fitting the editor.
+// Bounds notifications may arrive before NSScrollView finishes that geometry.
+final class PocketEditorScrollView: NSScrollView {
+    override func tile() {
+        super.tile()
+        guard let editor = documentView as? NSTextView, editor.isHorizontallyResizable else { return }
+        let width = contentView.bounds.width
+        if editor.minSize.width != width { editor.minSize = NSSize(width: width, height: 0) }
+        if editor.frame.width < width { editor.setFrameSize(NSSize(width: width, height: editor.frame.height)) }
+    }
+}
+
 final class PocketTextView: NSTextView {
     private(set) var editKind: TextEditKind = .isolated
     private var editDepth = 0
