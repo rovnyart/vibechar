@@ -1471,10 +1471,9 @@ README; the build never calls an image model or requires an API key.
 ## Distribution and unified launcher — 2026-11-17
 
 The [full CI run](https://github.com/rovnyart/vibechar/actions/runs/44094955442)
-passed at `71b1943792736f36a6eea2f810a89785af060786` on macOS 26 Apple Silicon,
-macOS 26 Intel and Ubuntu 24.04. The
+passed at `71b1943792736f36a6eea2f810a89785af060786` on macOS 26 and Ubuntu 24.04. The
 [first stable release](https://github.com/rovnyart/vibechar/releases/tag/build-71b194379273)
-contains both signed Mac architectures and static Linux x86_64 binaries from that
+contains the signed Mac app, terminal client and static Linux x86_64 binaries from that
 same revision. The public MIT repository preserves the original Git history.
 
 - Each primary platform passed 160 Rust tests, strict Clippy/formatting, release
@@ -1488,7 +1487,7 @@ same revision. The public MIT repository preserves the original Git history.
 - Classic scrollbars exposed a real loaded-paragraph width change. Space is now
   reserved before loading text; unwrapped editors fit after scroller/ruler tiling.
   Dedicated first-presentation and editing regressions with
-  `-AppleShowScrollBars Always` passed on both Mac architectures.
+  `-AppleShowScrollBars Always` passed in the Mac CI matrix.
 - Save As filesystem tests inject the destination request, preserving suggested
   name/directory, cancellation, failure, overwrite, history and recovery checks
   without starting the system's remote save-panel service. The normal GUI path
@@ -1497,10 +1496,10 @@ same revision. The public MIT repository preserves the original Git history.
   and running-app URL routing, existing-tab reuse, nonexistent files remaining
   unsaved, ignored grant URLs, menu routing, idempotent PATH installation,
   preserved shell settings and unrelated-command collision refusal.
-- Both Mac archives were downloaded from the successful CI run, verified against
+- Mac archives were downloaded from the successful CI run, verified against
   its revision and checksums, then Developer ID signed and notarized locally.
   `codesign --verify --deep --strict`, Apple acceptance, stapling and `spctl`
-  assessment passed for both architectures. No signing credential was exported
+  assessment passed for the archived builds. No signing credential was exported
   or copied into the repository.
 - The actual public curl command passed fresh installation and reinstallation
   in a disposable Mac home directory. Installed `vc --version`,
@@ -1523,3 +1522,25 @@ Future trusted-main builds use the [documented signing setup](apple-signing.md);
 without it, CI continues publishing previews and preserves the latest stable
 release. Final documentation-only updates use GitHub's
 [supported `[skip ci]` marker](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs); the release code is the fully tested revision linked above.
+
+
+## Apple Silicon release target — 2026-11-17
+
+Mac builds now target Apple Silicon (arm64) exclusively. CI validates and publishes
+one Mac archive (GUI, terminal and `vc`) plus the Linux x86_64 terminal archive.
+The Mac builder refuses unsupported hosts, the packager checks the architecture
+of the app and both helpers, and the installer rejects unsupported Macs before
+network access or home-directory changes.
+
+Five isolated publication tests passed: the two-platform stable release,
+undeclared-file exclusion, rejected extra/missing platform metadata, checksum
+mismatch rejection and preview-description updates. The real signed ARM archive
+also passed fresh install, reinstall, CLI/native launcher smoke, checksum rejection
+and simulated unsupported-Mac rejection. Shell syntax and workflow YAML checks
+passed. Existing Rust and native editor code are unchanged.
+
+GitHub signing configuration was corrected by adding the repository variable
+`APPLE_TEAM_ID`. The Apple Silicon job in
+[the signing verification run](https://github.com/rovnyart/vibechar/actions/runs/44103145064)
+then imported the certificate, signed, received Apple acceptance, stapled the
+ticket and passed Gatekeeper. Signing credentials remain in GitHub secrets.

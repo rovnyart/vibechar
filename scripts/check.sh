@@ -2,6 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+python3 scripts/test-release.py
 bash scripts/cargo.sh fmt --all -- --check
 bash scripts/cargo.sh clippy --workspace --all-targets --locked -- -D warnings
 bash scripts/cargo.sh test --workspace --locked

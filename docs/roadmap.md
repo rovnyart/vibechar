@@ -322,7 +322,7 @@ or broken-terminal blockers. An ordinary editor session requires no network acce
 
 ### M7 — Ship MVP
 
-- [x] CI: formatting/lint, Rust tests, bridge tests, both Mac architectures and Linux TUI.
+- [x] CI: formatting/lint, Rust tests, bridge tests, Apple Silicon Mac and Linux TUI.
 - [x] Developer ID signed/notarized Mac archives and immutable commit-based release tags.
 - [ ] Activate and verify automatic GitHub signing after repository credentials are configured.
 - [ ] Independently signed release manifests and reproducible-build qualification.

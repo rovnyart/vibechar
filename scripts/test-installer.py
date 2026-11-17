@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix="vibechar-install-qa-") as temp:
     curl.chmod(0o755)
     home = work / "home"
     home.mkdir()
-    environment = {**os.environ,"HOME":str(home),"SHELL":"/bin/zsh" if sys.platform == "darwin" else "/bin/bash",
+    environment = {**os.environ,"HOME":str(home),"VIBECHAR_APP_DIR":str(home/"Applications"),"SHELL":"/bin/zsh" if sys.platform == "darwin" else "/bin/bash",
                    "PATH":str(tools)+os.pathsep+os.defpath+":/usr/sbin:/sbin", "VIBECHAR_VERSION":"fixture-build"}
     for _ in range(2):
         result = subprocess.run(["sh",str(root/"install.sh")],env=environment,capture_output=True,timeout=120)
@@ -51,6 +51,15 @@ with tempfile.TemporaryDirectory(prefix="vibechar-install-qa-") as temp:
     bad_home = work / "tampered-home"
     bad_home.mkdir()
     sums.write_text(f"{'0'*64}  {asset.name}\n")
-    bad = subprocess.run(["sh",str(root/"install.sh")],env={**environment,"HOME":str(bad_home)},capture_output=True,timeout=60)
+    bad = subprocess.run(["sh",str(root/"install.sh")],env={**environment,"HOME":str(bad_home),"VIBECHAR_APP_DIR":str(bad_home/"Applications")},capture_output=True,timeout=60)
     assert bad.returncode != 0 and not (bad_home/".local").exists() and not (bad_home/"Applications").exists()
-print(json.dumps({"installer":"passed","real_archive_fresh_install_reinstall_cli_native_smoke_and_checksum_rejection":True}))
+    # An unsupported Mac must fail before downloading or touching its home.
+    uname = tools / "uname"
+    uname.write_text("#!/bin/sh\ncase \"$1\" in -s) echo Darwin ;; -m) echo x86_64 ;; *) exit 1 ;; esac\n")
+    uname.chmod(0o755)
+    unsupported_home = work / "unsupported-home"
+    unsupported_home.mkdir()
+    unsupported = subprocess.run(["sh",str(root/"install.sh")],env={**environment,"HOME":str(unsupported_home),"VIBECHAR_APP_DIR":str(unsupported_home/"Applications")},capture_output=True,timeout=15)
+    assert unsupported.returncode != 0 and b"requires Apple Silicon" in unsupported.stderr
+    assert not list(unsupported_home.iterdir())
+print(json.dumps({"installer":"passed","real_archive_fresh_install_reinstall_cli_native_smoke_and_checksum_rejection":True,"unsupported_mac_rejected_before_install":True}))

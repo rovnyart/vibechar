@@ -2,7 +2,6 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 system="$(uname -s)"
-case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64) arch=x86_64 ;; *) exit 1 ;; esac
 out="$root/dist/release"
 mkdir -p "$out"
 notarized=false
@@ -10,13 +9,18 @@ if [[ "$system" == Darwin ]]; then
   platform=macos
   app="${1:-$root/dist/Vibechar.app}"
   arch="$(lipo -archs "$app/Contents/MacOS/Vibechar")"
-  case "$arch" in arm64|x86_64) ;; *) echo 'Expected a single-architecture Mac bundle.' >&2; exit 1 ;; esac
-  for helper in vc vibechar; do lipo "$app/Contents/Helpers/$helper" -verify_arch "$arch"; done
+  if [[ "$arch" != arm64 ]]; then echo 'The Mac release must be an Apple Silicon (arm64) bundle.' >&2; exit 1; fi
+  for helper in vc vibechar; do
+    if [[ "$(lipo -archs "$app/Contents/Helpers/$helper")" != arm64 ]]; then
+      echo "The Mac helper $helper must contain only arm64." >&2; exit 1
+    fi
+  done
   if spctl --assess --type execute "$app" >/dev/null 2>&1 && xcrun stapler validate "$app" >/dev/null 2>&1; then notarized=true; fi
   asset="vibechar-$platform-$arch.zip"
   ditto -c -k --keepParent "$app" "$out/$asset"
-else
+elif [[ "$system" == Linux ]]; then
   platform=linux
+  case "$(uname -m)" in x86_64|amd64) arch=x86_64 ;; *) echo 'The Linux terminal build requires x86_64.' >&2; exit 1 ;; esac
   stage="$(mktemp -d)"
   trap 'rm -r "$stage"' EXIT
   binaries="${VIBECHAR_BIN_DIR:-$root/target/release}"
@@ -25,6 +29,8 @@ else
   asset="vibechar-$platform-$arch.tar.gz"
   python3 "$root/scripts/third-party-notices.py" "$stage/Third-Party-Notices.txt"
   tar -czf "$out/$asset" -C "$stage" vc vibechar LICENSE Syntax-Notices.md Third-Party-Notices.txt
+else
+  echo 'Vibechar supports macOS and Linux.' >&2; exit 1
 fi
 revision="$(git -C "$root" rev-parse HEAD)"
 python3 - "$out/$asset" "$platform" "$arch" "$revision" "$notarized" <<'PY'

@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+case "$(uname -m)" in
+  arm64|aarch64) ;;
+  *) echo 'Vibechar for macOS requires Apple Silicon (arm64).' >&2; exit 1 ;;
+esac
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bash "$root/scripts/cargo.sh" build --release -p vibechar-bridge -p vibechar -p vc
 swift build --package-path "$root/apps/macos" -c release \

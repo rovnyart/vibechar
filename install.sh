@@ -2,9 +2,13 @@
 # Install both Mac clients, or the terminal client on Linux. No sudo required.
 set -eu
 repository=rovnyart/vibechar
-case "$(uname -s)" in Darwin) platform=macos ;; Linux) platform=linux ;; *) echo 'Vibechar supports macOS and Linux.' >&2; exit 1 ;; esac
-case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=x86_64 ;; *) echo 'Unsupported architecture.' >&2; exit 1 ;; esac
-if [ "$platform-$arch" = linux-arm64 ]; then echo 'Linux arm64 builds are not available yet.' >&2; exit 1; fi
+case "$(uname -s)/$(uname -m)" in
+  Darwin/arm64|Darwin/aarch64) platform=macos; arch=arm64 ;;
+  Linux/x86_64|Linux/amd64) platform=linux; arch=x86_64 ;;
+  Darwin/*) echo 'Vibechar for macOS requires Apple Silicon (arm64).' >&2; exit 1 ;;
+  Linux/*) echo 'The Linux terminal build requires x86_64.' >&2; exit 1 ;;
+  *) echo 'Vibechar supports macOS and Linux.' >&2; exit 1 ;;
+esac
 tag=${VIBECHAR_VERSION:-}
 if [ -z "$tag" ]; then
   final=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/$repository/releases/latest")

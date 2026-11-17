@@ -112,9 +112,9 @@ is never downgraded by a preview rerun.
 ## Release contents
 
 Each checked main commit gets an immutable `build-<commit>` tag, binaries for
-macOS Apple Silicon, macOS Intel and Linux x86_64, platform metadata and SHA256SUMS.
+macOS Apple Silicon (arm64) and Linux x86_64, platform metadata and SHA256SUMS.
 The Mac archive includes the native app, terminal editor and `vc`. A stable release
-requires both Mac architectures to be notarized. The first release can be notarized
+requires the Apple Silicon Mac build to be notarized. The first release can be notarized
 locally using the same scripts, then promoted after all archives and checksums exist.
 
 ## References

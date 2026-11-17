@@ -8,7 +8,7 @@
   <a href="https://github.com/rovnyart/vibechar/actions/workflows/ci.yml"><img alt="Build and tests" src="https://github.com/rovnyart/vibechar/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/rovnyart/vibechar/releases"><img alt="Downloads" src="https://img.shields.io/badge/download-GitHub_Releases-F49A6B?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-20211F?style=flat-square"></a>
-  <img alt="macOS 14 and later" src="https://img.shields.io/badge/macOS-14%2B-20211F?style=flat-square&logo=apple&logoColor=white">
+  <img alt="macOS 14 and later, Apple Silicon" src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-20211F?style=flat-square&logo=apple&logoColor=white">
   <img alt="Linux terminal client" src="https://img.shields.io/badge/Linux-terminal-20211F?style=flat-square&logo=linux&logoColor=white">
 </p>
 <p align="center"><a href="#install">Install</a> · <a href="#the-good-stuff">Features</a> · <a href="#show-once-run-again">Do the Rest</a> · <a href="docs/development.md">Build from source</a> · <a href="docs/roadmap.md">Roadmap</a></p>
@@ -21,7 +21,7 @@
 curl -fsSL https://raw.githubusercontent.com/rovnyart/vibechar/main/install.sh | sh
 ```
 
-On **macOS**, one install includes the GUI **and** the terminal editor. On **Linux**,
+On **Apple Silicon Macs**, one install includes the GUI **and** the terminal editor. On **Linux**,
 it installs the terminal editor. No sudo, account, subscription, or API key required.
 The installer verifies download checksums and validates the Mac signature and
 Gatekeeper assessment before replacing the app.
@@ -41,7 +41,6 @@ Files open in the running Mac app; missing files get a tab and reach disk on Sav
 | Platform | Included |
 | :--- | :--- |
 | macOS 14+ · Apple Silicon | Mac app + terminal + `vc` |
-| macOS 14+ · Intel | Mac app + terminal + `vc` |
 | Linux · x86_64 | Terminal + `vc` |
 
 Mac app: `~/Applications/Vibechar.app`. Command: `~/.local/bin/vc`.

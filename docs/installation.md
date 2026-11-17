@@ -4,7 +4,7 @@
 curl -fsSL https://raw.githubusercontent.com/rovnyart/vibechar/main/install.sh | sh
 ```
 
-The installer selects the latest stable GitHub Release for macOS arm64/x86_64 or
+The installer selects the latest stable GitHub Release for macOS Apple Silicon (arm64) or
 Linux x86_64, verifies SHA-256 and installs into your account. Mac also requires a
 valid code signature and a successful Gatekeeper assessment. Preview/unsigned Mac
 builds are available as CI artifacts but are not a normal installation path.

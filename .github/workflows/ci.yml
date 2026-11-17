@@ -21,8 +21,6 @@ jobs:
             target: linux-x86_64
           - runner: macos-26
             target: macos-arm64
-          - runner: macos-26-intel
-            target: macos-x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
