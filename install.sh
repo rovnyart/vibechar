@@ -51,7 +51,6 @@ if [ "$platform" = macos ]; then
   rm -r "$staged"
   staged=''
   "$apps/Vibechar.app/Contents/Helpers/vc" --install
-  touch "$apps/Vibechar.app"
   echo "Installed both clients in $apps/Vibechar.app. Restart Vibechar if it is running."
 else
   tar -xzf "$temporary/$asset" -C "$temporary/unpacked"

@@ -1,9 +1,11 @@
 import AppKit
+import Darwin
 
 @main
 struct VibecharApp {
     @MainActor
     static func main() {
+        if CommandLine.arguments.contains(where: { $0.hasPrefix("--smoke") }) { setbuf(stdout,nil); setbuf(stderr,nil) }
         if CommandLine.arguments.contains("--profile-appkit") {
             AppDelegate.profileNativeEditing()
             return
@@ -1325,6 +1327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     static func launcherSmokeTest() {
+        _ = NSApplication.shared
         let previousMenu = NSApp.mainMenu, clipboard = NSPasteboard.withUniqueName()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-launch-\(UUID().uuidString)")
         try! FileManager.default.createDirectory(at: directory,withIntermediateDirectories: true)

@@ -7,3 +7,5 @@
 *.xcuserstate
 __pycache__/
 *.pyc
+*.p12
+*.p8
