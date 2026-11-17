@@ -13,6 +13,7 @@ are generated from Conventional Commits. Earlier `build-*` archives predate vers
 
 - record verified 1.0.0 release and native updates ([dcf1cd2](https://github.com/rovnyart/vibechar/commit/dcf1cd2a80d058cfc092c0f23fc6b819bbfdf9e5))
 - clarify release validation isolation ([132bfe2](https://github.com/rovnyart/vibechar/commit/132bfe225a6b2340b77777d9c1f4b0967c9741a2))
+- **mac**: use the ARM macOS 15 image with Xcode 26 ([a8d24dd](https://github.com/rovnyart/vibechar/commit/a8d24dd54118d0b39debed8ea04aba331c5d7bc7))
 
 ## [1.0.0](https://github.com/rovnyart/vibechar/releases/tag/v1.0.0) — 2026-11-17
 
