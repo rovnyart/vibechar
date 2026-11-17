@@ -1,7 +1,8 @@
 # Prototype verification
 
 Started: 2026-11-11. Latest increment: 2026-11-17.
-This records local prototype evidence, not MVP release acceptance.
+This records local engineering evidence. Art accepted the functional MVP scope on
+2026-11-17; distribution and broad performance qualification remain separately tracked.
 
 ## Environment
 
@@ -1428,3 +1429,38 @@ accessed. Fixtures use disposable directories and a unique clipboard, with clean
 This closes named deterministic recipe storage/replay, not the entire M5 milestone:
 saved AI instructions, interactive type choices and live inference/task-completion
 acceptance remain open. Library UI/storage are Mac-only; TUI scope is unchanged.
+
+## 2026-11-17 — Graphite app icon and native packaging
+
+Art selected the black Graphite `V_` concept and accepted the functional MVP scope;
+product polish begins with the Mac icon. The selected 1254×1254 RGBA master and
+exact built-in imagegen prompts are committed under `apps/macos/Artwork/`.
+
+- `scripts/build-icon.sh` exports ten standard 1×/2× legacy representations through
+  1024 px and compiles the native `AppIcon.icon` using Xcode `actool`. Packaging
+  includes `AppIcon.icns`, `Assets.car`, `CFBundleIconFile` and `CFBundleIconName`
+  before signing. Intermediate iconsets/catalog workspaces are cleaned up.
+- A bitmap-only first build visibly gained a gray backplate and an undersized icon
+  through `NSWorkspace.icon(forFile:)` on this Mac. The native catalog fixes that
+  observed output; the chosen artwork's scale is 1.0, with a graphite fill and extra
+  glass/translucency/shadows disabled. The Finder/Terminal/TextEdit comparison was
+  rerendered from the actual bundle icon lookup and visually inspected on light and
+  dark backgrounds. The selected shape is no longer nested inside a gray plate.
+- The master has transparent outer corners and a solid center (alpha >99%). The
+  ICNS round-trip exposes all ten 16–1024 px representations. Native bitmap QA
+  inspected 16/32/48/64/128 pt output for legibility and transparent margins.
+- `bash scripts/build-mac.sh` passed the complete native smoke suite with the icon
+  packaged. After the final artwork-scale adjustment, icon packaging was rerun,
+  the bundle re-signed and `codesign --verify --deep --strict` passed. `bash -n`
+  validates both build scripts. Rust/TUI code is unchanged; their prior checks
+  were not rerun for this artwork-only increment.
+- LaunchServices was refreshed for the existing development bundle. The user's
+  running editor was left open, so its live Dock tile still requires a full quit
+  and reopen. No Dock reset, user preference changes, credentials, clipboard,
+  private tabs or recovery data were accessed. Actual older-macOS display and
+  clear/tinted appearance acceptance remain untested; the literal ICNS fallback
+  and modern asset catalog are present in the signed bundle.
+
+Local review artifact: `dist/icon-dock-preview.png` (generated bitmap comparison,
+not a screenshot of the user's Dock). Apple references are linked in the artwork
+README; the build never calls an image model or requires an API key.

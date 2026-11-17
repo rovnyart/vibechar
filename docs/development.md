@@ -141,9 +141,20 @@ open dist/Vibechar.app
 ```
 
 The script builds the Rust static library and CLI helper, links the Swift app,
-wraps a .app bundle, ad-hoc signs the helper and app for local development, and runs
+wraps a .app bundle with the selected Graphite icon (native catalog plus a
+16–512 pt legacy family at 1×/2×), ad-hoc
+signs the helper and app for local development, and runs
 the native bridge/interface/Secret Drop smoke tests. This
 is not a notarized distributable. It is not copied to `/Applications`.
+
+Icon packaging requires Xcode 26+ (`actool`), `sips` and `iconutil`. The selected
+source and exact imagegen prompts live in `apps/macos/Artwork/`. Builds compile
+the existing artwork; they do not invoke image generation. `Assets.car` and
+`CFBundleIconName` provide the modern macOS icon without an extra gray backplate;
+`AppIcon.icns` / `CFBundleIconFile` retain the literal older-system family. Both
+resources are sealed by the app signature. After replacing a running development
+bundle, fully quit Vibechar and reopen that same `dist/Vibechar.app` to refresh its
+live Dock icon. No global Dock reset is needed.
 
 `scripts/check.sh` includes a real PTY integration test; run it from a local
 environment that permits creating a controlling terminal. The integration test

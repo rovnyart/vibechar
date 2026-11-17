@@ -8,6 +8,7 @@ app="$root/dist/Vibechar.app"
 mkdir -p "$app/Contents/MacOS"
 mkdir -p "$app/Contents/Helpers"
 mkdir -p "$app/Contents/Resources"
+bash "$root/scripts/build-icon.sh" "$app/Contents/Resources/AppIcon.icns"
 cp "$root/docs/syntax-licenses.md" "$app/Contents/Resources/Syntax Notices.md"
 cp "$root/target/release/vibechar" "$app/Contents/Helpers/.vibechar-next-$$"
 mv -f "$app/Contents/Helpers/.vibechar-next-$$" "$app/Contents/Helpers/vibechar"
@@ -24,6 +25,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>dev.vibechar.app</string>
 <key>CFBundleName</key><string>vibechar</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>AppIcon.icns</string>
+<key>CFBundleIconName</key><string>AppIcon</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -32,5 +35,6 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$app"
+touch "$app"
 "$app/Contents/MacOS/Vibechar" --smoke-test
 printf 'Development app: %s\n' "$app"

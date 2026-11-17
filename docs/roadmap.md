@@ -1,6 +1,12 @@
-# Roadmap to MVP
+# Vibechar roadmap
 
-Status: active. Owner: Art. Started: 2026-11-11.
+Status: functional MVP accepted by Art on 2026-11-17; product polish is active.
+Owner: Art. Started: 2026-11-11.
+
+Art chose to close the MVP feature scope and focus on refinement, beginning with
+the Mac icon. Existing unchecked reliability, performance and distribution items
+remain tracked qualification work; acceptance does not imply those measurements
+or public-release steps have already been completed.
 
 ## The product promise
 
@@ -297,6 +303,8 @@ feature only if it wins on task completion and review effort.
 
 ### M6 — Polish and performance qualification
 
+- [x] Art selects Graphite `V_` app icon; native modern catalog and legacy Retina
+  family are packaged, signed and checked through macOS icon resolution.
 - [ ] Global Mac hotkey; focus/return behavior; native menus and accessibility labels.
 - [ ] Local editing/Secret Drop parity audit; document shortcuts and Mac-only AI scope.
 - [ ] macOS Apple Silicon primary; validate TUI on macOS and Linux x86_64.

@@ -64,6 +64,15 @@ while progressing through the remaining M2 behavior work.
 - The wordmark is **vibechar**. The mark is a compact signature, leaving the text
   canvas dominant. Refine its optical spacing and app-icon treatment within this
   identity rather than reopening the choice of direction.
+
+Art selected **Graphite** for the Mac app icon on 2026-11-17: a graphite rounded
+tile, warm ivory `V` and peach-orange underscore, with restrained physical depth.
+The selected transparent master and generation provenance live in
+`apps/macos/Artwork/`; packaging exports the native 1×/2× icon family through
+1024 px, plus a native Icon Composer catalog for modern macOS. The native enclosure
+retains the graphite fill and avoids a second system backplate. The app icon is a
+solid tile with transparent outer margins, separate
+from the smaller, quieter typographic mark used in the editor chrome.
 - The approved study establishes the visual direction. Exact metrics, native
   materials, contrast, and overflow behavior still need qualification in the app.
 
