@@ -248,7 +248,11 @@ def main():
             session.wait_until(lambda: (data := session.checkpoint()) is not None
                                and data["buffers"][0].get("language") == "Python")
             assert session.checkpoint()["buffers"][0]["text"].encode() == syntax_text
-            session.send(b"\x1bOQjson\x1b")
+            session.send(b"\x1bOQjson")
+            # Observe the picker before cancelling it. Otherwise the old footer
+            # can satisfy the closed assertion and Ctrl+Q races the pending Esc.
+            session.wait_until(lambda: "Language: json" in session.screen_text())
+            session.send(b"\x1b")
             session.wait_until(lambda: "Language:" not in session.screen_text())
             session.send(b"\x11")
             session.finish()

@@ -12,7 +12,16 @@ if [ -z "$tag" ]; then
 fi
 case "$tag" in ''|*[!A-Za-z0-9._+-]*) echo 'Invalid release tag.' >&2; exit 1 ;; esac
 temporary=$(mktemp -d "${TMPDIR:-/tmp/}vibechar-download.XXXXXX")
-trap 'rm -r "$temporary"' EXIT HUP INT TERM
+staged=''
+cleanup() {
+  if [ -n "$staged" ] && [ -d "$staged" ]; then
+    if [ -d "$staged/previous.app" ] && [ ! -e "$apps/Vibechar.app" ]; then mv "$staged/previous.app" "$apps/Vibechar.app"; fi
+    rm -r "$staged"
+  fi
+  if [ -d "$temporary" ]; then rm -r "$temporary"; fi
+}
+trap cleanup 0
+trap 'exit 1' 1 2 15
 extension=tar.gz
 if [ "$platform" = macos ]; then extension=zip; fi
 asset="vibechar-$platform-$arch.$extension"
@@ -40,6 +49,7 @@ if [ "$platform" = macos ]; then
     echo 'App installation failed; previous version restored.' >&2; exit 1
   fi
   rm -r "$staged"
+  staged=''
   "$apps/Vibechar.app/Contents/Helpers/vc" --install
   touch "$apps/Vibechar.app"
   echo "Installed both clients in $apps/Vibechar.app. Restart Vibechar if it is running."
@@ -48,9 +58,11 @@ else
   destination="$HOME/.local/share/vibechar/releases/$tag"
   mkdir -p "$destination"
   staged=$(mktemp -d "$destination/.next.XXXXXX")
-  cp "$temporary/unpacked/vc" "$temporary/unpacked/vibechar" "$temporary/unpacked/LICENSE" "$staged/"
+  cp "$temporary/unpacked/vc" "$temporary/unpacked/vibechar" "$temporary/unpacked/LICENSE" \
+    "$temporary/unpacked/Syntax-Notices.md" "$temporary/unpacked/Third-Party-Notices.txt" "$staged/"
   chmod 755 "$staged/vc" "$staged/vibechar"
-  for file in vc vibechar LICENSE; do mv -f "$staged/$file" "$destination/$file"; done
+  for file in vc vibechar LICENSE Syntax-Notices.md Third-Party-Notices.txt; do mv -f "$staged/$file" "$destination/$file"; done
   rmdir "$staged"
+  staged=''
   "$destination/vc" --install
 fi

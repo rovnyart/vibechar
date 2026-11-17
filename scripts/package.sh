@@ -8,17 +8,23 @@ mkdir -p "$out"
 notarized=false
 if [[ "$system" == Darwin ]]; then
   platform=macos
-  if spctl --assess --type execute "$root/dist/Vibechar.app" >/dev/null 2>&1 && xcrun stapler validate "$root/dist/Vibechar.app" >/dev/null 2>&1; then notarized=true; fi
+  app="${1:-$root/dist/Vibechar.app}"
+  arch="$(lipo -archs "$app/Contents/MacOS/Vibechar")"
+  case "$arch" in arm64|x86_64) ;; *) echo 'Expected a single-architecture Mac bundle.' >&2; exit 1 ;; esac
+  for helper in vc vibechar; do lipo -verify_arch "$arch" "$app/Contents/Helpers/$helper"; done
+  if spctl --assess --type execute "$app" >/dev/null 2>&1 && xcrun stapler validate "$app" >/dev/null 2>&1; then notarized=true; fi
   asset="vibechar-$platform-$arch.zip"
-  ditto -c -k --keepParent "$root/dist/Vibechar.app" "$out/$asset"
+  ditto -c -k --keepParent "$app" "$out/$asset"
 else
   platform=linux
   stage="$(mktemp -d)"
   trap 'rm -r "$stage"' EXIT
-  cp "$root/target/release/vc" "$root/target/release/vibechar" "$root/LICENSE" "$stage/"
+  binaries="${VIBECHAR_BIN_DIR:-$root/target/release}"
+  cp "$binaries/vc" "$binaries/vibechar" "$root/LICENSE" "$stage/"
   cp "$root/docs/syntax-licenses.md" "$stage/Syntax-Notices.md"
   asset="vibechar-$platform-$arch.tar.gz"
-  tar -czf "$out/$asset" -C "$stage" vc vibechar LICENSE Syntax-Notices.md
+  python3 "$root/scripts/third-party-notices.py" "$stage/Third-Party-Notices.txt"
+  tar -czf "$out/$asset" -C "$stage" vc vibechar LICENSE Syntax-Notices.md Third-Party-Notices.txt
 fi
 revision="$(git -C "$root" rev-parse HEAD)"
 python3 - "$out/$asset" "$platform" "$arch" "$revision" "$notarized" <<'PY'

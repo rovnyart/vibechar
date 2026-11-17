@@ -30,5 +30,8 @@ xcrun actool "$root/apps/macos/Artwork/AppIcon.icon" \
   --app-icon AppIcon --include-all-app-icons --enable-on-demand-resources NO \
   --development-region en --target-device mac --minimum-deployment-target 14.0 \
   --platform macosx
-test -s "$temporary/compiled/Assets.car"
+if [[ ! -s "$temporary/compiled/Assets.car" ]]; then
+  echo 'Icon compilation produced no Assets.car. Select Xcode 26+ with xcode-select.' >&2
+  exit 1
+fi
 cp "$temporary/compiled/Assets.car" "$(dirname "$output")/Assets.car"

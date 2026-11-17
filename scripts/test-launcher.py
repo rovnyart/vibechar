@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-VC = ROOT / "target/release/vc"
+VC = Path(os.environ.get("VIBECHAR_TEST_VC", ROOT / "target/release/vc"))
 Session = runpy.run_path(str(ROOT / "scripts/test-terminal.py"))["Session"]
 
 with tempfile.TemporaryDirectory(prefix="vibechar-launcher-") as temp:

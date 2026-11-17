@@ -41,6 +41,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let helper = directory.join("vibechar");
+    if args
+        .first()
+        .is_some_and(|arg| arg == "-t" || arg == "--terminal")
+        && args
+            .get(1)
+            .is_some_and(|arg| arg == "--help" || arg == "-h" || arg == "--version")
+    {
+        return Err(Command::new(helper).args(&args[1..]).exec().into());
+    }
     if args.first().is_some_and(|arg| arg == "run") {
         return Err(Command::new(helper).args(args).exec().into());
     }
