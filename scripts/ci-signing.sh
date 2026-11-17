@@ -12,7 +12,7 @@ password="$(openssl rand -hex 24)"
 trap 'security delete-keychain "$keychain" >/dev/null 2>&1 || true; rm -r "$directory"' EXIT
 python3 - "$directory/certificate.p12" <<'PY'
 import os,base64,pathlib,sys
-p=pathlib.Path(sys.argv[1]); p.write_bytes(base64.b64decode(os.environ['MACOS_CERTIFICATE_P12'],validate=True)); p.chmod(0o600)
+p=pathlib.Path(sys.argv[1]); p.write_bytes(base64.b64decode(''.join(os.environ['MACOS_CERTIFICATE_P12'].split()),validate=True)); p.chmod(0o600)
 PY
 security create-keychain -p "$password" "$keychain"
 security set-keychain-settings -lut 21600 "$keychain"

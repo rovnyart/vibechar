@@ -315,6 +315,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     static func firstPresentationSmokeTest() {
         _ = NSApplication.shared
+        func invariant(_ condition: @autoclosure () -> Bool, _ message: String = "", line: UInt = #line) {
+            guard condition() else {
+                fputs("First presentation invariant failed at VibecharApp.swift:\(line): \(message)\n", stderr)
+                exit(1)
+            }
+        }
         final class GeometryObserver:NSObject,NSLayoutManagerDelegate {
             var loadedWidthChanges=0
             func layoutManager(_ layoutManager:NSLayoutManager,textContainer:NSTextContainer,didChangeGeometryFrom oldSize:NSSize) {
@@ -331,7 +337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 app.pendingSave?.cancel();app.multiController.cancel();app.window.delegate=nil;app.window.close();app.clipboard.clearContents()
             }
             let source="я👩‍💻e\u{301}\0"+String(repeating:"x",count:256*1024)+"\r\nlast"
-            if privateTab {app.session.openPrivate();precondition(app.document.replace(NSRange(location:0,length:0),with:source))}
+            if privateTab {app.session.openPrivate();invariant(app.document.replace(NSRange(location:0,length:0),with:source))}
             else {app.session.open(source)}
             let index=app.session.active
             app.showActiveBuffer()
@@ -340,14 +346,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 let bitmap=surface.bitmapImageRepForCachingDisplay(in:surface.bounds)!
                 surface.cacheDisplay(in:surface.bounds,to:bitmap)
             }
-            func check(_ text:String) {precondition(app.document.text==text && app.textView.string==text)}
+            func check(_ text:String) {invariant(app.document.text==text && app.textView.string==text)}
             func checkCaret() {
                 let screen=app.textView.firstRect(forCharacterRange:app.textView.selectedRange(),actualRange:nil)
                 let rect=app.textView.convert(app.window.convertFromScreen(screen),from:nil)
-                precondition(app.textView.visibleRect.contains(NSPoint(x:rect.minX,y:rect.midY)),"Restored caret must be visible")
+                invariant(app.textView.visibleRect.contains(NSPoint(x:rect.minX,y:rect.midY)),"Restored caret must be visible")
             }
             draw();check(source);checkCaret()
-            precondition(observer.loadedWidthChanges==0,"Resolve the initial viewport before laying out loaded text")
+            invariant(observer.loadedWidthChanges==0,"Resolve the initial viewport before laying out loaded text")
             app.textView.insertText("!",replacementRange:NSRange(location:NSNotFound,length:0));draw();check("!"+source)
             app.applyHistory(redo:false);draw();check(source)
             app.applyHistory(redo:true);draw();check("!"+source)
@@ -356,11 +362,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             app.textView.scrollRangeToVisible(app.textView.selectedRange());draw();checkCaret()
             app.newScratch();draw();check("");checkCaret()
             app.switchBuffer(to:index);draw();check(source);checkCaret()
-            precondition(app.session.isPrivate==privateTab)
+            invariant(app.session.isPrivate==privateTab)
             app.textView.selectAll(nil)
-            precondition(app.textView.selectedRange().length==(source as NSString).length)
-            precondition(app.textView.writeSelection(to:app.clipboard,types:app.textView.writablePasteboardTypes),"Copy the full selection to an isolated pasteboard")
-            precondition(app.clipboard.string(forType:.string)==source)
+            invariant(app.textView.selectedRange().length==(source as NSString).length)
+            invariant(app.textView.writeSelection(to:app.clipboard,types:app.textView.writablePasteboardTypes),"Copy the full selection to an isolated pasteboard")
+            invariant(app.clipboard.string(forType:.string)==source)
             app.textView.insertText("short\n",replacementRange:NSRange(location:NSNotFound,length:0));draw();check("short\n")
             app.applyHistory(redo:false);draw();check(source)
             app.applyHistory(redo:true);draw();check("short\n")
@@ -370,7 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 app.window.appearance=NSAppearance(named:appearance)
                 for width in [420,880] {
                     app.window.setContentSize(NSSize(width:width,height:600));draw();check(source)
-                    precondition(app.document.revision==revision)
+                    invariant(app.document.revision==revision)
                 }
             }
         }

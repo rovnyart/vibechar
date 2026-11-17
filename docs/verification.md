@@ -8,11 +8,13 @@ This records local engineering evidence. Art accepted the functional MVP scope o
 
 - Apple M5, 16 GiB RAM, macOS 27.0.1 (26A434), Apple Silicon.
 - Rust 1.99.1, Swift 6.4.2, release builds for runnable clients.
-- Development .app uses local ad-hoc signing; it is not notarized or installed globally.
+- Local builds use Developer ID when available, with ad-hoc fallback. Distribution
+  validation now includes Apple notarization and isolated installation; see the
+  distribution entry below.
 
 ## Automated checks
 
-- 158 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 160 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -29,7 +31,7 @@ This records local engineering evidence. Art accepted the functional MVP scope o
 - Native last-tab close checks: Cmd+W action, the real tab close button, empty
   private tab, multiple-tab behavior, close notifications/termination decision,
   removed-tab recovery versus whole-window recovery.
-- Fifty-three real PTY scenarios across the baseline, selection, find, tools,
+- Fifty-five real PTY scenarios across the baseline, selection, find, tools,
   multicursor, history, large-text, editing/wrapping and counters suites,
   including bracketed paste + undo/redo + byte-exact UTF-8/CRLF save;
   unsaved-change protection; piped stdin with interactive keyboard; scratch save-as;
@@ -1464,3 +1466,22 @@ exact built-in imagegen prompts are committed under `apps/macos/Artwork/`.
 Local review artifact: `dist/icon-dock-preview.png` (generated bitmap comparison,
 not a screenshot of the user's Dock). Apple references are linked in the artwork
 README; the build never calls an image model or requires an API key.
+
+
+## Distribution and unified launcher — 2026-11-17
+
+- The public `rovnyart/vibechar` repository contains the original Git history,
+  MIT license, actual native screenshots, third-party notices and install guides.
+- The local full gate passed 160 Rust tests, strict Clippy/formatting, 55 real PTY
+  scenarios, release builds and the complete native smoke suite. The launcher
+  adds isolated PATH installation, collision protection, Unicode file/pipe PTY
+  coverage, running/startup GUI file routing and nonexistent-file handling.
+- Local Developer ID builds were notarized, stapled and accepted by `spctl`.
+  The fresh-install test uses a real signed release archive with stubbed downloads:
+  fresh install, reinstall, `vc` and `vc -t`, installed native launcher smoke,
+  signature verification and checksum-tampering rejection passed in disposable
+  home directories. The user's PATH, clipboard and recovery were untouched.
+- GitHub CI covers Linux static musl binaries, Apple Silicon and Intel. Linux
+  passed; Mac runner acceptance and the first public signed release are still
+  being validated. A synthetic first-presentation assertion now reports its
+  source line even in optimized builds.

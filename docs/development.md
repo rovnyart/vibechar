@@ -142,10 +142,12 @@ open dist/Vibechar.app
 
 The script builds the Rust static library and CLI helper, links the Swift app,
 wraps a .app bundle with the selected Graphite icon (native catalog plus a
-16–512 pt legacy family at 1×/2×), ad-hoc
-signs the helper and app for local development, and runs
-the native bridge/interface/Secret Drop smoke tests. This
-is not a notarized distributable. It is not copied to `/Applications`.
+16–512 pt legacy family at 1×/2×), signs both helpers and the app, and runs
+the native bridge/interface/Secret Drop smoke tests. A local Developer ID
+Application identity is selected when available; otherwise the build is ad-hoc
+signed. `VIBECHAR_SIGN_IDENTITY=-` explicitly selects ad-hoc signing. The build
+is not copied to `/Applications`. Notarization is a separate release step;
+see [Apple signing](apple-signing.md) and [installation](installation.md).
 
 Icon packaging requires Xcode 26+ (`actool`), `sips` and `iconutil`. The selected
 source and exact imagegen prompts live in `apps/macos/Artwork/`. Builds compile
