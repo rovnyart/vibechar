@@ -1470,38 +1470,56 @@ README; the build never calls an image model or requires an API key.
 
 ## Distribution and unified launcher — 2026-11-17
 
-- The public `rovnyart/vibechar` repository contains the original Git history,
-  MIT license, actual native screenshots, third-party notices and install guides.
-- The local full gate passed 160 Rust tests, strict Clippy/formatting, 55 real PTY
-  scenarios, release builds and the complete native smoke suite. The launcher
-  adds isolated PATH installation, collision protection, Unicode file/pipe PTY
-  coverage, running/startup GUI file routing and nonexistent-file handling.
-- Local Developer ID builds were notarized, stapled and accepted by `spctl`.
-  The fresh-install test uses a real signed release archive with stubbed downloads:
-  fresh install, reinstall, `vc` and `vc -t`, installed native launcher smoke,
-  signature verification and checksum-tampering rejection passed in disposable
-  home directories. The user's PATH, clipboard and recovery were untouched.
-- GitHub CI covers Linux static musl binaries, Apple Silicon and Intel. Linux
-  passed; Mac runner acceptance and the first public signed release are still
-  being validated. The first-presentation test exposed a classic-scrollbar width
-  change, reproduced locally with `-AppleShowScrollBars Always`. Classic scroller
-  space is now reserved before loading text. The unwrapped editor also fits its
-  actual clip viewport after scroller/ruler tiling. The build runs dedicated
-  first-presentation and editing regressions with that system preference override.
+The [full CI run](https://github.com/rovnyart/vibechar/actions/runs/44094955442)
+passed at `71b1943792736f36a6eea2f810a89785af060786` on macOS 26 Apple Silicon,
+macOS 26 Intel and Ubuntu 24.04. The
+[first stable release](https://github.com/rovnyart/vibechar/releases/tag/build-71b194379273)
+contains both signed Mac architectures and static Linux x86_64 binaries from that
+same revision. The public MIT repository preserves the original Git history.
 
-- Intel CI passed the complete scroller, long-text, editing, counters and close
-  checks, then stopped after a 60-second wait in Save As. The filesystem fixture
-  now injects a destination request instead of constructing `NSSavePanel` through
-  its remote system service. It retains the default-name/directory, cancellation,
-  failure, overwrite, history and recovery assertions; the production chooser
-  still presents the same native save panel.
+- Each primary platform passed 160 Rust tests, strict Clippy/formatting, release
+  builds and 55 real PTY scenarios. Linux's static musl binaries additionally
+  passed the two launcher PTY scenarios and the isolated installer fixture.
+- The native suites passed editing, recovery, private/Secret Drop, syntax,
+  counters, multi-selection, AI settings, rewrite, examples and offline recipes.
+  AI suites run in independent AppKit processes after `finishLaunching`, with
+  a 180-second timeout per process. They retain synthetic HTTP/credential
+  fixtures and actual recipe-sheet save/cancel/rename/delete assertions.
+- Classic scrollbars exposed a real loaded-paragraph width change. Space is now
+  reserved before loading text; unwrapped editors fit after scroller/ruler tiling.
+  Dedicated first-presentation and editing regressions with
+  `-AppleShowScrollBars Always` passed on both Mac architectures.
+- Save As filesystem tests inject the destination request, preserving suggested
+  name/directory, cancellation, failure, overwrite, history and recovery checks
+  without starting the system's remote save-panel service. The normal GUI path
+  still presents the same native panel.
+- Launcher coverage checks Unicode files and piped input in real PTYs, startup
+  and running-app URL routing, existing-tab reuse, nonexistent files remaining
+  unsaved, ignored grant URLs, menu routing, idempotent PATH installation,
+  preserved shell settings and unrelated-command collision refusal.
+- Both Mac archives were downloaded from the successful CI run, verified against
+  its revision and checksums, then Developer ID signed and notarized locally.
+  `codesign --verify --deep --strict`, Apple acceptance, stapling and `spctl`
+  assessment passed for both architectures. No signing credential was exported
+  or copied into the repository.
+- The actual public curl command passed fresh installation and reinstallation
+  in a disposable Mac home directory. Installed `vc --version`,
+  `vc -t --version`, `vc --terminal --help`, the native launcher smoke, signature
+  and stapled-ticket validation all passed. The managed PATH block appeared once
+  and preserved pre-existing synthetic shell settings. Icons and all license
+  notices were present in the installed app.
+- A separate real-archive fixture also rejected a tampered checksum before any
+  app/PATH installation. Linux's installer fixture passed on its Linux runner;
+  its downloads are stubbed while extraction and installed binaries are real.
+- These tests did not open the user's recovery, clipboard, API key or private
+  tabs, and did not change the user's PATH. This is clean-home validation on
+  existing systems, not a fresh macOS 14 VM or broad manual accessibility/IME
+  qualification. Those remain tracked in the roadmap.
 
-- ARM CI passed all native suites, including AI fixtures and both classic-scroller
-  regressions. Packaging then exposed Xcode 26 `lipo` argument parsing: the input
-  file now precedes `-verify_arch`, as required by that toolchain.
-
-- Intel's next run passed Save As and all editing/rewrite checks, but stopped
-  making progress in the example-based recipe suite. The run was cancelled to
-  obtain its logs. AI UI suites now run in independent processes after AppKit's
-  `finishLaunching`, each bounded to 180 seconds, with explicit suite/stage logs.
-  All model, HTTP and real recipe-sheet assertions remain enabled.
+The first stable release used the existing local Developer ID and notarization
+profile. GitHub signing secrets were not configured at publication time, so CI's
+initial publication was a preview and was promoted after local notarization.
+Future trusted-main builds use the [documented signing setup](apple-signing.md);
+without it, CI continues publishing previews and preserves the latest stable
+release. Final documentation-only updates use GitHub's
+[supported `[skip ci]` marker](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs); the release code is the fully tested revision linked above.

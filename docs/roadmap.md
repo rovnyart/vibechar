@@ -322,12 +322,15 @@ or broken-terminal blockers. An ordinary editor session requires no network acce
 
 ### M7 — Ship MVP
 
-- [ ] CI: formatting/lint, Rust tests, bridge tests, macOS build, Linux TUI tests.
-- [ ] macOS signed/notarized app, signed release metadata, reproducible versioning.
-- [ ] CLI release archives, install/uninstall instructions, optional Homebrew tap.
+- [x] CI: formatting/lint, Rust tests, bridge tests, both Mac architectures and Linux TUI.
+- [x] Developer ID signed/notarized Mac archives and immutable commit-based release tags.
+- [ ] Activate and verify automatic GitHub signing after repository credentials are configured.
+- [ ] Independently signed release manifests and reproducible-build qualification.
+- [x] CLI release archives, one-curl installation, menu PATH setup and install/uninstall instructions.
 - [x] MIT license, third-party notices, privacy disclosure and API billing explanation.
 - [x] Export/recovery instructions and manual reinstall/update path.
-- [ ] Clean-machine install + first-run + rollback/uninstall verification.
+- [x] Clean-home install, installed-client smoke, reinstall and checksum rejection.
+- [ ] Clean-machine macOS 14 first-run and manual rollback/uninstall qualification.
 - [x] Illustrated flagship walkthrough with synthetic native captures and known limitations.
 
 Exit: Art can install the release, use either interface, recover a scratch buffer,
