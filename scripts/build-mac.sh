@@ -51,7 +51,17 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 PLIST
 codesign "${sign_args[@]}" "$app"
 touch "$app"
-"$app/Contents/MacOS/Vibechar" --smoke-test
-"$app/Contents/MacOS/Vibechar" --smoke-first-presentation -AppleShowScrollBars Always
-"$app/Contents/MacOS/Vibechar" --smoke-editing -AppleShowScrollBars Always
+# Each AI UI suite owns its own AppKit lifecycle and outstanding callbacks.
+# Bound every process so a stuck native dialog cannot hide inside a 45-min job.
+python3 - "$app/Contents/MacOS/Vibechar" <<'PYTEST'
+import subprocess, sys
+for arguments in [
+    ["--smoke-test"], ["--smoke-ai-settings"], ["--smoke-rewrite"],
+    ["--smoke-examples"], ["--smoke-recipes"],
+    ["--smoke-first-presentation", "-AppleShowScrollBars", "Always"],
+    ["--smoke-editing", "-AppleShowScrollBars", "Always"],
+]:
+    print("Native suite: " + " ".join(arguments), flush=True)
+    subprocess.run([sys.argv[1], *arguments], check=True, timeout=180)
+PYTEST
 printf 'Development app: %s\n' "$app"

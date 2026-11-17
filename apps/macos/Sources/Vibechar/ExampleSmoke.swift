@@ -90,7 +90,9 @@ func exampleSmokeTest() {
     session.openPrivate(); precondition(document.replace(NSRange(location: 0,length: 0),with: "PRIVATE\nEXAMPLE"))
     do { _ = try ExampleModel(session: session,target: NSRange(location: 0,length: 15),vault: vault,service: service,defaults: prefs); preconditionFailure() }
     catch { precondition(vault.loads == reads) }
+    print("Do the Rest smoke: model, cancellation and private-exclusion fixtures passed")
     exampleHTTPTest()
+    print("Do the Rest smoke: HTTP fixture passed; testing native recipe sheets")
     try! exampleAwait { await service.configure() }
     AppDelegate.exampleIntegrationSmokeTest { session,target in try ExampleModel(session: session,target: target,vault: vault,service: service,defaults: prefs) }
     print("Do the Rest native smoke passed: example-only requests, structured schema, local recipe validation, counts/skips, stale/cancel, native apply/Undo/Redo, private exclusion and cleanup")

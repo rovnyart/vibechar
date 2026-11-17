@@ -1499,3 +1499,9 @@ README; the build never calls an image model or requires an API key.
 - ARM CI passed all native suites, including AI fixtures and both classic-scroller
   regressions. Packaging then exposed Xcode 26 `lipo` argument parsing: the input
   file now precedes `-verify_arch`, as required by that toolchain.
+
+- Intel's next run passed Save As and all editing/rewrite checks, but stopped
+  making progress in the example-based recipe suite. The run was cancelled to
+  obtain its logs. AI UI suites now run in independent processes after AppKit's
+  `finishLaunching`, each bounded to 180 seconds, with explicit suite/stage logs.
+  All model, HTTP and real recipe-sheet assertions remain enabled.

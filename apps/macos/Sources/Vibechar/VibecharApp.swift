@@ -5,7 +5,12 @@ import Darwin
 struct VibecharApp {
     @MainActor
     static func main() {
-        if CommandLine.arguments.contains(where: { $0.hasPrefix("--smoke") }) { setbuf(stdout,nil); setbuf(stderr,nil) }
+        if CommandLine.arguments.contains(where: { $0.hasPrefix("--smoke") }) {
+            setbuf(stdout,nil); setbuf(stderr,nil)
+            // Sheets require a launched application, including in a headless CI
+            // fixture. No delegate is installed, so no user session is opened.
+            NSApplication.shared.finishLaunching()
+        }
         if CommandLine.arguments.contains("--profile-appkit") {
             AppDelegate.profileNativeEditing()
             return
@@ -83,10 +88,6 @@ struct VibecharApp {
             AppDelegate.toolsSmokeTest()
             AppDelegate.multicursorPasteSmokeTest()
             AppDelegate.multiSmokeTest()
-            aiSettingsSmokeTest()
-            rewriteSmokeTest()
-            exampleSmokeTest()
-            recipeSmokeTest()
             AppDelegate.launcherSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
