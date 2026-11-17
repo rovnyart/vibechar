@@ -1665,19 +1665,32 @@ after multiple attempts" and arm64 capacity notices. Retrying only the Mac job
 also remained queued. CI now uses GitHub's macOS 15 ARM image and explicitly
 selects its installed Xcode 26.3. A preflight requires arm64. The app's macOS 14+
 deployment target and ARM-only archives are unchanged; the fix was also tested
-locally on macOS 26. This avoids relying on the currently unavailable macOS 26
+locally on macOS 27.0.1. This avoids relying on the currently unavailable macOS 26
 runner pool while keeping all release gates enabled.
 
-GitHub also failed to provision the macOS 15 ARM job in run `44141527439`;
-neither ARM image reached a build step. Linux passed completely. A separate
-local 1.0.1 build at `28cf29f` passed all native suites and both helper-version
-checks and was Developer ID signed. It is retained as
-`dist/Vibechar-1.0.1.app`, with provenance in `dist/Vibechar-1.0.1-local.json`.
-Its build directory was separate from the existing development/installed app.
+GitHub initially also failed to provision the macOS 15 ARM job in run
+`44141527439`; Linux passed completely. A temporary local 1.0.1 candidate at
+`28cf29f` passed all native suites and both helper-version checks and was Developer
+ID signed. The fallback credential lookup tried only `secry-notary` and
+`vibechar-notary`; those names did not resolve. The existing local profile's name
+was not identified, and credential setup was left unchanged. Release work
+continued through CI once a runner became available. The temporary local backup
+was removed after public release verification.
 
-Local notarization is not configured: notarytool reports no Keychain profile
-for either `secry-notary` or `vibechar-notary`. The local app is therefore not
-notarized and has not been promoted to the public installer/update feed. Version
-1.0.1 remains reserved; latest public is 1.0.0 until a Mac runner is available
-or a local notarization profile is supplied. Existing signing/update checks
-have not been bypassed.
+## Vibechar 1.0.1 — published and verified
+
+[Release attempt 2](https://github.com/rovnyart/vibechar/actions/runs/44141527439)
+passed completely and published
+[Vibechar 1.0.1](https://github.com/rovnyart/vibechar/releases/tag/v1.0.1)
+from `28cf29f6689a0f2d78f276a47171a3e12ab17a3e`. The hosted Mac used ARM and
+Xcode 26.3. The new native control regression passed, Apple accepted notarization,
+and the real Sparkle fixture installed 0.0.1 → 1.0.1, relaunched, retained scratch
+recovery and checked both helper versions and the notarized replacement.
+
+The actual public archive was downloaded and verified again on local macOS
+27.0.1. The native window-control test passed there too; GUI and both helper
+versions were 1.0.1, all six Mach-O binaries contained only arm64, and code signing,
+the stapled ticket and Gatekeeper passed. The unauthenticated latest update feed
+returned 1.0.1 with its correct versioned download URL. The release contains the
+same six declared assets as 1.0.0. No local notarization credentials or unsigned
+fallback were used for publication.
