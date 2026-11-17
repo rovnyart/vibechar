@@ -33,10 +33,11 @@ else
   echo 'Vibechar supports macOS and Linux.' >&2; exit 1
 fi
 revision="$(git -C "$root" rev-parse HEAD)"
-python3 - "$out/$asset" "$platform" "$arch" "$revision" "$notarized" <<'PY'
+version="$(python3 "$root/scripts/versioning.py" current)"
+python3 - "$out/$asset" "$platform" "$arch" "$revision" "$notarized" "$version" <<'PY'
 import hashlib,json,pathlib,sys
 p=pathlib.Path(sys.argv[1])
-info=dict(asset=p.name,platform=sys.argv[2],arch=sys.argv[3],revision=sys.argv[4],notarized=sys.argv[5]=='true',sha256=hashlib.sha256(p.read_bytes()).hexdigest())
+info=dict(asset=p.name,platform=sys.argv[2],arch=sys.argv[3],revision=sys.argv[4],notarized=sys.argv[5]=='true',version=sys.argv[6],sha256=hashlib.sha256(p.read_bytes()).hexdigest())
 p.with_suffix(p.suffix+'.json').write_text(json.dumps(info,indent=2)+'\n')
 PY
 printf 'Packaged %s (notarized=%s)\n' "$asset" "$notarized"

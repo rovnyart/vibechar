@@ -73,6 +73,7 @@ Choose **New repository secret** for each of these:
 | `MACOS_CERTIFICATE_PASSWORD` | Password chosen while exporting .p12 |
 | `APPLE_ID` | Apple ID email for your developer account |
 | `APPLE_APP_PASSWORD` | The app-specific password from step 2 |
+| `SPARKLE_PRIVATE_KEY` | Sparkle Ed25519 private key for signing update archives; already provisioned for this repository |
 
 The simplest way to upload the certificate without copying it into a text file:
 
@@ -95,27 +96,40 @@ under **Membership details**. The value must belong to the certificate's team.
 
 ### 4. Run the first automated signed release
 
-Open [Actions → Build, test & release](https://github.com/rovnyart/vibechar/actions/workflows/ci.yml),
+Open [Actions → Release](https://github.com/rovnyart/vibechar/actions/workflows/release.yml),
 choose **Run workflow**, select `main` and run it. Subsequent pushes to `main`
 build, test, sign, notarize and publish automatically.
 
-GitHub uses a disposable keychain on each Mac runner. Both helpers are signed
-before the app. Apple must return `Accepted`; the ticket is stapled and checked
+GitHub uses a disposable keychain on each Mac runner. The Sparkle framework and
+its nested installer tools, then both client helpers, are signed before the app.
+Apple must return `Accepted`; the ticket is stapled and checked
 before the package is marked notarized. Certificate files and temporary keychains
 are cleaned up. Pull requests never run the signing step with credentials.
 
-Until these secrets are configured, CI still tests and uploads all platform
-artifacts and publishes a **preview** release. It does not promote unsigned Mac
-builds to the stable curl installation path. An already-published stable release
-is never downgraded by a preview rerun.
+Release configuration is checked before reserving a version. Missing credentials
+stop publication. The separate **CI** workflow and pull requests can still test
+and upload unsigned development artifacts without any signing secrets.
+
+### 5. Update signing key
+
+The initial update key is already configured: the public key is committed in
+`apps/macos/UpdaterPublicKey.txt`; the private key is in the repository secret
+`SPARKLE_PRIVATE_KEY` and the dedicated local Keychain account
+`dev.vibechar.updates.v1`. You do not need to generate or upload another key.
+
+CI passes this key to Sparkle's official `generate_appcast` over stdin; it is never
+put into arguments, committed files or logs. Keep the private key stable across
+releases. Replacing only the public key would prevent existing installations from
+accepting updates; key rotation needs a separate migration release. Keep a secure
+backup through your normal credential-backup process.
 
 ## Release contents
 
-Each checked main commit gets an immutable `build-<commit>` tag, binaries for
-macOS Apple Silicon (arm64) and Linux x86_64, platform metadata and SHA256SUMS.
-The Mac archive includes the native app, terminal editor and `vc`. A stable release
-requires the Apple Silicon Mac build to be notarized. The first release can be notarized
-locally using the same scripts, then promoted after all archives and checksums exist.
+Each release gets an immutable `vMAJOR.MINOR.PATCH` tag, binaries for macOS Apple
+Silicon (arm64) and Linux x86_64, platform metadata, SHA256SUMS and `appcast.xml`.
+The Mac archive includes the native app, terminal editor, `vc` and update helpers.
+Stable publication requires Apple notarization and an Ed25519 update signature.
+See [release rules and manual version selection](releases.md).
 
 ## References
 

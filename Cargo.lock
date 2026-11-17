@@ -770,11 +770,11 @@ checksum = "1fc81956842c57dac11422a97c3b8195a1ff727f06e85c84ed2e8aa277c9a0fd"
 
 [[package]]
 name = "vc"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "vibechar"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "vibechar-bridge"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde_json",
  "vibechar-core",
@@ -793,7 +793,7 @@ dependencies = [
 
 [[package]]
 name = "vibechar-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "libc",
  "regex",

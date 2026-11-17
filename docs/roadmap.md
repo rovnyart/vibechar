@@ -323,7 +323,9 @@ or broken-terminal blockers. An ordinary editor session requires no network acce
 ### M7 — Ship MVP
 
 - [x] CI: formatting/lint, Rust tests, bridge tests, Apple Silicon Mac and Linux TUI.
-- [x] Developer ID signed/notarized Mac archives and immutable commit-based release tags.
+- [x] Developer ID signed/notarized Mac archives and immutable SemVer release tags.
+- [x] Unified client versions, Conventional Commits, generated changelog and manual release selection.
+- [x] Quiet Mac update checks, one-click signed bundle replacement and relaunch with session recovery.
 - [x] Automatic GitHub signing and notarization configured and verified for Apple Silicon.
 - [ ] Independently signed release manifests and reproducible-build qualification.
 - [x] CLI release archives, one-curl installation, menu PATH setup and install/uninstall instructions.

@@ -5,7 +5,8 @@
 <p align="center"><strong>Paste a mess. Make it useful. Get on with your day.</strong></p>
 <p align="center">A tiny native text workbench for macOS and your terminal.<br>One Rust editing engine. A quiet Mac app. Optional AI when you ask for it.</p>
 <p align="center">
-  <a href="https://github.com/rovnyart/vibechar/actions/workflows/ci.yml"><img alt="Build and tests" src="https://github.com/rovnyart/vibechar/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/rovnyart/vibechar/actions/workflows/release.yml"><img alt="Release build and tests" src="https://github.com/rovnyart/vibechar/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/rovnyart/vibechar/releases/latest"><img alt="Latest version" src="https://img.shields.io/github/v/release/rovnyart/vibechar?style=flat-square&color=F49A6B"></a>
   <a href="https://github.com/rovnyart/vibechar/releases"><img alt="Downloads" src="https://img.shields.io/badge/download-GitHub_Releases-F49A6B?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-20211F?style=flat-square"></a>
   <img alt="macOS 14 and later, Apple Silicon" src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-20211F?style=flat-square&logo=apple&logoColor=white">
@@ -38,6 +39,11 @@ On Linux, plain `vc` opens the terminal editor. On Mac, you can also choose
 **Vibechar → Install vc Command…**. Open a new terminal after the initial PATH setup.
 Files open in the running Mac app; missing files get a tab and reach disk on Save.
 
+The Mac app quietly checks for updates. Click **Update** in its header to download,
+install and reopen with your scratch tabs restored. The bundled terminal editor
+and `vc` update together. **Vibechar → Check for Updates…** checks immediately;
+automatic checks can be switched off in the same menu. See [update behavior](docs/installation.md#updates).
+
 | Platform | Included |
 | :--- | :--- |
 | macOS 14+ · Apple Silicon | Mac app + terminal + `vc` |
@@ -45,7 +51,7 @@ Files open in the running Mac app; missing files get a tab and reach disk on Sav
 
 Mac app: `~/Applications/Vibechar.app`. Command: `~/.local/bin/vc`.
 [Downloads & checksums](https://github.com/rovnyart/vibechar/releases) ·
-[Installation, updates and removal](docs/installation.md)
+[Installation, updates and removal](docs/installation.md) · [Changelog](CHANGELOG.md) · [Releasing](docs/releases.md)
 
 ## The good stuff
 

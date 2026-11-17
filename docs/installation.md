@@ -23,11 +23,35 @@ command. The operation appends an idempotent PATH block to zsh, bash or fish
 startup files and preserves existing content. An unrelated `~/.local/bin/vc` is
 left untouched. Open a new terminal after initial installation.
 
-To update, rerun the curl command. Restart an already-running editor to load the
-new version. The installer does not quit your editor or remove recovery, keys,
-private tabs or recipes. For a specific release, first export `VIBECHAR_VERSION`
-to its tag, then run the same command. Set `VIBECHAR_APP_DIR` to choose another Mac
-application directory before invoking the installer.
+## Updates
+
+From **1.0.0**, the Mac app checks quietly about every six hours while running.
+An available version adds a small **Update** button to the header. One click
+downloads the archive, verifies its Ed25519 signature, installs and reopens the
+app. The installed app is Developer ID signed and notarized by Apple.
+
+Ordinary scratch tabs and cursor positions are checkpointed before restart. An
+open private tab containing text pauses installation: save or close it yourself,
+then click **Restart**. Private text is never added to recovery. If a checkpoint
+cannot be saved, the update also waits rather than throwing away the session.
+
+Use **Vibechar → Check for Updates…** for an immediate check. Toggle
+**Automatically Check for Updates** in the same menu. Downloads begin only when
+you click Update; there are no surprise restarts or update dialogs during editing.
+
+The Mac app, bundled terminal editor and `vc` are replaced as one bundle. The
+existing PATH symlink keeps working. An already-running terminal editor continues
+normally; the next `vc -t` uses the new version. There is no second Mac terminal
+update service.
+
+**Older preview builds need one manual install of 1.0.0** to gain the updater.
+On Linux, or to reinstall on Mac, rerun the curl command above. Restart an
+already-running editor to load the replacement. The installer does not quit your
+editor or remove recovery, keys, private tabs or recipes. For a specific release,
+first export `VIBECHAR_VERSION=v1.0.0`, then run the same command. Set
+`VIBECHAR_APP_DIR` to choose another Mac application directory before installation.
+
+## Manual installation and removal
 
 For manual Mac installation, download your architecture's ZIP and `SHA256SUMS`,
 verify the checksum, unpack `Vibechar.app` and move it to Applications. Launch it

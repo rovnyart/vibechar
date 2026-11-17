@@ -362,10 +362,20 @@ private final class PocketTabView: NSView {
     @objc private func closeTab() { onClose?() }
 }
 
+final class PocketUpdateButton: NSButton {
+    override func draw(_ dirtyRect: NSRect) {
+        PocketPalette.accent.withAlphaComponent(0.12).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5,dy: 0.5),xRadius: 7,yRadius: 7).fill()
+        super.draw(dirtyRect)
+    }
+}
+
 final class PocketHeader: NSView {
     var onSelect: ((Int) -> Void)?
     var onClose: ((Int) -> Void)?
     var onNew: (() -> Void)?
+    var onUpdate: (() -> Void)?
+    let updateButton = PocketUpdateButton(title: "Update",target: nil,action: nil)
     private var models: [PocketTab] = []
     private var active = 0
     private var tabViews: [PocketTabView] = []
@@ -383,8 +393,27 @@ final class PocketHeader: NSView {
         overflow.action = #selector(showAllTabs)
         addSubview(newButton)
         addSubview(overflow)
+        updateButton.isHidden = true
+        updateButton.isBordered = false
+        updateButton.font = .monospacedSystemFont(ofSize: 11,weight: .semibold)
+        updateButton.contentTintColor = PocketPalette.accent
+        updateButton.image = NSImage(systemSymbolName: "arrow.down.circle.fill",accessibilityDescription: nil)
+        updateButton.imagePosition = .imageLeading
+        updateButton.target = self
+        updateButton.action = #selector(updateApplication)
+        updateButton.setAccessibilityLabel("Update and restart Vibechar")
+        addSubview(updateButton)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func showUpdate(title: String?, enabled: Bool, detail: String) {
+        updateButton.isHidden = title == nil
+        updateButton.title = title ?? ""
+        updateButton.isEnabled = enabled
+        updateButton.toolTip = detail
+        updateButton.setAccessibilityValue(detail)
+        needsLayout = true
+    }
 
     func update(tabs: [PocketTab], active: Int) {
         guard models != tabs || self.active != active else { return }
@@ -417,7 +446,8 @@ final class PocketHeader: NSView {
         let lightsInset: CGFloat = 98
         let leading: CGFloat = rtl ? 16 : lightsInset
         let trailing: CGFloat = rtl ? lightsInset : 16
-        let available = max(0, bounds.width - leading - trailing - 45 - 36)
+        let updateWidth: CGFloat = updateButton.isHidden ? 0 : (updateButton.title.count > 8 ? 108 : 88)
+        let available = max(0, bounds.width - leading - trailing - 45 - 36 - (updateWidth > 0 ? updateWidth+12 : 0))
         let allFit = CGFloat(models.count) * 126 <= available
         let tabsWidth = available - (allFit ? 0 : 34)
         let capacity = max(1, Int(tabsWidth / 126))
@@ -435,6 +465,7 @@ final class PocketHeader: NSView {
         overflow.frame = NSRect(x: x, y: 10, width: 30, height: 34)
         if !allFit { x += 34 }
         newButton.frame = NSRect(x: x, y: 10, width: 32, height: 34)
+        updateButton.frame = NSRect(x: bounds.width-trailing-39-updateWidth,y: 13,width: updateWidth,height: 28)
         needsDisplay = true
         layoutTrafficLights()
     }
@@ -469,6 +500,7 @@ final class PocketHeader: NSView {
         } else { window?.performDrag(with: event) }
     }
     @objc private func newScratch() { onNew?() }
+    @objc private func updateApplication() { onUpdate?() }
     @objc private func showAllTabs() {
         let menu = NSMenu(title: "All tabs")
         for (index, tab) in models.enumerated() {

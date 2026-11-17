@@ -1,0 +1,143 @@
+name: Build clients
+on:
+  workflow_call:
+    inputs:
+      revision:
+        type: string
+        required: true
+      sign:
+        type: boolean
+        default: false
+    secrets:
+      MACOS_CERTIFICATE_P12:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_APP_PASSWORD:
+        required: false
+      SPARKLE_PRIVATE_KEY:
+        required: false
+permissions:
+  contents: read
+jobs:
+  check:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x86_64
+          - runner: macos-26
+            target: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.revision }}
+          fetch-depth: 0
+      - name: Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Apple toolchain
+        if: runner.os == 'macOS'
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+      - uses: actions/cache@v6
+        id: rust-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ runner.arch }}-1.99.1-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-${{ runner.arch }}-1.99.1-
+      - name: Isolated test Keychain
+        if: runner.os == 'macOS'
+        run: |
+          security default-keychain -d user > "$RUNNER_TEMP/keychain-default-before" || true
+          security list-keychains -d user > "$RUNNER_TEMP/keychain-list-before"
+          password="$(openssl rand -hex 24)"
+          keychain="$RUNNER_TEMP/vibechar-tests.keychain-db"
+          security create-keychain -p "$password" "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security list-keychains -d user -s "$keychain"
+      - name: Validate and build both clients
+        env:
+          VIBECHAR_SIGN_IDENTITY: '-'
+        run: bash scripts/check.sh
+      - name: Restore test Keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          original="$(sed 's/^[[:space:]]*"//;s/"[[:space:]]*$//' "$RUNNER_TEMP/keychain-default-before")"
+          if [[ -n "$original" ]]; then security default-keychain -d user -s "$original"; fi
+          keychains=()
+          while IFS= read -r line; do
+            path="$(printf '%s' "$line" | sed 's/^[[:space:]]*"//;s/"[[:space:]]*$//')"
+            if [[ -n "$path" ]]; then keychains+=("$path"); fi
+          done < "$RUNNER_TEMP/keychain-list-before"
+          security list-keychains -d user -s "${keychains[@]}"
+          security delete-keychain "$RUNNER_TEMP/vibechar-tests.keychain-db"
+      - name: Mac failure diagnostics
+        if: failure() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostic-${{ matrix.target }}
+          path: |
+            ~/Library/Logs/DiagnosticReports/Vibechar*.ips
+            ~/Library/Logs/DiagnosticReports/Vibechar*.crash
+          if-no-files-found: ignore
+      - name: Retain compiled Rust after a failed check
+        if: failure() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ runner.arch }}-1.99.1-${{ hashFiles('Cargo.lock') }}
+      - name: Sign and notarize trusted main builds
+        if: runner.os == 'macOS' && inputs.sign
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: bash scripts/ci-signing.sh
+      - name: Portable static Linux binaries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --release --locked --target x86_64-unknown-linux-musl -p vibechar -p vc
+          target/x86_64-unknown-linux-musl/release/vc --version
+          target/x86_64-unknown-linux-musl/release/vibechar --syntax-count
+          VIBECHAR_TEST_VC="$PWD/target/x86_64-unknown-linux-musl/release/vc" python3 scripts/test-launcher.py
+      - name: Package
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then export VIBECHAR_BIN_DIR="$PWD/target/x86_64-unknown-linux-musl/release"; fi
+          bash scripts/package.sh
+      - name: Sign update archive
+        if: runner.os == 'macOS' && inputs.sign
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: bash scripts/sign-update.sh
+      - name: Verify fresh installation and update
+        if: runner.os == 'macOS' && inputs.sign
+        run: python3 scripts/test-mac-update.py
+      - name: Verify Linux installation and update
+        if: runner.os == 'Linux'
+        run: python3 scripts/test-installer.py dist/release/vibechar-linux-x86_64.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vibechar-${{ matrix.target }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14

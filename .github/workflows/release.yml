@@ -1,0 +1,110 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump (the first release is always 1.0.0)
+        type: choice
+        options: [minor, patch, major, exact]
+        default: minor
+      version:
+        description: Exact stable version, only when bump is exact (for example 1.4.2)
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      revision: ${{ steps.plan.outputs.revision }}
+      tag: ${{ steps.plan.outputs.tag }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify release configuration
+        env:
+          HAVE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+          HAVE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD != '' }}
+          HAVE_APPLE_ID: ${{ secrets.APPLE_ID != '' }}
+          HAVE_APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD != '' }}
+          HAVE_UPDATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+          HAVE_TEAM: ${{ vars.APPLE_TEAM_ID != '' }}
+        run: |
+          for setting in HAVE_CERTIFICATE HAVE_CERTIFICATE_PASSWORD HAVE_APPLE_ID HAVE_APPLE_PASSWORD HAVE_UPDATE_KEY HAVE_TEAM; do
+            if [[ "${!setting}" != true ]]; then echo "Missing release configuration: $setting"; exit 1; fi
+          done
+      - name: Reserve version and changelog
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP: ${{ inputs.bump || 'minor' }}
+          EXACT_VERSION: ${{ inputs.version }}
+          AUTOMATIC: ${{ github.event_name == 'push' }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3; do
+            git fetch origin main --tags
+            git checkout -B main origin/main
+            arguments=(--bump "$BUMP" --version "$EXACT_VERSION" --run-id "$GITHUB_RUN_ID")
+            if [[ "$AUTOMATIC" == true ]]; then arguments+=(--automatic); fi
+            if [[ -n "$BEFORE" ]]; then arguments+=(--validation-base "$BEFORE"); fi
+            python3 scripts/versioning.py prepare "${arguments[@]}"
+            if git push origin HEAD:main; then
+              python3 - <<'PYOUTPUT' >> "$GITHUB_OUTPUT"
+          import json
+          for name,value in json.load(open('dist/release-plan.json')).items():
+              print(f'{name}={str(value).lower() if isinstance(value,bool) else value}')
+          PYOUTPUT
+              exit 0
+            fi
+          done
+          echo 'main changed during release preparation; retry this workflow.'
+          exit 1
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      revision: ${{ needs.prepare.outputs.revision }}
+      sign: true
+    secrets:
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+  publish:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: vibechar-*
+          merge-multiple: true
+          path: dist/release
+      - name: Publish signed release and update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
+        run: python3 scripts/publish-release.py

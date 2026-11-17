@@ -22,6 +22,8 @@ struct VibecharApp {
         if CommandLine.arguments.contains("--smoke-rewrite") { rewriteSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-examples") { exampleSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-recipes") { recipeSmokeTest(); return }
+        if CommandLine.arguments.contains("--smoke-updates") { AppDelegate.updatesSmokeTest(); return }
+        if CommandLine.arguments.contains("--smoke-update-install") { AppDelegate.updateInstallationSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-launcher") { AppDelegate.launcherSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-first-presentation") {
             AppDelegate.firstPresentationSmokeTest()
@@ -224,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private var largeTextChoice=0 // Auto / On / Off, client-session preference.
     private var expandedLayoutRevision:UInt64?
     private var closingWindow = false
+    private var updates: UpdateController?
     private var recovery: SessionRecovery?
     private var pendingSave: DispatchWorkItem?
     private var saveGeneration: UInt64 = 0
@@ -537,6 +540,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(textView)
         NSApp.activate(ignoringOtherApps: true)
+        let updater = UpdateController()
+        connectUpdates(updater)
+        updater.start()
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(closeAllAgentAccess), name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(closeAllAgentAccess), name: name, object: nil)
@@ -628,6 +634,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         header.onSelect = { [weak self] in self?.switchBuffer(to: $0) }
         header.onClose = { [weak self] in self?.closeBuffer(at: $0) }
         header.onNew = { [weak self] in self?.newScratch() }
+        header.onUpdate = { [weak self] in self?.updates?.activate() }
         footer.onGive = { [weak self] in self?.copyForAgent() }
         footer.onStop = { [weak self] in self?.closeAgentAccess() }
         footer.onLanguage = { [weak self] in self?.showLanguagePicker() }
@@ -707,6 +714,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         appMenu.addItem(.separator())
         addItem("Settings…", action: #selector(showAISettings), key: ",", to: appMenu)
         addItem("Install vc Command…",action: #selector(installCommand),key: "",to: appMenu)
+        addItem("Check for Updates…",action: #selector(checkForUpdates),key: "",to: appMenu)
+        addItem("Automatically Check for Updates",action: #selector(toggleUpdateChecks),key: "",to: appMenu)
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit vibechar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         addMenu("vibechar", submenu: appMenu, to: menu)
@@ -1329,6 +1338,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         }
     }
 
+    // Actual replacement/relaunch runs only on a disposable GitHub Mac runner.
+    // Ordinary native fixtures never open the user's default recovery directory.
+    static func updateInstallationSmokeTest() {
+        let environment = ProcessInfo.processInfo.environment
+        precondition(environment["GITHUB_ACTIONS"] == "true")
+        guard let feed = environment["VIBECHAR_TEST_UPDATE_FEED"],
+              let url = URL(string: feed), url.host == "127.0.0.1" else {
+            preconditionFailure("Update fixture requires a loopback feed")
+        }
+        let app = AppDelegate(clipboard: .withUniqueName())
+        app.recovery = try! SessionRecovery()
+        precondition(!FileManager.default.fileExists(atPath: app.recovery!.fileURL.path))
+        app.makeMenus(); app.makeWindow(restoreFrame: false); app.showActiveBuffer()
+        app.textView.insertText("UPDATE_RECOVERY_FIXTURE 🦀\n",replacementRange: NSRange(location: NSNotFound,length: 0))
+        app.window.makeKeyAndOrderFront(nil)
+        let controller = UpdateController(feedOverride: feed)
+        app.connectUpdates(controller)
+        controller.onTestAvailable = { [weak app] in app?.header.updateButton.performClick(nil) }
+        controller.start()
+        NSApp.delegate = app
+        DispatchQueue.main.async { controller.check() }
+        withExtendedLifetime(app) { NSApp.run() }
+    }
+
+    static func updatesSmokeTest() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-update-ui-\(UUID().uuidString)")
+        let app = AppDelegate(clipboard: .withUniqueName())
+        app.recovery = try! SessionRecovery(directory: directory)
+        app.makeWindow(restoreFrame: false); app.makeMenus(); app.showActiveBuffer()
+        let controller = UpdateController(testing: true)
+        app.connectUpdates(controller)
+        defer {
+            app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+            app.window.delegate = nil; app.window.close(); app.clipboard.releaseGlobally()
+            app.recovery = nil; try? FileManager.default.removeItem(at: directory)
+        }
+        let text = "A little space for your text.\n\nUpdates keep your scratch tabs and refresh both clients. 🦀\n"
+        app.textView.insertText(text,replacementRange: NSRange(location: NSNotFound,length: 0))
+        var downloads = 0, restarts = 0
+        controller.simulateAvailable("1.1.0") { downloads += 1 }
+        app.header.updateButton.performClick(nil); app.header.updateButton.performClick(nil)
+        nativeSmokeInvariant(downloads == 1)
+        app.newPrivateScratch()
+        app.textView.insertText("PRIVATE_UPDATE_FIXTURE",replacementRange: NSRange(location: NSNotFound,length: 0))
+        _ = try! app.session.shareForAgent(executable: "/synthetic/vibechar")
+        controller.simulateReady { restarts += 1 }
+        controller.activate()
+        nativeSmokeInvariant(restarts == 0 && !controller.restartRequested && app.session.hasPrivateText && app.session.dropActive)
+        nativeSmokeInvariant(app.footer.operationError?.contains("private") == true)
+        controller.restartRequested = true
+        nativeSmokeInvariant(app.applicationShouldTerminate(NSApp) == .terminateCancel && app.session.dropActive)
+        nativeSmokeInvariant(app.session.close(discard: true)); app.showActiveBuffer()
+        let store = app.recovery; app.recovery = nil
+        controller.activate(); nativeSmokeInvariant(restarts == 0)
+        app.recovery = store
+        controller.activate(); nativeSmokeInvariant(restarts == 1 && controller.restartRequested)
+        nativeSmokeInvariant(app.applicationShouldTerminate(NSApp) == .terminateNow)
+        let restored = RustSession(); nativeSmokeInvariant(try! restored.restore(from: app.recovery!.fileURL))
+        nativeSmokeInvariant(RustDocument(session: restored).text == text)
+        nativeSmokeInvariant(!(try! String(contentsOf: app.recovery!.fileURL,encoding: .utf8)).contains("PRIVATE_UPDATE_FIXTURE"))
+        controller.simulateAvailable("1.1.0") {}
+        app.footer.operationError = nil
+        let output = ProcessInfo.processInfo.environment["VIBECHAR_INTERFACE_SNAPSHOTS"].map { URL(fileURLWithPath: $0,isDirectory: true) }
+        if let output { try! FileManager.default.createDirectory(at: output,withIntermediateDirectories: true) }
+        for (theme,appearance) in [("light",NSAppearance.Name.aqua),("dark",.darkAqua)] {
+            app.window.appearance = NSAppearance(named: appearance)
+            for width in [420,880] {
+                app.window.setContentSize(NSSize(width: width,height: 600))
+                let root = app.window.contentView!; root.layoutSubtreeIfNeeded()
+                nativeSmokeInvariant(app.header.bounds.contains(app.header.updateButton.frame))
+                for other in app.header.subviews where other !== app.header.updateButton && !other.isHidden {
+                    nativeSmokeInvariant(!other.frame.intersects(app.header.updateButton.frame),"Update pill must not overlap tabs or controls")
+                }
+                if let output {
+                    root.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        let bitmap = root.bitmapImageRepForCachingDisplay(in: root.bounds)!
+                        root.cacheDisplay(in: root.bounds,to: bitmap)
+                        try! bitmap.representation(using: .png,properties: [:])!.write(to: output.appendingPathComponent("updates-\(theme)-\(width).png"))
+                    }
+                }
+            }
+        }
+        print("Update native smoke passed: quiet header, one-click lifecycle, private/grant protection, failed recovery pause, restored tabs and narrow themes")
+    }
+
     static func launcherSmokeTest() {
         _ = NSApplication.shared
         let previousMenu = NSApp.mainMenu, clipboard = NSPasteboard.withUniqueName()
@@ -1651,6 +1745,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdates) { return updates?.canCheck ?? false }
+        if menuItem.action == #selector(toggleUpdateChecks) {
+            menuItem.state = updates?.automaticallyChecks == true ? .on : .off
+            return updates != nil
+        }
         if menuItem.action == #selector(installCommand) { return !commandInstallBusy }
         if menuItem.action == #selector(closeScratch) {
             menuItem.title = (aiSettings != nil && commandWindow() === aiSettings?.window) || (rewriteWindow != nil && commandWindow() === rewriteWindow?.window) || (exampleWindow != nil && commandWindow() === exampleWindow?.window) || (recipeWindow != nil && commandWindow() === recipeWindow?.window) ? "Close Window" : "Close Tab"
@@ -1759,7 +1858,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         if notification.object as? NSWindow === window { aiSettings?.close(); rewriteWindow?.shutdown(); rewriteWindow = nil; exampleWindow?.shutdown(); exampleWindow = nil; recipeWindow?.close(); recipeWindow = nil }
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        (closingWindow || saveBeforeQuitting()) ? .terminateNow : .terminateCancel
+        if updates?.restartRequested == true {
+            updates?.restartRequested = false
+            if prepareForUpdate() { return .terminateNow }
+            updates?.terminationCancelled()
+            return .terminateCancel
+        }
+        return (closingWindow || saveBeforeQuitting()) ? .terminateNow : .terminateCancel
     }
     func applicationWillTerminate(_ notification: Notification) {
         stopping=true
@@ -1831,7 +1936,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "vibechar", .applicationVersion: "0.1.0 · Preview"])
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Vibechar", .applicationVersion: version])
+    }
+
+    @objc private func checkForUpdates() { updates?.check() }
+    @objc private func toggleUpdateChecks() { updates?.toggleAutomaticChecks() }
+    private func connectUpdates(_ controller: UpdateController) {
+        updates = controller
+        controller.onChange = { [weak self, weak controller] state in
+            guard let self else { return }
+            let detail = state.actionable ? "Vibechar \(controller?.availableVersion ?? "") · updates the Mac app and terminal client" : "Updating Vibechar…"
+            self.header.showUpdate(title: state.title,enabled: state.actionable,detail: detail)
+        }
+        controller.onStatus = { [weak self] message, failed in self?.footer.showStatus(message,failed: failed) }
+        controller.canRestart = { [weak self] in self?.prepareForUpdate() ?? false }
+    }
+    private func prepareForUpdate() -> Bool {
+        guard !session.hasPrivateText else {
+            footer.operationError = "Save or close private tabs before restarting"
+            return false
+        }
+        guard multipleInputReady() else { return false }
+        pendingSave?.cancel(); pendingSave = nil; saveGeneration &+= 1
+        session.rememberSelection(textView.selectedRange())
+        guard let recovery, recovery.flush(session.checkpoint()) else {
+            footer.operationError = "Couldn't save tabs · update paused"
+            return false
+        }
+        footer.operationError = nil
+        return true
     }
 
     static func largeTextSmokeTest() {

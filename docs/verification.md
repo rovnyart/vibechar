@@ -1560,3 +1560,25 @@ version/help commands, signature, stapled ticket and Gatekeeper checks passed.
 `lipo -archs` confirmed that the app, `vc` and terminal helper each contain only
 `arm64`. Temporary homes were removed; the user's PATH and editor session were
 untouched. Product versioning was not changed in this increment.
+
+## Versioned releases and native updates — 2026-11-17
+
+Release preparation now has disposable Git fixtures for initial 1.0.0, default
+minor bumps, manual versions, breaking changes, changelog generation, pending
+version reuse, reruns, no-op pushes and Conventional Commit validation. Publication
+fixtures cover exact platform/revision/version matching, corrupt archives,
+inconsistent feeds, absent update signatures and immutable stable releases.
+
+The Mac native suites passed with the pinned Sparkle 2.10.1 runtime. New update
+fixtures exercise the real header action, duplicate clicks, private text and
+Secret Drop preservation, denied restart, failed checkpoint writes, successful
+recovery restore, menu integration and 420/880-point light/dark layouts. Preview
+screenshots use synthetic text and an available 1.1.0 update; they are UI fixtures,
+not evidence of a published 1.1.0 release.
+
+The signed CI path additionally installs the unmodified candidate ZIP over a
+0.0.1 bootstrap using Sparkle's real engine and a loopback feed. It checks a new
+process, retained scratch recovery, both client versions, code signatures,
+notarization and the production feed/public key in the replacement. This fixture
+is guarded to run only on a disposable GitHub Mac with no existing user profile.
+Live publication and the integration result will be recorded after that run.

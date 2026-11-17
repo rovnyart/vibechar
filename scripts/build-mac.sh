@@ -16,6 +16,7 @@ bash "$root/scripts/build-icon.sh" "$app/Contents/Resources/AppIcon.icns"
 cp "$root/docs/syntax-licenses.md" "$app/Contents/Resources/Syntax Notices.md"
 cp "$root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 python3 "$root/scripts/third-party-notices.py" "$app/Contents/Resources/Third Party Notices.txt"
+python3 "$root/scripts/embed-sparkle.py" "$app"
 cp "$root/target/release/vibechar" "$app/Contents/Helpers/.vibechar-next-$$"
 mv -f "$app/Contents/Helpers/.vibechar-next-$$" "$app/Contents/Helpers/vibechar"
 cp "$root/target/release/vc" "$app/Contents/Helpers/.vc-next-$$"
@@ -24,10 +25,6 @@ identity="${VIBECHAR_SIGN_IDENTITY:-}"
 if [[ -z "$identity" ]]; then
   identity="$(security find-identity -v -p codesigning | sed -n 's/.*\([A-F0-9]\{40\}\) "Developer ID Application:.*$/\1/p' | head -1)"
 fi
-sign_args=(--force --sign "${identity:--}")
-if [[ -n "$identity" && "$identity" != - ]]; then sign_args+=(--options runtime --timestamp); fi
-codesign "${sign_args[@]}" "$app/Contents/Helpers/vibechar"
-codesign "${sign_args[@]}" "$app/Contents/Helpers/vc"
 next_binary="$app/Contents/MacOS/.Vibechar-next-$$"
 trap 'rm -f "$next_binary"' EXIT
 cp "$root/apps/macos/.build/release/Vibechar" "$next_binary"
@@ -42,8 +39,6 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundleIconName</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>CFBundleVersion</key><string>2</string>
 <key>CFBundleURLTypes</key><array><dict>
 <key>CFBundleURLName</key><string>dev.vibechar.open</string>
 <key>CFBundleURLSchemes</key><array><string>vibechar</string></array>
@@ -53,7 +48,20 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
-codesign "${sign_args[@]}" "$app"
+python3 - "$root" "$app/Contents/Info.plist" <<'PYPLIST'
+import base64,pathlib,plistlib,sys
+root=pathlib.Path(sys.argv[1]);sys.path.insert(0,str(root/'scripts'))
+from versioning import version
+path=pathlib.Path(sys.argv[2]);info=plistlib.loads(path.read_bytes())
+key=(root/'apps/macos/UpdaterPublicKey.txt').read_text().strip()
+assert len(base64.b64decode(key,validate=True))==32
+info.update(CFBundleShortVersionString=str(version(root)),CFBundleVersion=str(version(root)),
+    SUFeedURL='https://github.com/rovnyart/vibechar/releases/latest/download/appcast.xml',
+    SUPublicEDKey=key,SUEnableAutomaticChecks=True,SUAutomaticallyUpdate=False,
+    SUScheduledCheckInterval=21600,SUEnableSystemProfiling=False,SUVerifyUpdateBeforeExtraction=True)
+path.write_bytes(plistlib.dumps(info))
+PYPLIST
+bash "$root/scripts/sign-mac.sh" "$app" "${identity:--}"
 touch "$app"
 # Each AI UI suite owns its own AppKit lifecycle and outstanding callbacks.
 # Bound every process so a stuck native dialog cannot hide inside a 45-min job.
@@ -61,7 +69,7 @@ python3 - "$app/Contents/MacOS/Vibechar" <<'PYTEST'
 import subprocess, sys
 for arguments in [
     ["--smoke-test"], ["--smoke-ai-settings"], ["--smoke-rewrite"],
-    ["--smoke-examples"], ["--smoke-recipes"],
+    ["--smoke-examples"], ["--smoke-recipes"], ["--smoke-updates"],
     ["--smoke-first-presentation", "-AppleShowScrollBars", "Always"],
     ["--smoke-editing", "-AppleShowScrollBars", "Always"],
 ]:
