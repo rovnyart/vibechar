@@ -1638,3 +1638,23 @@ changelog contains the Conventional Commit history and one version entry despite
 failed/cancelled attempts. Ordinary main pushes run checks only; publication is
 manual. Temporary install homes were removed, and the user's editor, recovery,
 PATH and API credentials were untouched.
+
+## Native window controls — 1.0.1 patch
+
+The Pocket header no longer translates AppKit's internal titlebar container to
+position traffic lights. It leaves the native container in place and positions
+the three public standard window buttons inside it. Full-screen titlebar layout
+remains owned by AppKit.
+
+The full local native suites passed. A new window-control regression verifies
+visible/accessibility screen-coordinate agreement for all three controls, native
+minimize/deminiaturize state, closing through the native close button and exact
+scratch recovery after closing. Existing narrow/wide, light/dark and classic
+scrollbar layout suites also passed.
+
+Live GUI checks used a disposable app copy with its own bundle identifier and
+recovery directory: red closed the process, reopening restored synthetic text,
+and green entered full screen and returned to the ordinary window. The fixture
+was stopped and its bundle, preferences, recovery and Launch Services registration
+were removed. The user's installed app and existing editor session were not used
+for these checks. Signed release verification is recorded after the manual run.

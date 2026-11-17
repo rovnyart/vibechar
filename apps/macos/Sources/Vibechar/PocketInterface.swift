@@ -473,12 +473,18 @@ final class PocketHeader: NSView {
     private func layoutTrafficLights() {
         guard let window, !window.styleMask.contains(.fullScreen),
               let close = window.standardWindowButton(.closeButton),
-              let container = close.superview, let parent = container.superview else { return }
+              let container = close.superview else { return }
         let rtl = window.windowTitlebarLayoutDirection == .rightToLeft
-        let desired = parent.convert(NSPoint(x: rtl ? bounds.width - 22 : 22, y: 27), from: self)
-        let current = parent.convert(NSPoint(x: close.bounds.midX, y: close.bounds.midY), from: close)
-        container.setFrameOrigin(NSPoint(x: container.frame.minX + desired.x - current.x,
-                                         y: container.frame.minY + desired.y - current.y))
+        let desired = container.convert(NSPoint(x: rtl ? bounds.width - 22 : 22, y: 27), from: self)
+        let current = container.convert(NSPoint(x: close.bounds.midX, y: close.bounds.midY), from: close)
+        // Keep AppKit's titlebar container in its native frame. Moving that
+        // container leaves the Window Server's button regions out of sync.
+        // Position the public standard buttons inside it instead.
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(kind), button.superview === container else { continue }
+            button.setFrameOrigin(NSPoint(x: button.frame.minX + desired.x - current.x,
+                                          y: button.frame.minY + desired.y - current.y))
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {

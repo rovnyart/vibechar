@@ -23,6 +23,7 @@ struct VibecharApp {
         if CommandLine.arguments.contains("--smoke-examples") { exampleSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-recipes") { recipeSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-updates") { AppDelegate.updatesSmokeTest(); return }
+        if CommandLine.arguments.contains("--smoke-window-controls") { AppDelegate.windowControlsSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-launcher") { AppDelegate.launcherSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-first-presentation") {
             AppDelegate.firstPresentationSmokeTest()
@@ -90,6 +91,7 @@ struct VibecharApp {
             AppDelegate.multicursorPasteSmokeTest()
             AppDelegate.multiSmokeTest()
             AppDelegate.launcherSmokeTest()
+            AppDelegate.windowControlsSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -2723,6 +2725,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.document.revision == revision)
         precondition(app.document.history(redo: false) != nil && app.document.text.isEmpty, "Syntax must not enter Undo")
         print("Smart syntax native smoke passed: Auto, manual pin, UTF-16 colors, selection/Undo, narrow private footer, light/dark")
+    }
+
+    static func windowControlsSmokeTest() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-controls-\(UUID().uuidString)")
+        let app = AppDelegate(clipboard: .withUniqueName())
+        app.recovery = try! SessionRecovery(directory: directory)
+        app.makeWindow(restoreFrame: false); app.showActiveBuffer()
+        defer {
+            app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+            app.window.delegate = nil; app.window.close(); app.clipboard.releaseGlobally()
+            app.recovery = nil; try? FileManager.default.removeItem(at: directory)
+        }
+        let sample = "WINDOW_CONTROLS_RECOVERY_FIXTURE 🦀"
+        app.textView.insertText(sample,replacementRange: NSRange(location: NSNotFound,length: 0))
+        app.window.makeKeyAndOrderFront(nil); app.window.layoutIfNeeded()
+        app.window.contentView!.layoutSubtreeIfNeeded()
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            let button = app.window.standardWindowButton(kind)!
+            let screen = app.window.convertToScreen(button.convert(button.bounds,to: nil))
+            let accessible = button.accessibilityFrame()
+            nativeSmokeInvariant(abs(screen.midX-accessible.midX)<1 && abs(screen.midY-accessible.midY)<1,
+                                 "Accessible window-button coordinates must match their visible frames")
+        }
+        func wait(_ condition: () -> Bool) {
+            let deadline = Date(timeIntervalSinceNow: 3)
+            while !condition() && Date()<deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02)) }
+            nativeSmokeInvariant(condition(),"Native window control did not finish its action")
+        }
+        app.window.standardWindowButton(.miniaturizeButton)!.performClick(nil)
+        wait { app.window.isMiniaturized }
+        app.window.deminiaturize(nil); wait { !app.window.isMiniaturized }
+        app.window.standardWindowButton(.closeButton)!.performClick(nil)
+        wait { !app.window.isVisible }
+        let restored = RustSession()
+        nativeSmokeInvariant(try! restored.restore(from: app.recovery!.fileURL))
+        nativeSmokeInvariant(RustDocument(session: restored).text == sample)
+        print("Window controls native smoke passed: visible/accessibility coordinates, minimize/restore and close with scratch recovery")
     }
 
     // Exercise the real window composition without opening a window or recovery store.
