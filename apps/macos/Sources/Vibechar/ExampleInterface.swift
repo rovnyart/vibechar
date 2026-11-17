@@ -9,6 +9,7 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
     let tabs = NSSegmentedControl(labels: ["Source","Changes","Result","Rule","Skipped"],trackingMode: .selectOne,target: nil,action: nil)
     let learnButton = NSButton(title: "Do the rest",target: nil,action: nil)
     let applyButton = NSButton(title: "Apply",target: nil,action: nil)
+    let saveButton = NSButton(title: "Save Recipe…",target: nil,action: nil)
     private let settingsButton = NSButton(title: "AI Settings…",target: nil,action: nil)
     private let discardButton = NSButton(title: "Discard",target: nil,action: nil)
     private let brand = NSTextField(labelWithString: "V_")
@@ -27,6 +28,7 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
     private var showingSource = false
     var onClose: (() -> Void)?
     var onSettings: (() -> Void)?
+    var onSave: ((String,String) throws -> Void)?
 
     init(model: ExampleModel) {
         self.model = model
@@ -47,7 +49,7 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
         status.font = .systemFont(ofSize: 12); status.maximumNumberOfLines = 3
         spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false
         [brand,heading,scope,beforeLabel,afterLabel,arrow,summary,privacy,status,spinner,beforeScroll,afterScroll,previewScroll,
-         tabs,settingsButton,discardButton,learnButton,applyButton].forEach { root.addSubview($0) }
+         tabs,settingsButton,discardButton,learnButton,saveButton,applyButton].forEach { root.addSubview($0) }
         for (scroll,text,editable) in [(beforeScroll,beforeText,false),(afterScroll,afterText,true),(previewScroll,preview,false)] {
             scroll.borderType = .lineBorder; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
             scroll.drawsBackground = true; scroll.backgroundColor = PocketPalette.canvas
@@ -65,18 +67,24 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
         }
         beforeText.setAccessibilityLabel("Original example row"); afterText.setAccessibilityLabel("Edit the desired example row")
         preview.setAccessibilityLabel("Selected rows")
-        for button in [settingsButton,discardButton,learnButton,applyButton] { button.bezelStyle = .rounded; button.target = self }
+        for button in [settingsButton,discardButton,learnButton,saveButton,applyButton] { button.bezelStyle = .rounded; button.target = self }
         settingsButton.action = #selector(settings); discardButton.action = #selector(discard); discardButton.keyEquivalent = "\u{1b}"
         learnButton.action = #selector(learn); learnButton.keyEquivalent = "\r"; learnButton.keyEquivalentModifierMask = [.command]
         applyButton.action = #selector(apply); applyButton.keyEquivalent = "\r"; applyButton.keyEquivalentModifierMask = [.command,.shift]
         applyButton.contentTintColor = PocketPalette.accent
+        saveButton.action = #selector(saveRecipe)
         tabs.selectedSegment = 0; tabs.target = self; tabs.action = #selector(changeTab)
         model.onChange = { [weak self] in self?.render() }; root.onLayout = { [weak self] in self?.layout() }
-        window.initialFirstResponder = afterText
+        window.initialFirstResponder = model.isReplay ? tabs : afterText
+        if model.isReplay {
+            window.title = "Saved Recipe"; heading.stringValue = model.savedRecipe!.name
+            privacy.stringValue = "On device. No AI request, API key or network connection needed."
+            [beforeLabel,afterLabel,arrow,beforeScroll,afterScroll,settingsButton,learnButton,saveButton].forEach { $0.isHidden = true }
+        }
         render(); layout()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func present() { showWindow(nil); window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(afterText) }
+    func present() { showWindow(nil); window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(model.isReplay ? tabs : afterText) }
     func shutdown() { model.close(); clearText(); close() }
     func windowWillClose(_ notification: Notification) { model.close(); clearText(); onClose?() }
     private func clearText() { beforeText.string = ""; afterText.string = ""; afterText.undoManager?.removeAllActions(); preview.string = ""; diff = nil }
@@ -84,22 +92,39 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
     @objc private func apply() { model.apply() }
     @objc private func discard() { close() }
     @objc private func settings() { onSettings?() }
+    @objc private func saveRecipe() {
+        guard model.canSave, let window, let onSave else { return }
+        let alert = NSAlert(); alert.messageText = "Save this recipe"
+        alert.informativeText = "Save the rule locally and run it again without AI. Source rows and examples aren't saved; literal text in the rule is kept."
+        let name = NSTextField(frame: NSRect(x: 0,y: 0,width: 320,height: 24)); name.placeholderString = "Recipe name"
+        alert.accessoryView = name; alert.addButton(withTitle: "Save Recipe"); alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = name
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            do {
+                // Recheck the capture after the sheet: another window may have changed it.
+                let rule = try self.model.recipeToSave()
+                try onSave(name.stringValue,rule)
+                self.status.stringValue = "Saved locally. Run it again from Edit → Saved Recipes…"
+            } catch { self.status.stringValue = (error as? RewriteFailure)?.message ?? "Couldn't save this recipe." }
+        }
+    }
     @objc private func changeTab() { displayPreview() }
     func textDidChange(_ notification: Notification) { if notification.object as? NSTextView === afterText { model.editAfter(afterText.string) } }
     private func layout() {
         guard let root = window?.contentView else { return }
         let w = root.bounds.width, h = root.bounds.height, half = (w-72)/2
         brand.frame = NSRect(x: w-62,y: 20,width: 40,height: 24)
-        heading.frame = NSRect(x: 24,y: 53,width: w-48,height: 36)
+        heading.frame = NSRect(x: 24,y: 53,width: w-48,height: 36); heading.lineBreakMode = .byTruncatingTail
         scope.frame = NSRect(x: 25,y: 96,width: w-50,height: 20)
         beforeLabel.frame = NSRect(x: 25,y: 128,width: half,height: 16)
         afterLabel.frame = NSRect(x: w/2+13,y: 128,width: half,height: 16)
         beforeScroll.frame = NSRect(x: 24,y: 151,width: half,height: 80)
         afterScroll.frame = NSRect(x: w/2+12,y: 151,width: half,height: 80)
         arrow.frame = NSRect(x: w/2-8,y: 180,width: 20,height: 24)
-        summary.frame = NSRect(x: 25,y: 242,width: w-50,height: 18)
-        tabs.frame = NSRect(x: 24,y: 270,width: w-48,height: 25)
-        previewScroll.frame = NSRect(x: 24,y: 307,width: w-48,height: h-451)
+        summary.frame = NSRect(x: 25,y: model.isReplay ? 128 : 242,width: w-50,height: 18)
+        tabs.frame = NSRect(x: 24,y: model.isReplay ? 156 : 270,width: w-48,height: 25)
+        previewScroll.frame = NSRect(x: 24,y: model.isReplay ? 193 : 307,width: w-48,height: h-(model.isReplay ? 337 : 451))
         for (scroll,text) in [(beforeScroll,beforeText),(afterScroll,afterText),(previewScroll,preview)] {
             text.setFrameSize(NSSize(width: scroll.contentSize.width,height: max(scroll.contentSize.height,text.frame.height)))
         }
@@ -107,7 +132,8 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
         spinner.frame = NSRect(x: 25,y: h-99,width: 14,height: 14)
         status.frame = NSRect(x: 48,y: h-102,width: w-72,height: 42)
         settingsButton.frame = NSRect(x: 18,y: h-44,width: 112,height: 28)
-        discardButton.frame = NSRect(x: 134,y: h-44,width: 86,height: 28)
+        discardButton.frame = NSRect(x: model.isReplay ? 18 : 130,y: h-44,width: 80,height: 28)
+        saveButton.frame = NSRect(x: w-418,y: h-44,width: 128,height: 28)
         learnButton.frame = NSRect(x: w-286,y: h-44,width: 150,height: 28)
         applyButton.frame = NSRect(x: w-130,y: h-44,width: 112,height: 28)
     }
@@ -115,13 +141,13 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
         let frame = model.frame
         if beforeText.string != frame?.before ?? "" { beforeText.string = frame?.before ?? "" }
         if afterText.string != model.after { afterText.string = model.after }
-        afterText.isEditable = model.phase != .closed
+        afterText.isEditable = !model.isReplay && model.phase != .closed
         if model.phase == .preview, lastPhase != .preview { diff = RewriteDiff(before: frame?.source ?? "",after: frame?.result ?? ""); tabs.selectedSegment = 1 }
         if frame?.result == nil { diff = nil; tabs.selectedSegment = 0 }
         lastPhase = model.phase
         for index in 1...3 { tabs.setEnabled(frame?.result != nil,forSegment: index) }
         tabs.setEnabled((frame?.stats?.skipped ?? 0) > 0,forSegment: 4)
-        scope.stringValue = "\(model.usedModel.title) · \(frame?.records ?? 0) rows · example is selection row \(frame?.example_line ?? 0)"
+        scope.stringValue = model.isReplay ? "SAVED RECIPE · ON DEVICE · \(frame?.records ?? 0) rows" : "\(model.usedModel.title) · \(frame?.records ?? 0) rows · example is selection row \(frame?.example_line ?? 0)"
         summary.stringValue = frame?.summary ?? "Edit the example on the right. Only the example pair is shared."
         summary.toolTip = summary.stringValue
         status.stringValue = model.status
@@ -129,6 +155,7 @@ final class ExampleWindowController: NSWindowController, NSWindowDelegate, NSTex
         status.textColor = model.phase == .error || model.phase == .stale ? PocketPalette.accent : PocketPalette.secondary
         learnButton.title = model.busy ? "Cancel" : "Do the rest"
         learnButton.isEnabled = model.busy || model.canLearn; applyButton.isEnabled = model.canApply
+        saveButton.isEnabled = model.canSave
         if model.busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
         displayPreview()
     }

@@ -14,10 +14,51 @@ pub unsafe extern "C" fn vc_recipe_schema(output: *mut u8, capacity: usize) -> u
     guard(|| copy_metadata(&examples::schema().to_string(), output, capacity))
 }
 #[no_mangle]
+pub unsafe extern "C" fn vc_recipe_info(
+    rule: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> usize {
+    guard(|| {
+        let result = if length > examples::MAX_RULE {
+            Err("The recipe is too large.")
+        } else {
+            input(rule, length)
+                .ok_or("Invalid recipe text.")
+                .and_then(examples::Recipe::parse)
+        };
+        let json = match result {
+            Ok(recipe) => serde_json::json!({"rule":serde_json::to_string(&recipe).unwrap(),
+                "summary":recipe.summary(),"explanation":recipe.explain(),"error":""}),
+            Err(error) => {
+                serde_json::json!({"rule":null,"summary":null,"explanation":null,"error":error})
+            }
+        };
+        copy_metadata(&json.to_string(), output, capacity)
+    })
+}
+#[no_mangle]
 pub unsafe extern "C" fn vc_example_new(
     session: *const Session,
     start: usize,
     length: usize,
+) -> *mut VcExample {
+    new_capture(session, start, length, false)
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_recipe_new(
+    session: *const Session,
+    start: usize,
+    length: usize,
+) -> *mut VcExample {
+    new_capture(session, start, length, true)
+}
+unsafe fn new_capture(
+    session: *const Session,
+    start: usize,
+    length: usize,
+    replay: bool,
 ) -> *mut VcExample {
     guard(|| {
         let Some(session) = session.as_ref() else {
@@ -25,7 +66,7 @@ pub unsafe extern "C" fn vc_example_new(
         };
         let result = (|| {
             if session.active().is_private() {
-                return Err("Private tabs cannot teach AI examples.");
+                return Err("Private tabs cannot use saved recipes or teach AI examples.");
             }
             let doc = &session.active().document;
             let end = start.checked_add(length).ok_or("Invalid selection.")?;
@@ -33,7 +74,11 @@ pub unsafe extern "C" fn vc_example_new(
                 .char_from_utf16(start)
                 .map_err(|_| "Invalid selection.")?;
             let to = doc.char_from_utf16(end).map_err(|_| "Invalid selection.")?;
-            Capture::new(session, from..to)
+            if replay {
+                Capture::for_replay(session, from..to)
+            } else {
+                Capture::new(session, from..to)
+            }
         })();
         let (capture, error) = match result {
             Ok(c) => (Some(c), String::new()),
@@ -113,6 +158,43 @@ pub unsafe extern "C" fn vc_example_start(
             }
             Err(e) => {
                 v.error = e.into();
+                false
+            }
+        }
+    })
+}
+#[no_mangle]
+pub unsafe extern "C" fn vc_recipe_start(
+    value: *mut VcExample,
+    session: *const Session,
+    rule: *const u8,
+    length: usize,
+) -> bool {
+    guard(|| {
+        let (Some(v), Some(s)) = (value.as_mut(), session.as_ref()) else {
+            return false;
+        };
+        v.job = None;
+        v.plan = None;
+        let result = (|| {
+            let capture = v.capture.as_ref().ok_or("No selection is available.")?;
+            if !capture.is_current(s) {
+                return Err("Text changed. Select the rows again.");
+            }
+            if length > examples::MAX_RULE {
+                return Err("The recipe is too large.");
+            }
+            let rule = input(rule, length).ok_or("Invalid recipe text.")?;
+            Job::replay(capture.clone(), rule.into())
+        })();
+        match result {
+            Ok(job) => {
+                v.job = Some(job);
+                v.error.clear();
+                true
+            }
+            Err(error) => {
+                v.error = error.into();
                 false
             }
         }
@@ -210,6 +292,46 @@ pub unsafe extern "C" fn vc_example_apply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saved_rule_metadata_and_single_row_replay_cross_the_bridge() {
+        unsafe {
+            let rule = r#"{"version":1,"input":"line","delimiter":"","format":"text","parts":[{"field":"$","casing":"upper","trim":false,"encoding":"text","prefix":"","suffix":""}]}"#;
+            let count = vc_recipe_info(rule.as_ptr(), rule.len(), ptr::null_mut(), 0);
+            let mut bytes = vec![0; count];
+            assert_eq!(
+                vc_recipe_info(rule.as_ptr(), rule.len(), bytes.as_mut_ptr(), count),
+                count
+            );
+            let metadata: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(metadata["error"], "");
+            assert!(metadata["rule"].as_str().unwrap().contains("upper"));
+            assert!(vc_recipe_info(ptr::null(), examples::MAX_RULE + 1, ptr::null_mut(), 0) > 0);
+            assert!(vc_recipe_new(ptr::null(), 0, 1).is_null());
+            assert!(!vc_recipe_start(
+                ptr::null_mut(),
+                ptr::null(),
+                ptr::null(),
+                0
+            ));
+            let mut session = Session::new("Боб 🦀", None);
+            let value = vc_recipe_new(&session, 0, "Боб 🦀".encode_utf16().count());
+            assert!(vc_example_valid(value, &session));
+            assert!(vc_recipe_start(value, &session, rule.as_ptr(), rule.len()));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while vc_example_poll(value) == 0 {
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            let (mut start, mut length) = (0, 0);
+            assert_eq!(
+                vc_example_apply(value, &mut session, &mut start, &mut length),
+                1
+            );
+            assert_eq!(session.active().document.text(), "БОБ 🦀");
+            assert_eq!((start, length), (0, "БОБ 🦀".encode_utf16().count()));
+            vc_example_free(value);
+        }
+    }
     #[test]
     fn ffi_privacy_unicode_planning_stale_and_single_undo() {
         unsafe {

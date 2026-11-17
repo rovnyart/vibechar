@@ -272,7 +272,7 @@ validation and deterministic replay belong to Rust and do not require a provider
 - [x] Show target preview and match/changed/skipped counts; preserve unsupported rows.
 - [ ] Offer explicit choices for currently unsupported/ambiguous type conversions.
 - [x] Limit recipe cost and output size; no arbitrary scripts, shell, or code evaluation.
-- [ ] Persist named recipes with a schema version; deterministic replay works offline.
+- [x] Persist named recipes with a schema version; deterministic replay works offline.
 - [ ] Save a rewrite instruction separately when a request intrinsically requires AI.
 - [x] Make all generated changes reversible as one transaction.
 
@@ -280,8 +280,12 @@ M5.1 is implemented for explicit complete-line selections: first nonblank row is
 the example, After is edited in a native window, and all selected rows (including
 that example) are previewed locally. Input supports whole rows, literal delimiters,
 top-level scalar JSON fields and key=value. Only Before/After goes to the provider.
-Versioned recipes are transient in this increment. M5.2 adds named storage/replay
-and separately saved AI rewrite instructions after Art tests the first workflow.
+M5.2 adds explicit named recipe saving from a validated preview and a searchable
+Mac library (Option+Cmd+R) with rename/delete. Rules persist with library/recipe
+versions; new selections replay locally without a provider/key, with preview and
+one Undo. A replay may match one row; unmatched rows, including the first, are kept.
+Only the rule and name persist, including its literal text; captures/examples do not.
+Separately saved AI rewrite instructions remain a future increment.
 Executor fixtures cover 11 supported demonstrations on unseen inputs; live model
 inference quality and the task-completion benchmark below remain acceptance gates.
 

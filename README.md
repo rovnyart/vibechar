@@ -44,7 +44,10 @@ and your instruction, previews changes, and applies them as one Undo step.
 private tabs use local tools. **Do the Rest…** (Option+Cmd+K) learns a structural
 rule from one before/after row, validates the example and previews local processing
 of the selected rows. Only the example pair is sent to OpenAI. Skipped rows stay
-unchanged; Apply is one Undo. A saved recipe library is the next increment. The first
+unchanged; Apply is one Undo. **Save Recipe…** keeps a validated rule under a name;
+**Saved Recipes…** (Option+Cmd+R) searches, renames, deletes and previews those rules
+on a new line selection, entirely offline without an API key. Source rows and
+examples are not saved; literal text in the rule is retained. The first
 native Pocket interface is implemented: compact
 tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
 and quiet session status. Art accepted the first Pocket increment.

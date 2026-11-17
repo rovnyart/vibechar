@@ -21,9 +21,10 @@ final class RustExample {
     private let handle: OpaquePointer
     private(set) var frame: Frame!
     let target: NSRange
-    init(session: RustSession, target: NSRange) throws {
+    init(session: RustSession, target: NSRange, replay: Bool = false) throws {
         guard target.location != NSNotFound, target.location >= 0, target.length > 0,
-              let handle = vc_example_new(session.handle,target.location,target.length) else { throw RewriteFailure(message: "Select two or more complete rows.") }
+              let handle = replay ? vc_recipe_new(session.handle,target.location,target.length) : vc_example_new(session.handle,target.location,target.length)
+        else { throw RewriteFailure(message: "Select complete rows.") }
         self.handle = handle; self.target = target; refresh()
         if !frame.error.isEmpty { throw RewriteFailure(message: frame.error) }
     }
@@ -49,6 +50,11 @@ final class RustExample {
         } }
         refresh(); if !ok { throw RewriteFailure(message: frame.error) }
     }
+    func replay(_ rule: String, session: RustSession) throws {
+        let rule = Array(rule.utf8)
+        let ok = rule.withUnsafeBufferPointer { vc_recipe_start(handle,session.handle,$0.baseAddress,$0.count) }
+        refresh(); if !ok { throw RewriteFailure(message: frame.error) }
+    }
     func poll() -> Int32 { let state = vc_example_poll(handle); if state != 0 { refresh() }; return state }
     func apply(_ session: RustSession) throws -> (Bool,NSRange) {
         var start = 0, length = 0
@@ -62,7 +68,7 @@ final class RustExample {
 final class ExampleModel {
     enum Phase { case ready, learning, planning, preview, error, stale, closed }
     private let session: RustSession
-    private let service: AIExampleLearning
+    private let service: AIExampleLearning?
     private let vault: AICredentialStore
     private let defaults: UserDefaults
     private var capture: RustExample?
@@ -73,22 +79,31 @@ final class ExampleModel {
     private(set) var phase: Phase = .ready
     private(set) var status = "Edit After to show the change. Your tab stays untouched until Apply."
     private(set) var usedModel: AIModel
+    let savedRecipe: SavedRecipe?
+    var isReplay: Bool { savedRecipe != nil }
     var onChange: (() -> Void)?
     var onApplied: ((NSRange,Bool,NSRange,String) -> Void)?
     var frame: RustExample.Frame? { capture?.frame }
     var busy: Bool { phase == .learning || phase == .planning }
     var validAfter: Bool { !after.isEmpty && after.utf8.count <= 4096 && !after.contains("\n") && !after.contains("\r") && after != frame?.before }
-    var canLearn: Bool { phase != .closed && phase != .stale && validAfter }
-    var canApply: Bool { phase == .preview && (frame?.stats?.matched ?? 0) > 1 && (frame?.stats?.changed ?? 0) > 0 }
+    var canLearn: Bool { !isReplay && phase != .closed && phase != .stale && validAfter }
+    var canApply: Bool { phase == .preview && (frame?.stats?.matched ?? 0) >= (isReplay ? 1 : 2) && (frame?.stats?.changed ?? 0) > 0 }
+    var canSave: Bool { !isReplay && phase == .preview && canApply && frame?.rule != nil }
     init(session: RustSession, target: NSRange, vault: AICredentialStore = KeychainAIStore(),
-         service: AIExampleLearning = OpenAIClient(), defaults: UserDefaults = .standard) throws {
-        let capture = try RustExample(session: session,target: target)
-        self.capture = capture; self.session = session; self.vault = vault; self.service = service; self.defaults = defaults
-        after = capture.frame.before
-        usedModel = AIModel.catalog.first { $0.id == defaults.string(forKey: AISettingsModel.modelPreference) } ?? .defaultModel
+         service: AIExampleLearning? = nil, defaults: UserDefaults = .standard, savedRecipe: SavedRecipe? = nil) throws {
+        let capture = try RustExample(session: session,target: target,replay: savedRecipe != nil)
+        self.capture = capture; self.session = session; self.vault = vault
+        self.service = service ?? (savedRecipe == nil ? OpenAIClient() : nil); self.defaults = defaults
+        self.savedRecipe = savedRecipe; after = savedRecipe == nil ? capture.frame.before : ""
+        usedModel = savedRecipe == nil ? AIModel.catalog.first { $0.id == defaults.string(forKey: AISettingsModel.modelPreference) } ?? .defaultModel : .defaultModel
+        if let savedRecipe {
+            try capture.replay(savedRecipe.rule,session: session)
+            phase = .planning; status = "Running locally. No AI request or API key needed."
+            startPolling()
+        }
     }
     func editAfter(_ text: String) {
-        guard phase != .closed, after != text else { return }
+        guard !isReplay, phase != .closed, after != text else { return }
         stop(); capture?.clear(); after = text; sourceChanged()
         guard phase != .stale else { changed(); return }
         phase = .ready; status = validAfter ? "Ready. We'll learn from this pair, then run the rule locally." : "Show a changed, nonempty single row (up to 4 KiB)."
@@ -96,14 +111,14 @@ final class ExampleModel {
     }
     func sourceChanged() {
         guard phase != .closed, phase != .stale, capture?.isCurrent(session) == false else { return }
-        stop(); capture?.clear(); phase = .stale; status = "Text changed. Select the rows again to teach a new example."; changed()
+        stop(); capture?.clear(); phase = .stale; status = "Text changed. Select the rows again to make a new preview."; changed()
     }
     func learn() {
-        sourceChanged(); guard canLearn, let capture else { return }
+        sourceChanged(); guard canLearn, let capture, let service else { return }
         stop(); capture.clear(); phase = .learning
         usedModel = AIModel.catalog.first { $0.id == defaults.string(forKey: AISettingsModel.modelPreference) } ?? .defaultModel
         status = "Asking \(usedModel.title) for a rule. Only this before/after pair is sent."; changed()
-        let current = generation, before = capture.frame.before, after = after, vault = vault, service = service, model = usedModel
+        let current = generation, before = capture.frame.before, after = after, vault = vault, model = usedModel
         task = Task { [weak self] in
             do {
                 let key = try await Task.detached { try vault.load() }.value
@@ -115,9 +130,7 @@ final class ExampleModel {
                 self.sourceChanged(); guard self.phase == .learning else { return }
                 try self.capture?.start(rule,after: after,session: self.session)
                 self.task = nil; self.phase = .planning; self.status = "Checking the example and applying the rule locally…"; self.changed()
-                self.timer = Timer.scheduledTimer(withTimeInterval: 0.02,repeats: true) { [weak self] timer in
-                    MainActor.assumeIsolated { guard let self else { timer.invalidate(); return }; self.poll() }
-                }
+                self.startPolling()
             } catch {
                 guard let self, self.generation == current, self.phase != .closed else { return }
                 self.sourceChanged(); guard self.phase != .stale else { return }
@@ -133,8 +146,9 @@ final class ExampleModel {
         else {
             phase = .preview
             let stats = capture.frame.stats!
-            status = stats.matched > 1 ? "\(stats.changed) changed · \(stats.skipped) skipped · \(stats.matched-stats.changed) unchanged. Review before Apply · one Undo."
-                : "Only the example matched. Adjust the example or selection; Apply needs at least one other matching row."
+            if isReplay && stats.matched == 0 { status = "No rows matched this recipe. Your selection is unchanged." }
+            else if !isReplay && stats.matched < 2 { status = "Only the example matched. Adjust the example or selection; Apply needs at least one other matching row." }
+            else { status = "\(stats.changed) changed · \(stats.skipped) skipped · \(stats.matched-stats.changed) unchanged. Review before Apply · one Undo." }
         }
         changed()
     }
@@ -145,6 +159,16 @@ final class ExampleModel {
         catch { report(error); changed() }
     }
     func close() { stop(); capture = nil; after = ""; phase = .closed; status = ""; changed() }
+    func recipeToSave() throws -> String {
+        sourceChanged()
+        guard canSave, let rule = frame?.rule else { throw RewriteFailure(message: "Make a current, validated preview before saving its rule.") }
+        return rule
+    }
+    private func startPolling() {
+        timer = Timer.scheduledTimer(withTimeInterval: 0.02,repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated { guard let self else { timer.invalidate(); return }; self.poll() }
+        }
+    }
     private func stop() { generation &+= 1; task?.cancel(); task = nil; timer?.invalidate(); timer = nil }
     private func report(_ error: Error) { phase = .error; status = (error as? RewriteFailure)?.message ?? AIConnectionError.safe(error).localizedDescription }
     private func changed() { onChange?() }

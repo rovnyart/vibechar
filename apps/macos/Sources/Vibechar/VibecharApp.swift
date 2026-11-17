@@ -14,6 +14,7 @@ struct VibecharApp {
         }
         if CommandLine.arguments.contains("--smoke-rewrite") { rewriteSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-examples") { exampleSmokeTest(); return }
+        if CommandLine.arguments.contains("--smoke-recipes") { recipeSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-first-presentation") {
             AppDelegate.firstPresentationSmokeTest()
             return
@@ -82,6 +83,7 @@ struct VibecharApp {
             aiSettingsSmokeTest()
             rewriteSmokeTest()
             exampleSmokeTest()
+            recipeSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -162,6 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private let rewriteFactory: (@MainActor (RustSession, NSRange) throws -> RewriteModel)?
     private var exampleWindow: ExampleWindowController?
     private let exampleFactory: (@MainActor (RustSession, NSRange) throws -> ExampleModel)?
+    private let recipeStore: RecipeStore
+    private var recipeWindow: RecipeWindowController?
     private var fileURL: URL? { session.fileURL }
     private var window: NSWindow!
     private let textView = PocketTextView()
@@ -495,7 +499,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     init(clipboard: NSPasteboard = .general, aiSettingsFactory: (@MainActor () -> AISettingsWindowController)? = nil,
          commandWindow: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow },
          rewriteFactory: (@MainActor (RustSession, NSRange) throws -> RewriteModel)? = nil,
-         exampleFactory: (@MainActor (RustSession, NSRange) throws -> ExampleModel)? = nil) {
+         exampleFactory: (@MainActor (RustSession, NSRange) throws -> ExampleModel)? = nil,
+         recipeStore: RecipeStore? = nil) {
         let session = RustSession()
         self.session = session
         document = RustDocument(session: session)
@@ -504,6 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         self.commandWindow = commandWindow
         self.rewriteFactory = rewriteFactory
         self.exampleFactory = exampleFactory
+        self.recipeStore = recipeStore ?? RecipeStore()
         super.init()
     }
 
@@ -744,6 +750,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         rewriteItem.keyEquivalentModifierMask = [.command,.shift]; rewriteItem.target = self; edit.addItem(rewriteItem)
         let exampleItem = NSMenuItem(title: "Do the Rest…",action: #selector(openExample),keyEquivalent: "k")
         exampleItem.keyEquivalentModifierMask = [.command,.option]; exampleItem.target = self; edit.addItem(exampleItem)
+        let recipesItem = NSMenuItem(title: "Saved Recipes…",action: #selector(openRecipes),keyEquivalent: "r")
+        recipesItem.keyEquivalentModifierMask = [.command,.option]; recipesItem.target = self; edit.addItem(recipesItem)
         addItem("Find…",action:#selector(openFind),key:"f",to:edit)
         let replace = NSMenuItem(title:"Find and Replace…",action:#selector(openReplace),keyEquivalent:"f")
         replace.keyEquivalentModifierMask = [.command,.option]; replace.target=self; edit.addItem(replace)
@@ -1044,17 +1052,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         do {
             let target = textView.selectedRange()
             let model = try exampleFactory?(session,target) ?? ExampleModel(session: session,target: target)
-            let controller = ExampleWindowController(model: model); exampleWindow = controller
-            controller.onSettings = { [weak self] in self?.showAISettings() }
-            controller.onClose = { [weak self] in self?.exampleWindow = nil }
-            model.onApplied = { [weak self,weak controller] range,changed,target,text in
-                guard let self else { return }
-                self.presentGeneratedEdit(range: range,changed: changed,target: target,text: text)
-                controller?.close(); self.exampleWindow = nil
-                self.window.makeKeyAndOrderFront(nil); self.window.makeFirstResponder(self.textView)
-            }
-            controller.present()
+            presentExample(model)
         } catch { footer.operationError = (error as? RewriteFailure)?.message ?? "Couldn't prepare these rows." }
+    }
+    private func presentExample(_ model: ExampleModel) {
+        let controller = ExampleWindowController(model: model); exampleWindow = controller
+        controller.onSettings = { [weak self] in self?.showAISettings() }
+        controller.onSave = { [recipeStore] name,rule in _ = try recipeStore.save(name: name,rule: rule) }
+        controller.onClose = { [weak self] in self?.exampleWindow = nil }
+        model.onApplied = { [weak self,weak controller] range,changed,target,text in
+            guard let self else { return }
+            self.presentGeneratedEdit(range: range,changed: changed,target: target,text: text)
+            controller?.close(); self.exampleWindow = nil
+            self.window.makeKeyAndOrderFront(nil); self.window.makeFirstResponder(self.textView)
+        }
+        controller.present()
+    }
+    @objc private func openRecipes() {
+        guard multipleInputReady() else { return }
+        guard !session.isPrivate else { footer.operationError = "Saved recipes are available in ordinary tabs."; return }
+        if let recipeWindow { recipeWindow.present(); return }
+        let controller = RecipeWindowController(store: recipeStore); recipeWindow = controller
+        controller.onClose = { [weak self] in self?.recipeWindow = nil }
+        controller.onRun = { [weak self,weak controller] recipe in
+            guard let self, self.multipleInputReady() else { return }
+            guard !self.session.isPrivate, !self.multiController.active, self.textView.selectedRange().length > 0 else {
+                throw RewriteFailure(message: "Select complete lines in an ordinary tab first.")
+            }
+            let model = try ExampleModel(session: self.session,target: self.textView.selectedRange(),savedRecipe: recipe)
+            self.rewriteWindow?.shutdown(); self.rewriteWindow = nil; self.exampleWindow?.shutdown(); self.exampleWindow = nil
+            self.toolPalette?.close(); self.toolPalette = nil; self.findController.close(); self.document.breakUndoGroup()
+            controller?.close(); self.recipeWindow = nil; self.presentExample(model)
+        }
+        controller.present()
     }
     private func presentGeneratedEdit(range: NSRange, changed: Bool, target: NSRange, text: String) {
         if changed {
@@ -1241,6 +1271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func showActiveBuffer() {
+        recipeWindow?.close(); recipeWindow = nil
         rewriteWindow?.shutdown(); rewriteWindow = nil
         exampleWindow?.shutdown(); exampleWindow = nil
         expandedLayoutRevision=nil
@@ -1281,6 +1312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         if let settings = aiSettings, commandWindow() === settings.window { settings.close(); return }
         if let rewriteWindow, commandWindow() === rewriteWindow.window { rewriteWindow.close(); return }
         if let exampleWindow, commandWindow() === exampleWindow.window { exampleWindow.close(); return }
+        if let recipeWindow, commandWindow() === recipeWindow.window { recipeWindow.close(); return }
         closeBuffer(at: session.active)
     }
 
@@ -1376,13 +1408,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     static func exampleIntegrationSmokeTest(factory: @escaping @MainActor (RustSession,NSRange) throws -> ExampleModel) {
         let previousMenu = NSApp.mainMenu, clipboard = NSPasteboard.withUniqueName()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vibechar-example-library-\(UUID().uuidString)")
         var focused: NSWindow?
-        let app = AppDelegate(clipboard: clipboard,commandWindow: { focused },exampleFactory: factory)
+        let app = AppDelegate(clipboard: clipboard,commandWindow: { focused },exampleFactory: factory,recipeStore: RecipeStore(directory: directory))
         app.makeWindow(restoreFrame: false); app.makeMenus(); focused = app.window
         defer {
             app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
             app.textView.delegate = nil; app.window.delegate = nil; app.window.close()
             clipboard.releaseGlobally(); NSApp.mainMenu = previousMenu
+            try? FileManager.default.removeItem(at: directory)
         }
         let rows = "{\"id\":42,\"name\":\"Anna\"}\r\n{\"id\":7,\"name\":\"Боб 🦀\"}\nnot json\n"
         let source = "outside\n"+rows+"tail"
@@ -1400,6 +1434,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(pane.model.phase == .preview && pane.applyButton.isEnabled && pane.tabs.selectedSegment == 1)
         precondition(pane.preview.string.contains("+ Anna") && pane.preview.string.contains("Боб 🦀"))
         precondition(app.document.text == source && app.textView.string == source)
+        precondition(pane.saveButton.isEnabled)
+        pane.saveButton.performClick(nil); recipeCompleteSheet(pane.window!,accept: false)
+        precondition(try! app.recipeStore.load().isEmpty)
+        pane.saveButton.performClick(nil); recipeCompleteSheet(pane.window!,name: "User links",accept: true)
+        rewriteWait { (try? app.recipeStore.load().count) == 1 }
+        let persisted = try! RecipeStore(directory: directory).load()
+        precondition(persisted.count == 1 && persisted[0].name == "User links")
+        let stored = try! String(contentsOf: directory.appendingPathComponent("recipes.json"),encoding: .utf8)
+        precondition(!stored.contains("Anna") && !stored.contains("Боб") && !stored.contains("not json"))
         exampleSnapshot(pane,name: "changes")
         pane.window?.setContentSize(NSSize(width: 700,height: 640)); pane.window?.contentView?.layoutSubtreeIfNeeded()
         precondition(pane.window!.contentView!.bounds.contains(pane.applyButton.frame))
@@ -1414,7 +1457,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(app.document.text == expected && app.textView.string == expected && app.exampleWindow == nil)
         focused = app.window; app.undoEdit(); precondition(app.document.text == source && app.textView.string == source && !app.document.isDirty)
         app.redoEdit(); precondition(app.document.text == expected && app.textView.string == expected)
-        app.undoEdit(); app.textView.setSelectedRange((source as NSString).range(of: rows)); app.openExample()
+        app.undoEdit()
+        // Reopen the learned, persisted rule on completely new text with no AI path.
+        let unseen = "{\"id\":99,\"name\":\"UNSEEN_PERSON\"}\n"
+        app.session.open(unseen); app.showActiveBuffer(); app.textView.selectAll(nil)
+        app.openRecipes(); app.recipeWindow!.runButton.performClick(nil)
+        let replay = app.exampleWindow!; rewriteWait { !replay.model.busy }
+        precondition(replay.model.isReplay && replay.model.canApply && replay.model.frame!.result == "UNSEEN_PERSON — /users/99\n")
+        replay.applyButton.performClick(nil)
+        precondition(app.document.text == "UNSEEN_PERSON — /users/99\n" && app.textView.string == app.document.text)
+        precondition(app.session.close(discard: true)); app.showActiveBuffer(); precondition(app.document.text == source)
+        app.textView.setSelectedRange((source as NSString).range(of: rows)); app.openExample()
         let stale = app.exampleWindow!
         stale.afterText.string = "Anna — /users/42"; stale.textDidChange(Notification(name: NSText.didChangeNotification,object: stale.afterText))
         stale.learnButton.performClick(nil); rewriteWait { !stale.model.busy }
@@ -1431,6 +1484,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         app.session.openPrivate(); precondition(app.document.replace(NSRange(location: 0,length: 0),with: "PRIVATE\nEXAMPLE"))
         app.showActiveBuffer(); app.textView.selectAll(nil)
         precondition(!app.validateMenuItem(item)); app.openExample(); precondition(app.exampleWindow == nil)
+    }
+
+    static func recipeIntegrationSmokeTest(store: RecipeStore) {
+        let previousMenu = NSApp.mainMenu, clipboard = NSPasteboard.withUniqueName()
+        var focused: NSWindow?
+        let app = AppDelegate(clipboard: clipboard,commandWindow: { focused },recipeStore: store)
+        app.makeWindow(restoreFrame: false); app.makeMenus(); focused = app.window
+        defer {
+            app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+            app.textView.delegate = nil; app.window.delegate = nil; app.window.close()
+            clipboard.releaseGlobally(); NSApp.mainMenu = previousMenu
+        }
+        let source = "outside\n{\"id\":7}\r\nnot json\ntail", rows = "{\"id\":7}\r\nnot json\n"
+        app.session.open(source); app.document.markSaved(); app.showActiveBuffer()
+        app.textView.setSelectedRange((source as NSString).range(of: rows))
+        let item = NSApp.mainMenu!.items.first { $0.title == "Edit" }!.submenu!.items.first { $0.action == #selector(openRecipes) }!
+        precondition(item.keyEquivalent == "r" && item.keyEquivalentModifierMask == [.command,.option] && app.validateMenuItem(item))
+        precondition(NSApp.sendAction(item.action!,to: item.target,from: item))
+        let library = app.recipeWindow!; focused = library.window
+        precondition(library.visible.count == 1 && library.runButton.isEnabled)
+        recipeSnapshot(library,name: "library")
+        library.search.stringValue = "no such recipe"; library.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification,object: library.search))
+        precondition(library.visible.isEmpty && !library.runButton.isEnabled)
+        recipeSnapshot(library,name: "search-empty")
+        library.search.stringValue = "extract USER"; library.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification,object: library.search))
+        precondition(library.visible.count == 1 && library.runButton.isEnabled)
+        library.window?.setContentSize(NSSize(width: 560,height: 460)); library.window?.contentView?.layoutSubtreeIfNeeded()
+        precondition(library.window!.contentView!.bounds.contains(library.runButton.frame)); recipeSnapshot(library,name: "narrow")
+        precondition(library.control(library.search,textView: NSTextView(),doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        precondition(app.recipeWindow == nil)
+        let pane = app.exampleWindow!; focused = pane.window; rewriteWait { !pane.model.busy }
+        precondition(pane.model.isReplay && pane.model.canApply && pane.learnButton.isHidden && pane.saveButton.isHidden)
+        precondition(pane.preview.string.contains("+ user/7") && app.document.text == source)
+        exampleSnapshot(pane,name: "saved-replay")
+        pane.applyButton.performClick(nil); focused = app.window
+        precondition(app.document.text == "outside\nuser/7\r\nnot json\ntail" && app.textView.string == app.document.text)
+        app.undoEdit(); precondition(app.document.text == source && !app.document.isDirty)
+        app.redoEdit(); precondition(app.document.text == "outside\nuser/7\r\nnot json\ntail")
+        app.openRecipes(); focused = app.recipeWindow?.window
+        let count = app.session.count; app.closeScratch(); precondition(app.recipeWindow == nil && app.session.count == count)
+        focused = app.window; app.openRecipes(); let switching = app.recipeWindow; app.newScratch()
+        precondition(app.recipeWindow == nil && switching?.window?.isVisible == false)
+        app.session.openPrivate(); app.showActiveBuffer(); precondition(!app.validateMenuItem(item))
+        app.openRecipes(); precondition(app.recipeWindow == nil)
     }
 
     private func closeBuffer(at index: Int) {
@@ -1468,7 +1565,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(closeScratch) {
-            menuItem.title = (aiSettings != nil && commandWindow() === aiSettings?.window) || (rewriteWindow != nil && commandWindow() === rewriteWindow?.window) || (exampleWindow != nil && commandWindow() === exampleWindow?.window) ? "Close Window" : "Close Tab"
+            menuItem.title = (aiSettings != nil && commandWindow() === aiSettings?.window) || (rewriteWindow != nil && commandWindow() === rewriteWindow?.window) || (exampleWindow != nil && commandWindow() === exampleWindow?.window) || (recipeWindow != nil && commandWindow() === recipeWindow?.window) ? "Close Window" : "Close Tab"
+        }
+        if let recipeWindow, commandWindow() === recipeWindow.window {
+            if menuItem.action == #selector(undoEdit) || menuItem.action == #selector(redoEdit) { return (commandWindow()?.firstResponder as? NSTextView)?.isEditable == true }
+            return [#selector(showAbout),#selector(closeScratch),#selector(changeAppearance(_:))].contains(menuItem.action)
         }
         if let exampleWindow, commandWindow() === exampleWindow.window {
             if menuItem.action == #selector(undoEdit) || menuItem.action == #selector(redoEdit) { return (commandWindow()?.firstResponder as? NSTextView)?.isEditable == true }
@@ -1495,6 +1596,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         if menuItem.action == #selector(copyForAgent) { return session.isPrivate && !textView.string.isEmpty }
         if menuItem.action == #selector(openRewrite) { return !session.isPrivate && textView.selectedRange().length > 0 && !multiController.active }
         if menuItem.action == #selector(openExample) { return !session.isPrivate && textView.selectedRange().length > 0 && !multiController.active }
+        if menuItem.action == #selector(openRecipes) { return !session.isPrivate }
         if menuItem.action == #selector(closeAgentAccess) { return session.dropActive }
         if menuItem.action == #selector(closeAllAgentAccess) { return session.hasDropAccess }
         if menuItem.action == #selector(saveFile) {
@@ -1572,7 +1674,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         return closingWindow
     }
     func windowWillClose(_ notification: Notification) {
-        if notification.object as? NSWindow === window { aiSettings?.close(); rewriteWindow?.shutdown(); rewriteWindow = nil; exampleWindow?.shutdown(); exampleWindow = nil }
+        if notification.object as? NSWindow === window { aiSettings?.close(); rewriteWindow?.shutdown(); rewriteWindow = nil; exampleWindow?.shutdown(); exampleWindow = nil; recipeWindow?.close(); recipeWindow = nil }
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         (closingWindow || saveBeforeQuitting()) ? .terminateNow : .terminateCancel
@@ -1582,6 +1684,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         aiSettings?.shutdown()
         rewriteWindow?.shutdown(); rewriteWindow = nil
         exampleWindow?.shutdown(); exampleWindow = nil
+        recipeWindow?.close(); recipeWindow = nil
         // AppKit terminates the process without guaranteeing Swift/Rust deinit.
         closeAllAgentAccess()
         syntaxWork?.cancel(); syntaxTimer?.invalidate()

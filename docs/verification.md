@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 155 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 158 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -1208,10 +1208,11 @@ Native snapshots and AppKit presentation now have synthetic 1/10 MiB observation
 above. Native startup percentiles, the full memory matrix and renderer decisions
 still need qualification; M1's baseline checkbox remains open. M2 recovery is partial: retention and broader durability
 qualification remain open. M3 smart syntax, find/replace, nine local tools and
-basic shared multicursor editing are implemented; complete large-document mode
-remains open. M4.1 connection settings and M4.2 selection rewriting are implemented;
-M5.1 example-based preview/execution is implemented; named recipe storage and the
-live task-completion benchmark remain open. The prototype should not hold the only
+basic shared multicursor editing and adaptive large-document mode are implemented;
+full large-document performance qualification remains open. M4.1 connection settings,
+M4.2 selection rewriting, M5.1 example-based preview/execution and M5.2 named recipe
+storage/offline replay are implemented. Saved AI instructions and the live
+task-completion benchmark remain open. The prototype should not hold the only
 copy of important text.
 
 ## 2026-11-17 — M4.1: Mac OpenAI connection settings
@@ -1384,3 +1385,46 @@ No real provider call was made. Live inference and whether the workflow beats
 manual editing remain Art's UI/benchmark acceptance. Rules are transient in this
 increment; named recipe saving/offline replay UI, saved AI rewrite instructions,
 multiline/aggregate records and interactive type-conversion choices remain open.
+
+## 2026-11-17 — M5.2: saved local recipes and offline replay
+
+Implemented **Save Recipe…** on a current, validated Do the Rest preview and
+**Edit → Saved Recipes… / Option+Cmd+R**. The native library searches names and
+structural summaries, supports rename and confirmed deletion, and opens the shared
+Source/Changes/Result/Rule/Skipped surface in on-device mode. Search arrows choose,
+Return previews. The selected target is untouched until Apply; one Undo restores it.
+Only the name, UUID and versioned rule persist; captured source/Before/After/result
+are excluded. Literal text in the rule is explicitly included in the save disclosure.
+
+Validation:
+
+- `bash scripts/check.sh` passed formatting, strict Clippy, **158 Rust tests**,
+  release workspace build, **53 real PTY scenarios**, the separate Secret Drop
+  helper and the complete native smoke suite. Three Rust regressions were added
+  for replay/capture/history limits and the actual C bridge.
+- After final Swift refinements, `bash scripts/build-mac.sh` rebuilt the development
+  bundle and passed all native smoke tests again. Dedicated `--smoke-examples` and
+  `--smoke-recipes` used synthetic fixtures; the ad-hoc signature was verified.
+- The actual Save Recipe button opens a native name sheet. Cancel writes nothing;
+  accepting writes the learned rule. A fresh store loads it, the native library
+  replays it on a different tab containing an unseen record, and Rust/AppKit agree
+  after Apply. The original teaching values and target rows are absent from the file.
+- A separate disposable library checks canonical recipe persistence/stable UUID,
+  trimmed/duplicate/invalid names, rename/delete, 0600 file permissions, malformed
+  JSON, future library and rule versions, and an unwritable destination. Invalid
+  mutations or unreadable/future files never overwrite existing library bytes.
+- Offline replay is exercised with credential/provider traps that fail if called.
+  It accepts one matching row, including when earlier rows do not match, preserves
+  skips/blanks/mixed LF/CRLF/outside text and exact huge JSON numbers, and applies
+  one history transaction. Zero matches, stale source, cancellation, tab switching,
+  private targets, partial CRLF and source/output budgets remain guarded.
+- Native menu/shortcut, search/no-results, Return-to-preview, auxiliary Cmd+W and
+  both document/presentation Undo/Redo are checked. Light/dark library, empty search,
+  560×460 library and offline-preview bitmaps were inspected; the teaching preview
+  also retains its 700×640 layout with the added Save Recipe button.
+
+No real provider request, production credential, clipboard or session recovery was
+accessed. Fixtures use disposable directories and a unique clipboard, with cleanup.
+This closes named deterministic recipe storage/replay, not the entire M5 milestone:
+saved AI instructions, interactive type choices and live inference/task-completion
+acceptance remain open. Library UI/storage are Mac-only; TUI scope is unchanged.

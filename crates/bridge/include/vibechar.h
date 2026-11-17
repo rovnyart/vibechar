@@ -179,6 +179,9 @@ int32_t vc_rewrite_apply(VcRewrite *value, VcSession *session, size_t *start, si
 // private refusal and revision-bound application are enforced in the core.
 typedef struct VcExample VcExample;
 size_t vc_recipe_schema(uint8_t *output, size_t capacity);
+size_t vc_recipe_info(const uint8_t *rule, size_t length, uint8_t *output, size_t capacity);
+VcExample *vc_recipe_new(const VcSession *session, size_t start, size_t length);
+bool vc_recipe_start(VcExample *value, const VcSession *session, const uint8_t *rule, size_t length);
 VcExample *vc_example_new(const VcSession *session, size_t start, size_t length);
 void vc_example_free(VcExample *value);
 bool vc_example_valid(const VcExample *value, const VcSession *session);

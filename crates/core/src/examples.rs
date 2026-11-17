@@ -371,6 +371,7 @@ pub struct Capture {
     pub before: String,
     pub example_line: usize,
     pub records: usize,
+    replay: bool,
 }
 fn rows(source: &str) -> impl Iterator<Item = (&str, &str)> {
     source.split_inclusive('\n').map(|row| {
@@ -385,12 +386,22 @@ fn rows(source: &str) -> impl Iterator<Item = (&str, &str)> {
 }
 impl Capture {
     pub fn new(session: &Session, range: Range<usize>) -> Result<Self, &'static str> {
+        Self::from_selection(session, range, false)
+    }
+    pub fn for_replay(session: &Session, range: Range<usize>) -> Result<Self, &'static str> {
+        Self::from_selection(session, range, true)
+    }
+    fn from_selection(
+        session: &Session,
+        range: Range<usize>,
+        replay: bool,
+    ) -> Result<Self, &'static str> {
         if session.active().is_private() {
-            return Err("Private tabs cannot teach AI examples.");
+            return Err("Private tabs cannot use saved recipes or teach AI examples.");
         }
         let doc = &session.active().document;
         if range.is_empty() || range.start > range.end || range.end > doc.len_chars() {
-            return Err("Select at least two complete lines.");
+            return Err("Select complete lines.");
         }
         let text = doc.checkpoint_text();
         if range.start > 0 && text.char(range.start - 1) != '\n' {
@@ -422,11 +433,14 @@ impl Capture {
             .enumerate()
             .filter(|(_, r)| !r.0.trim().is_empty())
             .collect();
-        if nonblank.len() < 2 {
+        if nonblank.is_empty() || !replay && nonblank.len() < 2 {
+            if replay {
+                return Err("Select at least one nonblank row.");
+            }
             return Err("Select at least two nonblank rows: an example and the rest.");
         }
         let (example_line, first) = nonblank[0];
-        if first.0.len() > MAX_EXAMPLE {
+        if !replay && first.0.len() > MAX_EXAMPLE {
             return Err("Use an example row up to 4 KiB.");
         }
         let before = first.0.to_owned();
@@ -439,6 +453,7 @@ impl Capture {
             before,
             example_line: example_line + 1,
             records,
+            replay,
         })
     }
     pub fn source(&self) -> &str {
@@ -451,6 +466,9 @@ impl Capture {
     }
     pub fn plan(&self, recipe: Recipe, after: &str) -> Result<Plan, &'static str> {
         recipe.validate_example(&self.before, after)?;
+        self.plan_rows(recipe)
+    }
+    fn plan_rows(&self, recipe: Recipe) -> Result<Plan, &'static str> {
         let mut result = String::new();
         let mut stats = Stats::default();
         for (index, (row, ending)) in rows(&self.source).enumerate() {
@@ -515,8 +533,12 @@ impl Plan {
         if !self.capture.is_current(session) {
             return Err("Text changed. Select the rows again to make a new preview.");
         }
-        if self.stats.matched < 2 {
-            return Err("The rule must match at least one row beyond the example.");
+        if self.stats.matched < if self.capture.replay { 1 } else { 2 } {
+            return Err(if self.capture.replay {
+                "The rule did not match any selected rows."
+            } else {
+                "The rule must match at least one row beyond the example."
+            });
         }
         let start = self.capture.range.start;
         let changed = session
@@ -536,11 +558,23 @@ pub struct Job {
 }
 impl Job {
     pub fn start(capture: Capture, json: String, after: String) -> Result<Self, &'static str> {
+        Self::spawn(capture, json, Some(after))
+    }
+    pub fn replay(capture: Capture, json: String) -> Result<Self, &'static str> {
+        if !capture.replay {
+            return Err("Capture a selection for saved recipe replay first.");
+        }
+        Self::spawn(capture, json, None)
+    }
+    fn spawn(capture: Capture, json: String, after: Option<String>) -> Result<Self, &'static str> {
         let (sender, receiver) = mpsc::sync_channel(1);
         thread::Builder::new()
             .name("vibechar-recipe".into())
             .spawn(move || {
-                let plan = Recipe::parse(&json).and_then(|recipe| capture.plan(recipe, &after));
+                let plan = Recipe::parse(&json).and_then(|recipe| match after {
+                    Some(after) => capture.plan(recipe, &after),
+                    None => capture.plan_rows(recipe),
+                });
                 let _ = sender.send(plan);
             })
             .map_err(|_| "Couldn't start the local recipe worker.")?;
@@ -851,5 +885,76 @@ mod tests {
                 &format!("{}{}{}", "x".repeat(256), "a".repeat(100), "y".repeat(256))
             )
             .is_err());
+    }
+    #[test]
+    fn saved_replay_accepts_one_row_and_skips_an_unmatched_first_row() {
+        let rule = recipe(Input::Json, "", vec![part("/id", "user/", "")]);
+        let json = serde_json::to_string(&rule).unwrap();
+        for (source, expected, skipped) in [
+            (
+                "{\"id\":900719925474099312345}",
+                "user/900719925474099312345",
+                0,
+            ),
+            ("invalid\r\n{\"id\":7}\r\n\n", "invalid\r\nuser/7\r\n\n", 1),
+        ] {
+            let mut session = Session::new(source, None);
+            let capture = Capture::for_replay(&session, 0..source.chars().count()).unwrap();
+            let mut job = Job::replay(capture, json.clone()).unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while job.poll().is_none() {
+                assert!(std::time::Instant::now() < deadline);
+                thread::sleep(std::time::Duration::from_millis(1));
+            }
+            let plan = job.take().unwrap().unwrap();
+            assert_eq!((plan.stats.changed, plan.stats.skipped), (1, skipped));
+            assert_eq!(plan.result, expected);
+            plan.apply(&mut session).unwrap();
+            session.active_mut().document.undo().unwrap();
+            assert_eq!(session.active().document.text(), source);
+            session.active_mut().document.redo().unwrap();
+            assert_eq!(session.active().document.text(), expected);
+        }
+    }
+    #[test]
+    fn replay_keeps_privacy_staleness_limits_and_no_match_protection() {
+        let mut session = Session::new("no match", None);
+        let capture = Capture::for_replay(&session, 0..8).unwrap();
+        let plan = capture
+            .plan_rows(recipe(Input::Json, "", vec![part("/id", "u", "")]))
+            .unwrap();
+        assert_eq!(plan.stats.matched, 0);
+        assert!(plan.apply(&mut session).is_err());
+        let plan = capture
+            .plan_rows(recipe(Input::Line, "", vec![part("$", "- ", "")]))
+            .unwrap();
+        session
+            .active_mut()
+            .document
+            .replace_many(&[TextEdit {
+                range: 0..0,
+                text: "!".into(),
+            }])
+            .unwrap();
+        assert!(plan.apply(&mut session).is_err());
+        session.open_private();
+        assert!(Capture::for_replay(&session, 0..1).is_err());
+        let session = Session::new(" \n\t", None);
+        assert!(Capture::for_replay(&session, 0..3).is_err());
+        let session = Session::new("x\r\ny", None);
+        assert!(Capture::for_replay(&session, 0..2).is_err());
+        let source = "a".repeat(MAX_SOURCE + 1);
+        let session = Session::new(&source, None);
+        assert!(Capture::for_replay(&session, 0..source.len()).is_err());
+        let source = "a".repeat(MAX_EXAMPLE + 1);
+        let mut session = Session::new(&source, None);
+        assert!(Capture::new(&session, 0..source.len()).is_err());
+        let capture = Capture::for_replay(&session, 0..source.len()).unwrap();
+        capture
+            .plan_rows(recipe(Input::Line, "", vec![part("$", "- ", "")]))
+            .unwrap()
+            .apply(&mut session)
+            .unwrap();
+        assert_eq!(session.active().document.text(), format!("- {source}"));
     }
 }

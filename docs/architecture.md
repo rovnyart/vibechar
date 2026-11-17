@@ -516,8 +516,23 @@ A bounded worker applies the validated recipe to all captured rows, preserving
 blank/skipped rows and each original line ending. Preview frames include counts
 and up to eight skip reasons. Apply requires at least one match beyond the example,
 checks identity/revision/privacy again and creates one `replace_many` transaction.
-Cancellation drops work without applying. Recipe, source, example and result are
-transient in M5.1; named storage/replay is the next increment. No regex/code/eval
+Cancellation drops work without applying. Source, example and result remain
+transient. M5.2 explicitly saves names and canonical validated recipe JSON in a
+bounded, versioned `recipes.json` in the Mac Application Support directory. The
+library has at most 100 rules / 2 MiB, atomically writes with owner-only file
+permissions, rejects duplicate names and refuses to overwrite unreadable or newer
+libraries. Model-provided literal text is part of a saved rule; captured rows and
+Before/After examples are never serialized into this library.
+
+Offline replay uses a separate capture/worker entry point in the shared core:
+one or more complete nonblank rows, no teaching pair or first-row match requirement.
+Every invocation revalidates the recipe version/shape/cost before local execution.
+The same bounded planner, skip counts, line-ending preservation, source revision,
+private refusal and atomic Apply guard the preview. The native library searches
+names/structural summaries, supports rename/delete, and opens the existing preview
+surface in an explicitly on-device mode. Replay neither creates a provider client
+nor reads the API credential. UI/storage are Mac-only in this increment.
+No regex/code/eval
 runtime or provider networking is present in the shared core or terminal.
 
 ## Reference documentation

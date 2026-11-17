@@ -215,8 +215,8 @@ View provides text zoom (Zoom In/Out and Cmd+0 reset), an appearance submenu
 (Follow System/Light/Dark), and full screen. Appearance and the normal window frame
 persist locally. The canvas uses native AppKit input and an opaque light/dark
 surface. Line numbers and native line/column indicators are implemented. AI connection
-settings, selection rewriting/previews and the first Do the Rest increment are
-implemented below. Named recipe storage/replay remains later work.
+settings, selection rewriting/previews, Do the Rest and saved offline recipes are
+implemented below. Named AI rewrite instructions remain later work.
 
 The build's native smoke test checks tab geometry at 420–1600 pt, active-tab
 visibility with 14 tabs, per-tab close targets, and the actual window composition
@@ -826,8 +826,8 @@ inferred JSON rule 16 KiB / 12 parts; literal pieces 256 bytes; delimiter 16 byt
 64 fields per row; input/result row 16 KiB; complete result 1 MiB. Provider output
 budget is 4,096 tokens including reasoning. Apply uses privacy/identity/revision
 checks and shared history. Private buffers are rejected before source extraction
-or credential access. Example/rule/result are memory-only; nothing is saved as a
-named command yet. Named offline replay and separately saved AI prompts are M5.2.
+or credential access. Example/source/result are memory-only. A validated rule can
+be saved explicitly with **Save Recipe…**; separately saved AI prompts remain open.
 
 ```sh
 dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-examples
@@ -841,10 +841,51 @@ shape, local planning, skips, cancellation/stale protection and editing/history.
 They use synthetic credentials and no live requests. Test real inference explicitly
 in the UI using your configured key.
 
+## Saved recipes (Mac, M5.2)
+
+1. Teach a rule using **Do the Rest…**, then inspect its Changes, Result and Rule.
+2. Before Apply, choose **Save Recipe…** and give it a unique name (1–80 characters).
+3. Select complete lines in another ordinary tab, then use **Edit → Saved Recipes…**
+   (**Option+Cmd+R**). Search by name/structural summary; arrows choose, Return previews.
+4. Inspect the local preview, then Apply. One Undo reverses the entire change.
+
+The library supports rename and confirmed deletion. A recipe may process a single
+row; no demonstration pair, API key or network is needed for replay. A mismatching
+first row does not block later matches. Unmatched/blank rows and original LF/CRLF
+endings stay intact; zero matches or zero changes disable Apply. Source changes,
+tab switching, close and cancellation prevent late application. Private tabs refuse
+saved recipes in this increment, as they do example capture.
+
+Only UUID, name and validated recipe JSON are stored at
+`~/Library/Application Support/dev.vibechar.app/recipes.json`. The library version
+and each rule's schema version are checked; the file is atomically replaced with
+0600 permissions. Source rows, teaching pairs and previews are excluded. Literal
+text in the rule is saved. Up to 100 recipes / 2 MiB are supported; existing rules
+are never silently overwritten by a duplicate name. Corrupt/unsupported libraries
+stay untouched and block writes with an explicit error.
+
+Replay retains the 256 KiB / 4,096-line target, 16 KiB rule/row and 1 MiB result
+budgets. The teaching example's 4 KiB size limit does not apply to replay rows.
+Recipe format and supported per-row operations are unchanged; multiline records,
+aggregate conversion, interactive type choices and saved AI instructions remain open.
+
+```sh
+dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-recipes
+VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/recipes-ui" \
+  dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-recipes
+```
+
+The smoke uses a disposable library, a unique clipboard and synthetic data. Trap
+credential/provider implementations fail immediately if offline replay accesses
+them. It checks persistence through a fresh store, naming/rename/delete, corrupt
+and future versions, write failures, skip/stale/cancel/private guards, actual native
+menu/search/preview and both Rust/AppKit text through Undo/Redo. The example smoke
+also exercises saving a learned rule through the native callback and reopening it.
+
 ## M1 limitations
 
-The app is an early prototype. Global hotkeys and a saved recipe library are later
-milestones. AI settings, rewriting and example learning are Mac GUI-only.
+The app is an early prototype. Global hotkeys remain a later milestone.
+AI settings, rewriting, example learning and the recipe library are Mac GUI-only.
 TUI remains a local editor with Secret Drop.
 Shared multicursors and TUI selection/clipboard are implemented; acceptance across terminal
 emulators/Linux and native IME composition qualification remain pending. No
