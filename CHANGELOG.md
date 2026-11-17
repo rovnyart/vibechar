@@ -3,6 +3,17 @@
 Notable changes to Vibechar. Versions follow Semantic Versioning; release notes
 are generated from Conventional Commits. Earlier `build-*` archives predate versioned releases.
 
+## [1.0.1](https://github.com/rovnyart/vibechar/releases/tag/v1.0.1) — 2026-11-17
+
+### Fixed
+
+- **mac**: restore native window control clicks ([cb85a66](https://github.com/rovnyart/vibechar/commit/cb85a66761aae3fdc823ae81e70a451f5d18c391))
+
+### Changed
+
+- record verified 1.0.0 release and native updates ([dcf1cd2](https://github.com/rovnyart/vibechar/commit/dcf1cd2a80d058cfc092c0f23fc6b819bbfdf9e5))
+- clarify release validation isolation ([132bfe2](https://github.com/rovnyart/vibechar/commit/132bfe225a6b2340b77777d9c1f4b0967c9741a2))
+
 ## [1.0.0](https://github.com/rovnyart/vibechar/releases/tag/v1.0.0) — 2026-11-17
 
 ### Added
