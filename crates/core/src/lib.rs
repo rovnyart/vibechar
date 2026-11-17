@@ -6,6 +6,7 @@ pub mod handoff;
 pub mod limits;
 pub mod metrics;
 pub mod multi;
+pub mod rewrite;
 pub mod search;
 pub mod session;
 pub mod syntax;

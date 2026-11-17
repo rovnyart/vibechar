@@ -292,8 +292,8 @@ undo history remain intact; undoing text does not re-enter private mode.
 Retention remains pending. Recovery persists ordinary text without encryption.
 This feature excludes private buffers from app-owned recovery; it does not erase
 earlier ordinary snapshots, clipboard contents, explicit exports, or OS-managed
-swap/crash data. Future AI, recipes, and diagnostics must reject private buffers
-before collecting text. Those services do not exist in the current editor.
+swap/crash data. AI rewriting rejects private buffers before collecting text.
+Future recipe and diagnostic services must enforce the same boundary.
 Secret Drop is a separate, explicitly invoked local export described below.
 
 ## Local syntax pipeline
@@ -444,12 +444,19 @@ Case changes use Unicode string mappings, preserving context-sensitive casing.
 URL component encoding preflights its output budget; decoding is a strict one-pass
 UTF-8 conversion. Both use the same selected-range plan and history as other tools.
 Queries/jobs are transient and excluded from persistence. Named tools apply on
-Enter and use Undo for reversal; inference/recipe previews remain future work.
+Enter and use Undo for reversal. Mac inference proposals use the separate rewrite
+boundary below; example-based recipes remain future work.
 
-Common operations are commands, not UI callbacks. A local transform returns edits
-for a specified selection. A proposal is bound to document identity, source revision,
-and an explicit target. Acceptance validates the unchanged source and protected spans,
-then applies all edits as one undo transaction. Rejection is a no-op.
+The implemented `rewrite` module captures only a bounded explicit selection from
+an ordinary session buffer. It owns the document ID/revision/range and any marked
+protected spans. Private buffers are rejected before source extraction. Request
+text substitutes opaque, collision-free per-capture placeholders for protected
+occurrences. A result must preserve each exactly once in order; core restores
+their original bytes and checks the restored output budget before storing a proposal.
+Acceptance checks the active session's privacy/identity/revision again, then uses
+`replace_many` for one history transaction. The opaque C handle exposes bounded
+JSON frames and UTF-16 protection/selection ranges; it has no provider or persistence
+code. Dropping a capture/rejecting a proposal cannot change the document.
 
 Example inference returns a bounded declarative recipe, never executable source.
 Recipes pass local shape/cost validation and must reproduce the example before
@@ -479,9 +486,15 @@ Changing key/model invalidates stale results; failed tests do not erase a workin
 saved configuration. All provider I/O is explicitly invoked and stays off the UI
 thread. Automated tests use fixtures and isolated Keychain service entries.
 
-M4.2 adds Mac rewriting/previews. Cancellation and revision checks protect in-flight
-edits. A private document cannot produce an AI request; the global Settings test
-is independent of documents and sends synthetic input only.
+M4.2 implements a nonmodal Mac rewrite window with transient instructions and
+Source/Changes/Result views. Only explicit Preview sends the core-prepared selection
+plus instruction through the configured Responses adapter. Cancellation generations
+supersede late replies; document changes disable Apply, and tab changes close the
+capture. The UI replays the accepted edit into AppKit incrementally; Rust remains
+the history owner. Diff work is bounded by a capped LCS matrix / block fallback
+and a 4,096-line painting limit; the full source/result stay inspectable. A private
+document cannot produce an AI request; the global Settings test is independent of
+documents and sends synthetic input only. Returned text is data, never commands.
 Secret detection can assist the user later, but cannot enforce these promises alone.
 
 ## Reference documentation

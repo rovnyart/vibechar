@@ -247,13 +247,13 @@ is part of this increment. No real credentials are needed for automated tests.
 
 #### M4.2 — Change selection with a reviewable diff
 
-- [ ] Use the configured OpenAI Responses adapter for explicit selection rewriting.
-- [ ] Send only the explicit selection and context needed for the requested action.
-- [ ] Native Mac proposal/accept/reject controls with visible diffs; shared atomic apply.
-- [ ] Bind every proposal to buffer identity + source revision; reject stale proposals.
-- [ ] Cancellation, timeout, rate limits, provider refusal, output-size limits.
-- [ ] Protected spans remain byte-identical; private buffers cannot invoke providers.
-- [ ] Provider fixtures for reliable tests; opt-in live smoke test without saved secrets.
+- [x] Use the configured OpenAI Responses adapter for explicit selection rewriting.
+- [x] Send only the explicit selection and context needed for the requested action.
+- [x] Native Mac proposal/accept/reject controls with visible diffs; shared atomic apply.
+- [x] Bind every proposal to buffer identity + source revision; reject stale proposals.
+- [x] Cancellation, timeout, rate limits, provider refusal, output-size limits.
+- [x] Protected spans remain byte-identical; private buffers cannot invoke providers.
+- [x] Provider fixtures for reliable tests; opt-in live smoke test without saved secrets.
 
 Exit: a Mac rewrite can be reviewed before applying as one undo step.
 Typing during generation is always responsive. Network errors or stale replies

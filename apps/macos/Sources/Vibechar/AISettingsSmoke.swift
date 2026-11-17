@@ -38,7 +38,7 @@ private actor AIFixtureService: AIService {
     }
 }
 
-private final class AIHTTPFixture: URLProtocol, @unchecked Sendable {
+final class AIHTTPFixture: URLProtocol, @unchecked Sendable {
     struct Reply { var status = 200; var body: Data; var error: URLError?; var hold = false }
     private static let lock = NSLock()
     private static var handler: ((URLRequest) -> Reply)?
@@ -269,7 +269,7 @@ private func aiHTTPClientSmokeTest() {
         (429, #"{"error":{"code":"insufficient_quota","message":"synthetic-http-key"}}"#, .quota),
         (429, "{}", .rateLimit), (503, "{}", .unavailable), (400, "{}", .requestRejected),
         (200, "not json", .invalidResponse), (200, #"{"status":"incomplete","output":[]}"#, .invalidResponse),
-        (200, #"{"status":"completed","output":[{"type":"message","content":[{"type":"refusal"}]}]}"#, .invalidResponse),
+        (200, #"{"status":"completed","output":[{"type":"message","content":[{"type":"refusal"}]}]}"#, .refused),
         (302, "{}", .requestRejected),
     ]
     for (status, body, expected) in cases {

@@ -3,8 +3,9 @@
 A tiny, native text workbench for macOS and the terminal.
 
 Open it, paste something, shape it, take the result. Vibechar should feel immediate
-before you connect an AI provider. The first AI feature helps turn an example edit
-into a reusable text transformation, with a preview before anything changes.
+before you connect an AI provider. AI can rewrite a selected fragment with a diff
+before anything changes. The flagship goal is to turn an example edit into a
+reusable text transformation.
 
 ## Product boundaries
 
@@ -36,8 +37,11 @@ cursor/selection, undo history, file destinations, and unsaved-close protection.
 Both clients save their own local sessions and restore ordinary tabs after restart. Their
 session files are separate; live synchronization is not implemented. Mac Settings
 (Cmd+,) connects your OpenAI account: Keychain storage, searchable model choice,
-explicit model refresh and **Test & Save**. Tests use a small API-billed synthetic
-prompt; tab content is never included. Rewriting/previews follow separately. The first
+explicit model refresh and **Test & Save**. Connection checks use an API-billed
+synthetic prompt. **Rewrite Selection…** (Shift+Cmd+K) sends the explicit selection
+and your instruction, previews changes, and applies them as one Undo step.
+**Keep exact** hides marked occurrences from the provider and preserves their bytes;
+private tabs use local tools. Example-based recipes follow separately. The first
 native Pocket interface is implemented: compact
 tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
 and quiet session status. Art accepted the first Pocket increment.

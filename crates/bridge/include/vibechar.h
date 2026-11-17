@@ -161,4 +161,18 @@ bool vc_checkpoint_save(const VcCheckpoint *checkpoint, const uint8_t *path, siz
 // 1 = restored, 2 = no recovery file, 0 = failure (live session is unchanged).
 int32_t vc_session_restore(VcSession *session, const uint8_t *path, size_t length);
 
+// Memory-only AI proposal boundary. Capture refuses private tabs and empty/>32 KiB
+// selections. No provider code runs in Rust. All ranges crossing C are UTF-16.
+typedef struct VcRewrite VcRewrite;
+VcRewrite *vc_rewrite_new(const VcSession *session, size_t start, size_t length);
+void vc_rewrite_free(VcRewrite *value);
+bool vc_rewrite_valid(const VcRewrite *value, const VcSession *session);
+size_t vc_rewrite_json(const VcRewrite *value, uint8_t *output, size_t capacity);
+// Protection ranges are relative to the captured selection, not the full document.
+bool vc_rewrite_protect(VcRewrite *value, size_t start, size_t length);
+void vc_rewrite_clear(VcRewrite *value, bool clear_protection);
+bool vc_rewrite_result(VcRewrite *value, const uint8_t *text, size_t length);
+// 0 rejected, 1 changed, 2 identical. Acceptance rechecks privacy/identity/revision.
+int32_t vc_rewrite_apply(VcRewrite *value, VcSession *session, size_t *start, size_t *length);
+
 #endif

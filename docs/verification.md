@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 141 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 147 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -1209,8 +1209,9 @@ above. Native startup percentiles, the full memory matrix and renderer decisions
 still need qualification; M1's baseline checkbox remains open. M2 recovery is partial: retention and broader durability
 qualification remain open. M3 smart syntax, find/replace, nine local tools and
 basic shared multicursor editing are implemented; complete large-document mode
-remains open. M4.1 connection settings are implemented; M4.2/M5 editor AI remains
-open. The prototype should not hold the only copy of important text.
+remains open. M4.1 connection settings and M4.2 selection rewriting are implemented;
+M5 example-based recipes remain open. The prototype should not hold the only copy
+of important text.
 
 ## 2026-11-17 — M4.1: Mac OpenAI connection settings
 
@@ -1282,3 +1283,52 @@ Cancel preserving the old credential and preview, successful replacement updatin
 the suffix, reopen restoring it, removal clearing it, and short-value masking.
 `codesign --verify --deep --strict` passed on the rebuilt development app. All keys
 and provider responses in these checks were synthetic.
+
+## 2026-11-17 — M4.2: selection rewriting with protected fragments and diffs
+
+Implemented Shift+Cmd+K / Edit → Rewrite Selection in the Mac GUI. Explicit Preview
+uses the saved key/model and sends only the captured selection plus instruction.
+Source/Changes/Result views expose the proposal before Apply. The shared Rust
+engine owns privacy checks, protected occurrences and atomic revision-bound apply;
+native presentation replays only the accepted range. The TUI has no provider calls.
+
+`bash scripts/check.sh` passed formatting, strict Clippy, **147 Rust tests**, release
+workspace build, **53 real PTY scenarios**, the separate Secret Drop helper check,
+and all native smoke tests including the new rewrite suite. Six Rust tests were
+added across core and C bridge. The dedicated `--smoke-rewrite` passed with native
+light/dark bitmaps at 760×720 and 640×600, visually inspected. The signed development
+app was rebuilt. Checks used synthetic credentials and provider fixtures only.
+
+Evidence covers:
+
+- Bounded selection-only capture, Unicode/UTF-16 boundaries, CRLF, an empty
+  replacement, output/source limits, no-op, one Undo/Redo, and unchanged text outside
+  the target. Native Apply checks the Rust document and AppKit mirror together.
+- Private-buffer capture rejection before credential access/source extraction,
+  and private menu/action exclusion in the native app. No production Keychain
+  item, environment credential, clipboard or recovery data was read by tests.
+- Protected occurrences absent from request text, exact byte restoration (including
+  NUL and emoji), and rejection of missing, duplicated, modified or reordered
+  markers. Overlapping protected ranges are rejected without partial application.
+- Request fixtures verify the HTTPS endpoint, synthetic authorization, configured
+  model, exact JSON instruction/selection, `store: false`, 16,384 output-token
+  budget and absence of tools/conversations/adjacent text. Completed empty text
+  can be proposed; refusals/errors cannot become applicable output.
+- Late replies after source edits, Cancel, instruction changes and close cannot
+  create/apply a proposal. Undo back to original bytes is stale because revisions
+  are monotonic. Tab changes close/clear the native capture. Key/provider errors
+  and rejected previews leave document text/history alone.
+- Source protection controls, diff highlighting/counts, keyboard menu definitions,
+  Apply/Undo/Redo, stale disabling, Cmd+W routing and UI cleanup. Native source edits
+  through NSTextView invalidate an existing preview. Background command routing
+  uses the same injected focused-window seam as AI Settings tests.
+- LCS cell budget / coarse replacement fallback and a 4,096-line display budget
+  near the first change. Partial previews are labeled and the complete Source and
+  Result remain accessible. These are explicit operation budgets, not a general
+  latency qualification.
+
+Live OpenAI generation and the subjective quality of actual model rewrites remain
+Art's explicit UI check with his configured key. Physical keyboard interaction,
+VoiceOver and broader IME qualification remain manual acceptance. Marked occurrences
+are the protection boundary; unmarked duplicates and the instruction are sent as
+written. Example-based inference/recipes remain M5.

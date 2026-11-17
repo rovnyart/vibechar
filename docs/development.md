@@ -215,7 +215,8 @@ View provides text zoom (Zoom In/Out and Cmd+0 reset), an appearance submenu
 (Follow System/Light/Dark), and full screen. Appearance and the normal window frame
 persist locally. The canvas uses native AppKit input and an opaque light/dark
 surface. Line numbers and native line/column indicators are implemented. AI connection
-settings are implemented below; rewriting and the illustrated previews remain later work.
+settings and selection rewriting/previews are implemented below. Example-based recipes
+remain later work.
 
 The build's native smoke test checks tab geometry at 420–1600 pt, active-tab
 visibility with 14 tabs, per-tab close targets, and the actual window composition
@@ -474,9 +475,9 @@ their grants are unaffected. Ordinary recovery can now include the saved text.
 Existing ordinary tabs cannot be converted to private: their earlier snapshots
 may already exist. This is recovery exclusion, not encrypted or securely wiped
 memory. It does not erase clipboard contents, explicit exports, or OS-managed
-swap/crash data. Document AI actions and diagnostics are future work; each service
-must enforce private-buffer exclusion before collecting content. The global AI
-Settings test reads no document content.
+swap/crash data. Document AI actions enforce private-buffer exclusion before
+collecting content. Future diagnostics must do the same. The global AI Settings
+test reads no document content.
 
 ## Secret Drop
 
@@ -714,7 +715,7 @@ Provider bodies and raw network errors never appear in diagnostics. Requests use
 an ephemeral URLSession with no disk cache, cookies or credential cache, reject
 redirects, cap response bodies at 1 MiB, and have 30 s request / 45 s resource
 timeouts. There is no retry loop or background account check. The TUI neither
-reads this credential nor calls OpenAI. Selection rewriting/diffs are M4.2.
+reads this credential nor calls OpenAI. Selection rewriting/diffs are described below.
 
 Run isolated fixtures and native UI/menu checks without real API requests:
 
@@ -729,10 +730,66 @@ synthetic HTTP responses and a UUID-scoped Keychain service, removed afterward.
 For an opt-in live check, enter your key in the UI and click Test & Save; automated
 tests never discover real credentials from Keychain, the environment or clipboard.
 
+## Rewrite Selection (Mac only)
+
+Select a single nonempty fragment and choose **Edit → Rewrite Selection…**
+(**Shift+Cmd+K**). Enter an instruction, then **Preview changes** (Cmd+Return).
+The configured OpenAI key/model is read on that explicit request. Opening the
+window, typing instructions and inspecting the source make no provider calls.
+The API-billed request contains only the captured selection and your instruction,
+with `store: false`; filenames, adjacent text, other tabs and clipboard are excluded.
+
+The window has **Source**, **Changes** and **Result** views. Changes marks removed
+and inserted lines; Result shows the complete replacement. **Apply**
+(Shift+Cmd+Return) replaces the original selection in one shared history transaction.
+**Discard**, Escape or closing the window leave the document alone. Cmd+W closes
+the rewrite window. Changing an instruction cancels an in-flight request and
+invalidates its preview. Cancel request keeps the source/instruction for retry.
+
+In Source, select a fragment and click **Keep exact**. Marked occurrences are
+replaced with opaque placeholders before sending; Rust requires every placeholder
+exactly once and in order, then restores the original bytes locally. Changed,
+missing, duplicated or reordered placeholders reject the entire proposal. **Clear
+kept** removes these transient protections. Protection applies only to the marked
+occurrences: other occurrences and your instruction are sent as written. No
+automatic secret detector is claimed. Private tabs cannot prepare a rewrite,
+including through the C bridge, before source extraction or credential access.
+
+Proposals bind a document ID, monotonic source revision and explicit scalar range.
+Generation and Apply recheck the active document; any source edit (including an
+Undo back to identical text) makes the proposal stale. Switching tabs or quitting
+closes the window and cancels work. Keychain/provider failures and model refusals
+leave the text/history untouched. A completed empty replacement can delete the
+selection through the same reviewed transaction. Returned text is never executed.
+
+Limits: selection **32 KiB UTF-8**, instruction **4 KiB**, **32 kept fragments**,
+replacement **128 KiB**, model output budget **16,384 tokens** including reasoning.
+Generated newlines follow the document's CRLF convention where applicable; kept
+fragments retain their original bytes. The adapter retains its connection timeout,
+body limit, redirect rejection and sanitized errors. It doesn't retry automatically.
+Instructions, captures and results are memory-only and excluded from recovery and
+preferences; closing clears their UI text/undo state.
+
+Line diffs use an LCS matrix capped at 262,144 cells; larger comparisons show a
+block replacement, labeled `block`. Painting starts near the first change and caps
+at 4,096 diff lines, labeled `part` with a visible partial-preview notice. Source
+and Result retain complete text. Native input stays usable during requests.
+
+```sh
+dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-rewrite
+VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/rewrite-ui" \
+  dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-rewrite
+```
+
+Fixtures cover the actual HTTP request, shared protection/apply, stale and delayed
+responses, native editing/history and both themes. They use synthetic credentials
+and no real API calls. For a live smoke, configure your own key in Settings and
+explicitly preview a nonprivate selection; no live credentials are saved by tests.
+
 ## M1 limitations
 
-The app is an early prototype. Global hotkeys and AI editing are later milestones.
-AI connection settings are Mac GUI-only; selection rewriting and previews follow.
+The app is an early prototype. Global hotkeys and example-based recipes are later
+milestones. AI connection settings and selection rewriting/previews are Mac GUI-only.
 TUI remains a local editor with Secret Drop.
 Shared multicursors and TUI selection/clipboard are implemented; acceptance across terminal
 emulators/Linux and native IME composition qualification remain pending. No
@@ -780,7 +837,7 @@ filesystem race handling, durability/permission edge cases, and a unified file
 service are M2 work. Do not use this prototype as the only copy of important text.
 Both interfaces reject replacing known symlinks and read-only destinations.
 External-change and filesystem-race protection remain unqualified. Network calls
-are made only by explicit Mac AI Settings actions.
+are made only by explicit Mac AI Settings and Rewrite Selection actions.
 
 ## Validation policy
 

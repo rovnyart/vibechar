@@ -1,6 +1,8 @@
 //! Thread-confined, copy-in/copy-out C boundary. See include/vibechar.h for ownership.
 #![allow(clippy::missing_safety_doc)]
 
+mod rewrite;
+
 use std::{
     panic::{catch_unwind, AssertUnwindSafe},
     path::PathBuf,
