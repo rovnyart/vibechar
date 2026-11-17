@@ -11,7 +11,7 @@ This records local prototype evidence, not MVP release acceptance.
 
 ## Automated checks
 
-- 147 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
+- 155 Rust tests across document/history/Unicode, sessions/recovery, Secret Drop,
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
@@ -1210,8 +1210,9 @@ still need qualification; M1's baseline checkbox remains open. M2 recovery is pa
 qualification remain open. M3 smart syntax, find/replace, nine local tools and
 basic shared multicursor editing are implemented; complete large-document mode
 remains open. M4.1 connection settings and M4.2 selection rewriting are implemented;
-M5 example-based recipes remain open. The prototype should not hold the only copy
-of important text.
+M5.1 example-based preview/execution is implemented; named recipe storage and the
+live task-completion benchmark remain open. The prototype should not hold the only
+copy of important text.
 
 ## 2026-11-17 — M4.1: Mac OpenAI connection settings
 
@@ -1332,3 +1333,54 @@ Art's explicit UI check with his configured key. Physical keyboard interaction,
 VoiceOver and broader IME qualification remain manual acceptance. Marked occurrences
 are the protection boundary; unmarked duplicates and the instruction are sent as
 written. Example-based inference/recipes remain M5.
+
+## 2026-11-17 — M5.1: Do the Rest from one example
+
+Implemented Option+Cmd+K / Edit → Do the Rest for complete-line selections in the
+Mac GUI. The native window shows the first nonblank row as Before and an editable
+After. Explicit Do the rest sends only that pair to OpenAI Structured Outputs;
+all remaining records are processed locally by the shared Rust recipe executor.
+Source, diff, complete Result, readable Rule and sampled Skipped reasons precede Apply.
+The selected example itself is transformed together with the other matched rows.
+
+`bash scripts/check.sh` passed formatting, strict Clippy, **155 Rust tests**, release
+workspace build, **53 real PTY scenarios**, the separate Secret Drop helper check
+and all native smoke tests, including Do the Rest and prior AI Settings/Rewrite.
+Eight Rust tests were added across core and bridge. `--smoke-examples` passed with
+light/dark bitmap captures at 820×760 and 700×640, visually inspected. The development
+app was rebuilt and its ad-hoc signature verified.
+
+Evidence:
+
+- Eleven recipe demonstrations were checked on unseen records: URL prefixing,
+  Unicode upper/lower, trim, delimited field formatting, delimiter replacement,
+  JSON name/ID link formatting, exact large/exponent JSON numbers, env→JSON per row,
+  JSON string encoding and last-field extraction. These test the executor's
+  generalization; they are not live model-inference-quality measurements.
+- Validation reproduces After byte-for-byte, rejects unsupported versions/fields,
+  unsupported semantic rules, wrong examples, obvious hardcoded unreferenced fields
+  and implicit structured JSON conversions. Raw JSON numeric lexemes are retained;
+  duplicate source/output keys are rejected. Delimiter aliases have regression coverage.
+- Batch fixtures preserve malformed/missing-field rows, blanks, mixed LF/CRLF,
+  final newline and outside-target bytes. Counts and sampled skip reasons are
+  checked. Apply needs at least one match beyond the example and makes one atomic
+  history transaction; native tests verify both the Rust document and AppKit mirror
+  through Undo/Redo. Source/output budgets and incomplete-line rejection are exercised.
+- Actual HTTP fixtures assert the example-only payload, configured nondefault model,
+  `store: false`, 4,096 output-token budget, strict json_schema and the core-supplied
+  five-field root schema. No filenames, surrounding text or target records are sent.
+  Synthetic unseen target markers are absent from recorded provider arguments.
+- Private capture fails before credential access; menu and direct native action
+  refuse private tabs. No production Keychain item, clipboard, environment secret
+  or recovery was accessed. Missing-key/provider/invalid-rule failures leave the tab
+  untouched. Late replies after Cancel, After edits, close and source edits cannot
+  apply. Tab switching clears the capture; Cmd+W closes the auxiliary window.
+- Source/Changes/Result/Rule/Skipped controls, narrow layout, native source editing,
+  stale disabling and cleanup are checked. The common generated-edit presentation
+  path is covered by both Rewrite and Do the Rest. CRLF diff lines now paint with
+  one display newline rather than a spurious blank line, with a shared regression.
+
+No real provider call was made. Live inference and whether the workflow beats
+manual editing remain Art's UI/benchmark acceptance. Rules are transient in this
+increment; named recipe saving/offline replay UI, saved AI rewrite instructions,
+multiline/aggregate records and interactive type-conversion choices remain open.

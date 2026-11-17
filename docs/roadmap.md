@@ -264,16 +264,26 @@ cannot overwrite subsequent edits. Model-produced text is data and cannot execut
 Example capture, AI inference and preview UI are macOS-only. Recipe representation,
 validation and deterministic replay belong to Rust and do not require a provider.
 
-- [ ] Explicitly capture before/after example; target the remaining lines or records.
+- [x] Explicitly capture before/after example; target the remaining lines or records.
   Start with an invoked workflow, not speculative AI calls on every manual edit.
-- [ ] Define the smallest useful recipe grammar: selected fields, prefix/suffix,
+- [x] Define the smallest useful recipe grammar: selected fields, prefix/suffix,
   delimiter changes, case transforms, and supported structured serialization.
-- [ ] Infer a recipe with structured output; validate locally against the example.
-- [ ] Show target preview, match/skipped counts, and ambiguous type-conversion choices.
-- [ ] Limit recipe cost and output size; no arbitrary scripts, shell, or code evaluation.
+- [x] Infer a recipe with structured output; validate locally against the example.
+- [x] Show target preview and match/changed/skipped counts; preserve unsupported rows.
+- [ ] Offer explicit choices for currently unsupported/ambiguous type conversions.
+- [x] Limit recipe cost and output size; no arbitrary scripts, shell, or code evaluation.
 - [ ] Persist named recipes with a schema version; deterministic replay works offline.
 - [ ] Save a rewrite instruction separately when a request intrinsically requires AI.
-- [ ] Make all generated changes reversible as one transaction.
+- [x] Make all generated changes reversible as one transaction.
+
+M5.1 is implemented for explicit complete-line selections: first nonblank row is
+the example, After is edited in a native window, and all selected rows (including
+that example) are previewed locally. Input supports whole rows, literal delimiters,
+top-level scalar JSON fields and key=value. Only Before/After goes to the provider.
+Versioned recipes are transient in this increment. M5.2 adds named storage/replay
+and separately saved AI rewrite instructions after Art tests the first workflow.
+Executor fixtures cover 11 supported demonstrations on unseen inputs; live model
+inference quality and the task-completion benchmark below remain acceptance gates.
 
 Exit: benchmark against manual workflows on realistic tasks: env → object, log
 cleanup, extracting JSON fields, converting lists, and formatting links. At least

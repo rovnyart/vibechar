@@ -215,8 +215,8 @@ View provides text zoom (Zoom In/Out and Cmd+0 reset), an appearance submenu
 (Follow System/Light/Dark), and full screen. Appearance and the normal window frame
 persist locally. The canvas uses native AppKit input and an opaque light/dark
 surface. Line numbers and native line/column indicators are implemented. AI connection
-settings and selection rewriting/previews are implemented below. Example-based recipes
-remain later work.
+settings, selection rewriting/previews and the first Do the Rest increment are
+implemented below. Named recipe storage/replay remains later work.
 
 The build's native smoke test checks tab geometry at 420–1600 pt, active-tab
 visibility with 14 tabs, per-tab close targets, and the actual window composition
@@ -786,10 +786,65 @@ responses, native editing/history and both themes. They use synthetic credential
 and no real API calls. For a live smoke, configure your own key in Settings and
 explicitly preview a nonprivate selection; no live credentials are saved by tests.
 
+## Do the Rest: example-based recipes (Mac, M5.1)
+
+Select **two or more complete nonblank rows** and choose **Edit → Do the Rest…**
+(**Option+Cmd+K**). The first nonblank selected row becomes **Before**; edit its
+copy in **After**. Clicking **Do the rest** (Cmd+Return) sends only that pair to
+the configured OpenAI model, using strict Structured Outputs. The remaining rows,
+filename, other tabs and clipboard are excluded. The explicit learning request
+uses API billing; there are no automatic calls while typing or opening the window.
+
+The shared Rust executor first requires the inferred rule to reproduce After
+exactly. It then processes the captured selection locally, including the example
+row, and shows **Source / Changes / Result / Rule / Skipped**. Rule explains field
+selection and literal formatting; Skipped lists up to eight sample reasons.
+Counts distinguish matched, changed, unchanged, skipped and blank records (blank
+counts are available in the native frame; blanks are always preserved).
+**Apply** (Shift+Cmd+Return) commits one Undo step. At least one record beyond the
+example must match before Apply is enabled. Editing the source makes the capture
+stale; changing tabs, Cancel, closing or quitting discards pending work.
+
+Recipe v1 supports whole rows (`$`), exact literal delimiters (zero-based fields or
+`last`), top-level scalar JSON fields (`/name`, with JSON-pointer key escaping), and
+key/value around the first `=`. Parts may trim, change Unicode case, add literal
+prefix/suffix and encode text or typed JSON. JSON output uses typed encodings;
+numeric lexemes, including huge integers and exponents, are retained. Text fields
+remain strings. Missing fields, malformed/duplicate-key JSON, unsupported types
+and oversized row results are skipped without changing their original bytes.
+Each original LF/CRLF ending is preserved, including mixed endings and final newline.
+
+This pass is **per row**, suitable for JSONL, simple delimited text, links, case/trim
+and per-row env→JSON. Pretty multiline JSON records, nested field extraction,
+quoted CSV parsing, arbitrary substitutions, aggregating many rows into one object,
+semantic rewriting and guessed conversions are outside v1. Unsupported inference
+produces an error with a Rewrite Selection suggestion. No fallback sends the target
+rows to the provider. A single example is inherently ambiguous; inspect Result.
+
+Budgets: target 256 KiB / 4,096 physical lines; example Before and After 4 KiB each;
+inferred JSON rule 16 KiB / 12 parts; literal pieces 256 bytes; delimiter 16 bytes;
+64 fields per row; input/result row 16 KiB; complete result 1 MiB. Provider output
+budget is 4,096 tokens including reasoning. Apply uses privacy/identity/revision
+checks and shared history. Private buffers are rejected before source extraction
+or credential access. Example/rule/result are memory-only; nothing is saved as a
+named command yet. Named offline replay and separately saved AI prompts are M5.2.
+
+```sh
+dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-examples
+VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/examples-ui" \
+  dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-examples
+```
+
+The core fixture set has 11 supported demonstrations with unseen target inputs,
+plus unsupported/ambiguous cases. Native fixtures check the actual provider request
+shape, local planning, skips, cancellation/stale protection and editing/history.
+They use synthetic credentials and no live requests. Test real inference explicitly
+in the UI using your configured key.
+
 ## M1 limitations
 
-The app is an early prototype. Global hotkeys and example-based recipes are later
-milestones. AI connection settings and selection rewriting/previews are Mac GUI-only.
+The app is an early prototype. Global hotkeys and a saved recipe library are later
+milestones. AI settings, rewriting and example learning are Mac GUI-only.
 TUI remains a local editor with Secret Drop.
 Shared multicursors and TUI selection/clipboard are implemented; acceptance across terminal
 emulators/Linux and native IME composition qualification remain pending. No
@@ -837,7 +892,7 @@ filesystem race handling, durability/permission edge cases, and a unified file
 service are M2 work. Do not use this prototype as the only copy of important text.
 Both interfaces reject replacing known symlinks and read-only destinations.
 External-change and filesystem-race protection remain unqualified. Network calls
-are made only by explicit Mac AI Settings and Rewrite Selection actions.
+are made only by explicit Mac AI Settings, Rewrite Selection and Do the Rest actions.
 
 ## Validation policy
 

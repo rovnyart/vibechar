@@ -445,7 +445,7 @@ URL component encoding preflights its output budget; decoding is a strict one-pa
 UTF-8 conversion. Both use the same selected-range plan and history as other tools.
 Queries/jobs are transient and excluded from persistence. Named tools apply on
 Enter and use Undo for reversal. Mac inference proposals use the separate rewrite
-boundary below; example-based recipes remain future work.
+boundary below; example-based recipes use the bounded local executor described below.
 
 The implemented `rewrite` module captures only a bounded explicit selection from
 an ordinary session buffer. It owns the document ID/revision/range and any marked
@@ -472,7 +472,7 @@ Use a small asynchronous native adapter (URLSession) for OpenAI Responses and mo
 discovery, with Keychain credential storage. TUI has no AI settings, OpenAI
 environment-key lookup or provider calls of its own. Rust still owns proposals, recipe validation, source revision
 checks and atomic document/history application. No provider framework or agent runtime
-is needed. Supported structured outputs for recipes are a later M5 concern.
+is needed. Recipe inference uses the small structured-output boundary below.
 
 M4.1 implements Settings → AI only: masked key entry, replace/delete, model choice
 and an explicit connection test. Non-secret model ID belongs in normal preferences;
@@ -496,6 +496,29 @@ and a 4,096-line painting limit; the full source/result stay inspectable. A priv
 document cannot produce an AI request; the global Settings test is independent of
 documents and sends synthetic input only. Returned text is data, never commands.
 Secret detection can assist the user later, but cannot enforce these promises alone.
+
+M5.1 adds a separate `examples` module and native Do the Rest window. A capture
+binds a complete-line target to privacy, document identity and monotonic revision,
+and extracts the first nonblank row as the example. Only Before/After is passed to
+the provider; other selected records remain local. The shared core supplies the
+versioned recipe JSON schema used by Responses `text.format` (strict json_schema).
+Structured output is then checked against executable business rules in Rust.
+
+Recipe v1 selects whole rows, literal-delimited fields, top-level scalar JSON fields
+or key/value, then concatenates bounded prefix/value/suffix parts with optional
+Unicode case/trim and text/JSON encoding. JSON numbers retain raw lexemes through
+RawValue; string/number coercion is not inferred. Duplicate source keys and
+ambiguous fields are rejected/skipped. Validation must reproduce After byte-for-byte
+and checks obvious hardcoded, unreferenced example fields in literals. It cannot
+prove semantic intent from a single example; the preview is still required.
+
+A bounded worker applies the validated recipe to all captured rows, preserving
+blank/skipped rows and each original line ending. Preview frames include counts
+and up to eight skip reasons. Apply requires at least one match beyond the example,
+checks identity/revision/privacy again and creates one `replace_many` transaction.
+Cancellation drops work without applying. Recipe, source, example and result are
+transient in M5.1; named storage/replay is the next increment. No regex/code/eval
+runtime or provider networking is present in the shared core or terminal.
 
 ## Reference documentation
 

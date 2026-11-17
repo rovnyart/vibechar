@@ -2,7 +2,14 @@ import AppKit
 
 struct RewriteDiff {
     static let displayLimit = 4096
-    struct Line { let kind: Int; let text: String }
+    struct Line {
+        let kind: Int; let text: String
+        var hasEnding: Bool { text.utf8.last == 10 }
+        var displayText: String {
+            if hasEnding && text.utf8.dropLast().last == 13 { return String(decoding: text.utf8.dropLast(2),as: UTF8.self)+"\n" }
+            return text + (hasEnding ? "" : "\n")
+        }
+    }
     let lines: [Line]
     let coarse: Bool
     var added: Int { lines.reduce(0) { $0 + ($1.kind == 1 ? 1 : 0) } }
@@ -49,7 +56,7 @@ struct RewriteDiff {
     }
 }
 
-private final class RewriteSurface: NSView {
+final class RewriteSurface: NSView {
     var onLayout: (() -> Void)?
     override var isFlipped: Bool { true }
     override func layout() { super.layout(); onLayout?() }
@@ -213,13 +220,13 @@ final class RewriteWindowController: NSWindowController, NSWindowDelegate, NSTex
             if diff.displayStart > 0 {
                 content.append(NSAttributedString(string: "⋯ \(diff.displayStart) unchanged lines above\n",attributes: base))
             }
-            let showEnding = model.source.hasSuffix("\n") != (model.result ?? "").hasSuffix("\n")
+            let showEnding = (model.source.utf8.last == 10) != (model.result?.utf8.last == 10)
             for line in diff.lines.dropFirst(diff.displayStart).prefix(RewriteDiff.displayLimit) {
                 var attributes = base
                 let prefix = line.kind < 0 ? "− " : line.kind > 0 ? "+ " : "  "
                 if line.kind != 0 { attributes[.backgroundColor] = (line.kind < 0 ? NSColor.systemRed : NSColor.systemGreen).withAlphaComponent(0.12) }
-                content.append(NSAttributedString(string: prefix + line.text + (line.text.hasSuffix("\n") ? "" : "\n"),attributes: attributes))
-                if showEnding, line.kind != 0, !line.text.hasSuffix("\n") {
+                content.append(NSAttributedString(string: prefix + line.displayText,attributes: attributes))
+                if showEnding, line.kind != 0, !line.hasEnding {
                     content.append(NSAttributedString(string: "  ↳ no final newline\n",attributes: [.font: NSFont.monospacedSystemFont(ofSize: 10,weight: .regular), .foregroundColor: PocketPalette.secondary]))
                 }
             }

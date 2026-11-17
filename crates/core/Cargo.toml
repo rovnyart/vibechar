@@ -10,7 +10,7 @@ unicode-segmentation.workspace = true
 unicode-width.workspace = true
 unicode-bidi.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 libc.workspace = true
 regex.workspace = true
 syntect.workspace = true

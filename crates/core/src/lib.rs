@@ -2,6 +2,7 @@
 
 pub mod checkpoint;
 pub mod editing;
+pub mod examples;
 pub mod handoff;
 pub mod limits;
 pub mod metrics;

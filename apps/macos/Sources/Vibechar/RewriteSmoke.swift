@@ -117,6 +117,7 @@ func rewriteSmokeTest() {
 
     let diff = RewriteDiff(before: "same\r\nold\r\ntail",after: "same\r\nnew\r\ntail")
     precondition(diff.added == 1 && diff.removed == 1 && !diff.coarse && diff.lines.count == 4)
+    precondition(diff.lines.map(\.displayText).joined() == "same\nold\nnew\ntail\n")
     precondition(RewriteDiff(before: "",after: "x").added == 1)
     precondition(RewriteDiff(before: "x",after: "").removed == 1)
     precondition(RewriteDiff(before: "same",after: "same").added == 0)

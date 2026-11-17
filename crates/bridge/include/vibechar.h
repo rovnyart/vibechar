@@ -175,4 +175,19 @@ bool vc_rewrite_result(VcRewrite *value, const uint8_t *text, size_t length);
 // 0 rejected, 1 changed, 2 identical. Acceptance rechecks privacy/identity/revision.
 int32_t vc_rewrite_apply(VcRewrite *value, VcSession *session, size_t *start, size_t *length);
 
+// Do the Rest: first nonblank selected row is the example. Whole-line targets,
+// private refusal and revision-bound application are enforced in the core.
+typedef struct VcExample VcExample;
+size_t vc_recipe_schema(uint8_t *output, size_t capacity);
+VcExample *vc_example_new(const VcSession *session, size_t start, size_t length);
+void vc_example_free(VcExample *value);
+bool vc_example_valid(const VcExample *value, const VcSession *session);
+void vc_example_clear(VcExample *value);
+bool vc_example_start(VcExample *value, const VcSession *session, const uint8_t *rule, size_t rule_length,
+                      const uint8_t *after, size_t after_length);
+// Nonblocking: 0 running, 1 preview, -1 error. Dropping/clearing discards work.
+int32_t vc_example_poll(VcExample *value);
+size_t vc_example_json(const VcExample *value, uint8_t *output, size_t capacity);
+int32_t vc_example_apply(VcExample *value, VcSession *session, size_t *start, size_t *length);
+
 #endif

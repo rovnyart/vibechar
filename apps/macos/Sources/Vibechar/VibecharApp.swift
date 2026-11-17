@@ -13,6 +13,7 @@ struct VibecharApp {
             return
         }
         if CommandLine.arguments.contains("--smoke-rewrite") { rewriteSmokeTest(); return }
+        if CommandLine.arguments.contains("--smoke-examples") { exampleSmokeTest(); return }
         if CommandLine.arguments.contains("--smoke-first-presentation") {
             AppDelegate.firstPresentationSmokeTest()
             return
@@ -80,6 +81,7 @@ struct VibecharApp {
             AppDelegate.multiSmokeTest()
             aiSettingsSmokeTest()
             rewriteSmokeTest()
+            exampleSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -158,6 +160,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private var aiSettings: AISettingsWindowController?
     private var rewriteWindow: RewriteWindowController?
     private let rewriteFactory: (@MainActor (RustSession, NSRange) throws -> RewriteModel)?
+    private var exampleWindow: ExampleWindowController?
+    private let exampleFactory: (@MainActor (RustSession, NSRange) throws -> ExampleModel)?
     private var fileURL: URL? { session.fileURL }
     private var window: NSWindow!
     private let textView = PocketTextView()
@@ -490,7 +494,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     init(clipboard: NSPasteboard = .general, aiSettingsFactory: (@MainActor () -> AISettingsWindowController)? = nil,
          commandWindow: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow },
-         rewriteFactory: (@MainActor (RustSession, NSRange) throws -> RewriteModel)? = nil) {
+         rewriteFactory: (@MainActor (RustSession, NSRange) throws -> RewriteModel)? = nil,
+         exampleFactory: (@MainActor (RustSession, NSRange) throws -> ExampleModel)? = nil) {
         let session = RustSession()
         self.session = session
         document = RustDocument(session: session)
@@ -498,6 +503,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         self.aiSettingsFactory = aiSettingsFactory
         self.commandWindow = commandWindow
         self.rewriteFactory = rewriteFactory
+        self.exampleFactory = exampleFactory
         super.init()
     }
 
@@ -736,6 +742,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         addItem("Text Tools…",action:#selector(openTools),key:"k",to:edit)
         let rewriteItem = NSMenuItem(title: "Rewrite Selection…", action: #selector(openRewrite), keyEquivalent: "k")
         rewriteItem.keyEquivalentModifierMask = [.command,.shift]; rewriteItem.target = self; edit.addItem(rewriteItem)
+        let exampleItem = NSMenuItem(title: "Do the Rest…",action: #selector(openExample),keyEquivalent: "k")
+        exampleItem.keyEquivalentModifierMask = [.command,.option]; exampleItem.target = self; edit.addItem(exampleItem)
         addItem("Find…",action:#selector(openFind),key:"f",to:edit)
         let replace = NSMenuItem(title:"Find and Replace…",action:#selector(openReplace),keyEquivalent:"f")
         replace.keyEquivalentModifierMask = [.command,.option]; replace.target=self; edit.addItem(replace)
@@ -1007,6 +1015,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         guard multipleInputReady() else { return }
         guard !session.isPrivate else { footer.operationError = "Private tabs use local text tools. AI is disabled."; return }
         guard textView.selectedRange().length > 0, !multiController.active else { footer.operationError = "Select one text fragment to rewrite."; return }
+        exampleWindow?.shutdown(); exampleWindow = nil
         rewriteWindow?.shutdown(); rewriteWindow = nil
         toolPalette?.close(); toolPalette = nil; findController.close()
         document.breakUndoGroup()
@@ -1019,21 +1028,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
             controller.onClose = { [weak self] in self?.rewriteWindow = nil }
             model.onApplied = { [weak self,weak controller] range,changed,target,text in
                 guard let self else { return }
-                if changed {
-                    let sourceLength = self.textView.textStorage?.length ?? 0
-                    let update = HistoryUpdate(cursor: NSMaxRange(range),source_length: sourceLength,
-                        target_length: sourceLength-target.length+range.length,
-                        edits: [.init(start: target.location,length: target.length,text: text)])
-                    self.updateLayoutPolicy(at: NSMaxRange(range))
-                    if !self.textView.applyHistoryUpdate(update) { self.textView.setPlainText(self.document.text) }
-                    self.textView.setSelectedRange(range); self.textView.scrollRangeToVisible(range)
-                    self.textDidChange(Notification(name: NSText.didChangeNotification))
-                } else { self.footer.operationError = "No changes proposed" }
+                self.presentGeneratedEdit(range: range,changed: changed,target: target,text: text)
                 controller?.close(); self.rewriteWindow = nil
                 self.window.makeKeyAndOrderFront(nil); self.window.makeFirstResponder(self.textView)
             }
             controller.present()
         } catch { footer.operationError = (error as? RewriteFailure)?.message ?? "Couldn't prepare this selection." }
+    }
+    @objc private func openExample() {
+        guard multipleInputReady() else { return }
+        guard !session.isPrivate else { footer.operationError = "Private tabs cannot teach AI examples."; return }
+        guard textView.selectedRange().length > 0, !multiController.active else { footer.operationError = "Select two or more complete rows."; return }
+        rewriteWindow?.shutdown(); rewriteWindow = nil; exampleWindow?.shutdown(); exampleWindow = nil
+        toolPalette?.close(); toolPalette = nil; findController.close(); document.breakUndoGroup()
+        do {
+            let target = textView.selectedRange()
+            let model = try exampleFactory?(session,target) ?? ExampleModel(session: session,target: target)
+            let controller = ExampleWindowController(model: model); exampleWindow = controller
+            controller.onSettings = { [weak self] in self?.showAISettings() }
+            controller.onClose = { [weak self] in self?.exampleWindow = nil }
+            model.onApplied = { [weak self,weak controller] range,changed,target,text in
+                guard let self else { return }
+                self.presentGeneratedEdit(range: range,changed: changed,target: target,text: text)
+                controller?.close(); self.exampleWindow = nil
+                self.window.makeKeyAndOrderFront(nil); self.window.makeFirstResponder(self.textView)
+            }
+            controller.present()
+        } catch { footer.operationError = (error as? RewriteFailure)?.message ?? "Couldn't prepare these rows." }
+    }
+    private func presentGeneratedEdit(range: NSRange, changed: Bool, target: NSRange, text: String) {
+        if changed {
+            let sourceLength = textView.textStorage?.length ?? 0
+            let update = HistoryUpdate(cursor: NSMaxRange(range),source_length: sourceLength,
+                target_length: sourceLength-target.length+range.length,
+                edits: [.init(start: target.location,length: target.length,text: text)])
+            updateLayoutPolicy(at: NSMaxRange(range))
+            if !textView.applyHistoryUpdate(update) { textView.setPlainText(document.text) }
+            textView.setSelectedRange(range); textView.scrollRangeToVisible(range)
+            textDidChange(Notification(name: NSText.didChangeNotification))
+        } else { footer.operationError = "No changes proposed" }
     }
     @objc private func findNext() { if !findController.visible { openFind() } else { findController.move(1) } }
     @objc private func findPrevious() { if !findController.visible { openFind() } else { findController.move(-1) } }
@@ -1083,6 +1116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func refreshTitle() {
         rewriteWindow?.model.sourceChanged()
+        exampleWindow?.model.sourceChanged()
         updatePosition()
         window.title = "\(session.label(session.active)) — vibechar"
         window.isDocumentEdited = session.isModifiedFile(session.active)
@@ -1094,11 +1128,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func undoEdit() {
-        if let field=commandWindow()?.firstResponder as? NSTextView,field.isFieldEditor || commandWindow() === rewriteWindow?.window { field.undoManager?.undo(); return }
+        if let field=commandWindow()?.firstResponder as? NSTextView,field.isFieldEditor || commandWindow() === rewriteWindow?.window || commandWindow() === exampleWindow?.window { field.undoManager?.undo(); return }
         applyHistory(redo: false)
     }
     @objc private func redoEdit() {
-        if let field=commandWindow()?.firstResponder as? NSTextView,field.isFieldEditor || commandWindow() === rewriteWindow?.window { field.undoManager?.redo(); return }
+        if let field=commandWindow()?.firstResponder as? NSTextView,field.isFieldEditor || commandWindow() === rewriteWindow?.window || commandWindow() === exampleWindow?.window { field.undoManager?.redo(); return }
         applyHistory(redo: true)
     }
 
@@ -1208,6 +1242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     private func showActiveBuffer() {
         rewriteWindow?.shutdown(); rewriteWindow = nil
+        exampleWindow?.shutdown(); exampleWindow = nil
         expandedLayoutRevision=nil
         multiController.cancel()
         toolPalette?.close(); toolPalette=nil
@@ -1245,6 +1280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     @objc private func closeScratch() {
         if let settings = aiSettings, commandWindow() === settings.window { settings.close(); return }
         if let rewriteWindow, commandWindow() === rewriteWindow.window { rewriteWindow.close(); return }
+        if let exampleWindow, commandWindow() === exampleWindow.window { exampleWindow.close(); return }
         closeBuffer(at: session.active)
     }
 
@@ -1338,6 +1374,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         precondition(!app.validateMenuItem(item)); app.openRewrite(); precondition(app.rewriteWindow == nil)
     }
 
+    static func exampleIntegrationSmokeTest(factory: @escaping @MainActor (RustSession,NSRange) throws -> ExampleModel) {
+        let previousMenu = NSApp.mainMenu, clipboard = NSPasteboard.withUniqueName()
+        var focused: NSWindow?
+        let app = AppDelegate(clipboard: clipboard,commandWindow: { focused },exampleFactory: factory)
+        app.makeWindow(restoreFrame: false); app.makeMenus(); focused = app.window
+        defer {
+            app.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+            app.textView.delegate = nil; app.window.delegate = nil; app.window.close()
+            clipboard.releaseGlobally(); NSApp.mainMenu = previousMenu
+        }
+        let rows = "{\"id\":42,\"name\":\"Anna\"}\r\n{\"id\":7,\"name\":\"Боб 🦀\"}\nnot json\n"
+        let source = "outside\n"+rows+"tail"
+        app.session.open(source); app.document.markSaved(); app.showActiveBuffer()
+        app.textView.setSelectedRange((source as NSString).range(of: rows))
+        let item = NSApp.mainMenu!.items.first { $0.title == "Edit" }!.submenu!.items.first { $0.action == #selector(openExample) }!
+        precondition(item.keyEquivalent == "k" && item.keyEquivalentModifierMask == [.command,.option] && app.validateMenuItem(item))
+        precondition(NSApp.sendAction(item.action!,to: item.target,from: item))
+        let pane = app.exampleWindow!; focused = pane.window
+        precondition(!pane.learnButton.isEnabled && pane.beforeText.string == "{\"id\":42,\"name\":\"Anna\"}")
+        precondition(!app.validateMenuItem(NSMenuItem(title: "Save",action: #selector(saveFile),keyEquivalent: "s")))
+        pane.afterText.string = "Anna — /users/42"; pane.textDidChange(Notification(name: NSText.didChangeNotification,object: pane.afterText))
+        exampleSnapshot(pane,name: "example")
+        pane.learnButton.performClick(nil); rewriteWait { !pane.model.busy }
+        precondition(pane.model.phase == .preview && pane.applyButton.isEnabled && pane.tabs.selectedSegment == 1)
+        precondition(pane.preview.string.contains("+ Anna") && pane.preview.string.contains("Боб 🦀"))
+        precondition(app.document.text == source && app.textView.string == source)
+        exampleSnapshot(pane,name: "changes")
+        pane.window?.setContentSize(NSSize(width: 700,height: 640)); pane.window?.contentView?.layoutSubtreeIfNeeded()
+        precondition(pane.window!.contentView!.bounds.contains(pane.applyButton.frame))
+        exampleSnapshot(pane,name: "narrow")
+        pane.tabs.selectedSegment = 3; _ = pane.tabs.sendAction(pane.tabs.action,to: pane.tabs.target)
+        precondition(pane.preview.string.contains("Read /name") && pane.preview.string.contains("Add after"))
+        exampleSnapshot(pane,name: "rule")
+        pane.tabs.selectedSegment = 4; _ = pane.tabs.sendAction(pane.tabs.action,to: pane.tabs.target)
+        precondition(pane.preview.string.contains("Selection row 3")); exampleSnapshot(pane,name: "skipped")
+        pane.applyButton.performClick(nil)
+        let expected = "outside\nAnna — /users/42\r\nБоб 🦀 — /users/7\nnot json\ntail"
+        precondition(app.document.text == expected && app.textView.string == expected && app.exampleWindow == nil)
+        focused = app.window; app.undoEdit(); precondition(app.document.text == source && app.textView.string == source && !app.document.isDirty)
+        app.redoEdit(); precondition(app.document.text == expected && app.textView.string == expected)
+        app.undoEdit(); app.textView.setSelectedRange((source as NSString).range(of: rows)); app.openExample()
+        let stale = app.exampleWindow!
+        stale.afterText.string = "Anna — /users/42"; stale.textDidChange(Notification(name: NSText.didChangeNotification,object: stale.afterText))
+        stale.learnButton.performClick(nil); rewriteWait { !stale.model.busy }
+        app.window.makeFirstResponder(app.textView); app.textView.setSelectedRange(NSRange(location: 0,length: 0))
+        app.textView.insertText("!",replacementRange: NSRange(location: NSNotFound,length: 0))
+        precondition(stale.model.phase == .stale && !stale.applyButton.isEnabled)
+        let changed = app.document.text; stale.applyButton.performClick(nil); precondition(app.document.text == changed)
+        focused = stale.window; let count = app.session.count; app.closeScratch()
+        precondition(app.exampleWindow == nil && app.session.count == count && stale.model.frame == nil && stale.afterText.string.isEmpty)
+        focused = app.window
+        app.textView.setSelectedRange((app.document.text as NSString).range(of: rows)); app.openExample()
+        let switched = app.exampleWindow!; app.newScratch()
+        precondition(app.exampleWindow == nil && switched.model.phase == .closed)
+        app.session.openPrivate(); precondition(app.document.replace(NSRange(location: 0,length: 0),with: "PRIVATE\nEXAMPLE"))
+        app.showActiveBuffer(); app.textView.selectAll(nil)
+        precondition(!app.validateMenuItem(item)); app.openExample(); precondition(app.exampleWindow == nil)
+    }
+
     private func closeBuffer(at index: Int) {
         guard multipleInputReady() else {return}
         guard index >= 0, index < session.count else { return }
@@ -1373,7 +1468,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(closeScratch) {
-            menuItem.title = (aiSettings != nil && commandWindow() === aiSettings?.window) || (rewriteWindow != nil && commandWindow() === rewriteWindow?.window) ? "Close Window" : "Close Tab"
+            menuItem.title = (aiSettings != nil && commandWindow() === aiSettings?.window) || (rewriteWindow != nil && commandWindow() === rewriteWindow?.window) || (exampleWindow != nil && commandWindow() === exampleWindow?.window) ? "Close Window" : "Close Tab"
+        }
+        if let exampleWindow, commandWindow() === exampleWindow.window {
+            if menuItem.action == #selector(undoEdit) || menuItem.action == #selector(redoEdit) { return (commandWindow()?.firstResponder as? NSTextView)?.isEditable == true }
+            return [#selector(showAISettings),#selector(showAbout),#selector(closeScratch),#selector(changeAppearance(_:))].contains(menuItem.action)
         }
         if let rewriteWindow, commandWindow() === rewriteWindow.window {
             if menuItem.action == #selector(undoEdit) || menuItem.action == #selector(redoEdit) {
@@ -1395,6 +1494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         }
         if menuItem.action == #selector(copyForAgent) { return session.isPrivate && !textView.string.isEmpty }
         if menuItem.action == #selector(openRewrite) { return !session.isPrivate && textView.selectedRange().length > 0 && !multiController.active }
+        if menuItem.action == #selector(openExample) { return !session.isPrivate && textView.selectedRange().length > 0 && !multiController.active }
         if menuItem.action == #selector(closeAgentAccess) { return session.dropActive }
         if menuItem.action == #selector(closeAllAgentAccess) { return session.hasDropAccess }
         if menuItem.action == #selector(saveFile) {
@@ -1472,7 +1572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         return closingWindow
     }
     func windowWillClose(_ notification: Notification) {
-        if notification.object as? NSWindow === window { aiSettings?.close(); rewriteWindow?.shutdown(); rewriteWindow = nil }
+        if notification.object as? NSWindow === window { aiSettings?.close(); rewriteWindow?.shutdown(); rewriteWindow = nil; exampleWindow?.shutdown(); exampleWindow = nil }
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         (closingWindow || saveBeforeQuitting()) ? .terminateNow : .terminateCancel
@@ -1481,6 +1581,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         stopping=true
         aiSettings?.shutdown()
         rewriteWindow?.shutdown(); rewriteWindow = nil
+        exampleWindow?.shutdown(); exampleWindow = nil
         // AppKit terminates the process without guaranteeing Swift/Rust deinit.
         closeAllAgentAccess()
         syntaxWork?.cancel(); syntaxTimer?.invalidate()

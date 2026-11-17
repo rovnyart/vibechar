@@ -41,7 +41,10 @@ explicit model refresh and **Test & Save**. Connection checks use an API-billed
 synthetic prompt. **Rewrite Selection…** (Shift+Cmd+K) sends the explicit selection
 and your instruction, previews changes, and applies them as one Undo step.
 **Keep exact** hides marked occurrences from the provider and preserves their bytes;
-private tabs use local tools. Example-based recipes follow separately. The first
+private tabs use local tools. **Do the Rest…** (Option+Cmd+K) learns a structural
+rule from one before/after row, validates the example and previews local processing
+of the selected rows. Only the example pair is sent to OpenAI. Skipped rows stay
+unchanged; Apply is one Undo. A saved recipe library is the next increment. The first
 native Pocket interface is implemented: compact
 tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
 and quiet session status. Art accepted the first Pocket increment.

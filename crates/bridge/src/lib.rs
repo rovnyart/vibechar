@@ -1,6 +1,7 @@
 //! Thread-confined, copy-in/copy-out C boundary. See include/vibechar.h for ownership.
 #![allow(clippy::missing_safety_doc)]
 
+mod examples;
 mod rewrite;
 
 use std::{
