@@ -1488,3 +1488,14 @@ README; the build never calls an image model or requires an API key.
   space is now reserved before loading text. The unwrapped editor also fits its
   actual clip viewport after scroller/ruler tiling. The build runs dedicated
   first-presentation and editing regressions with that system preference override.
+
+- Intel CI passed the complete scroller, long-text, editing, counters and close
+  checks, then stopped after a 60-second wait in Save As. The filesystem fixture
+  now injects a destination request instead of constructing `NSSavePanel` through
+  its remote system service. It retains the default-name/directory, cancellation,
+  failure, overwrite, history and recovery assertions; the production chooser
+  still presents the same native save panel.
+
+- ARM CI passed all native suites, including AI fixtures and both classic-scroller
+  regressions. Packaging then exposed Xcode 26 `lipo` argument parsing: the input
+  file now precedes `-verify_arch`, as required by that toolchain.

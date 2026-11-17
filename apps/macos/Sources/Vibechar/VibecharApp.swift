@@ -1707,22 +1707,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     private func performSave(alwaysChooseDestination: Bool,
-                             chooseDestination: @MainActor (NSSavePanel) -> URL? = { $0.runModal() == .OK ? $0.url : nil }) throws {
+                             chooseDestination: @MainActor (SaveDestination) -> URL? = { $0.choose() }) throws {
         guard multipleInputReady() else {throw NSError(domain:"Vibechar",code:1,userInfo:[NSLocalizedDescriptionKey:"Finishing occurrence matching. Save again when it completes."])}
         toolPalette?.close(); toolPalette=nil
         document.breakUndoGroup()
         let wasPrivate = session.isPrivate
         var destination = alwaysChooseDestination || wasPrivate ? nil : fileURL
         if destination == nil {
-            let panel = NSSavePanel()
-            panel.nameFieldStringValue = fileURL?.lastPathComponent ?? "Untitled.txt"
-            if let fileURL { panel.directoryURL = fileURL.deletingLastPathComponent() }
-            if wasPrivate {
-                panel.title = "Save Private Tab"
-                panel.message = "Saving makes this a regular file tab, includes it in local recovery, and closes its agent access."
-                panel.nameFieldStringValue = "Private.txt"
-            }
-            destination = chooseDestination(panel)
+            destination = chooseDestination(SaveDestination(
+                name: wasPrivate ? "Private.txt" : fileURL?.lastPathComponent ?? "Untitled.txt",
+                directory: fileURL?.deletingLastPathComponent(), isPrivate: wasPrivate))
         }
         guard let destination else { return }
         try saveActive(to: destination)
@@ -2409,26 +2403,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         }
         app.makeMenus()
         let saveAs = NSApp.mainMenu!.items.first { $0.title == "File" }!.submenu!.items.first { $0.action == #selector(saveFileAs) }!
-        precondition(saveAs.keyEquivalent == "s" && saveAs.keyEquivalentModifierMask == [.command, .shift] && saveAs.target === app)
+        nativeSmokeInvariant(saveAs.keyEquivalent == "s" && saveAs.keyEquivalentModifierMask == [.command, .shift] && saveAs.target === app)
         let original = root.appendingPathComponent("original.txt")
         let renamed = root.appendingPathComponent("копия.txt")
         let fixture = "Save As · Привет 👩‍💻\r\n"
         try! fixture.write(to: original, atomically: true, encoding: .utf8)
-        precondition(app.document.replace(NSRange(location: 0, length: 0), with: fixture))
+        nativeSmokeInvariant(app.document.replace(NSRange(location: 0, length: 0), with: fixture))
         app.session.completeSave(to: original)
-        precondition(app.document.replace(NSRange(location: fixture.utf16.count, length: 0), with: "!"))
+        nativeSmokeInvariant(app.document.replace(NSRange(location: fixture.utf16.count, length: 0), with: "!"))
         app.session.rememberSelection(NSRange(location: 0, length: 1))
         app.showActiveBuffer()
         let textBeforeSave = app.document.text
         var asked = false
-        try! app.performSave(alwaysChooseDestination: true) { panel in
+        try! app.performSave(alwaysChooseDestination: true) { request in
             asked = true
-            precondition(panel.nameFieldStringValue == "original.txt")
-            precondition(panel.directoryURL?.resolvingSymlinksInPath() == root.resolvingSymlinksInPath())
+            nativeSmokeInvariant(request.name == "original.txt" && !request.isPrivate)
+            nativeSmokeInvariant(request.directory?.resolvingSymlinksInPath() == root.resolvingSymlinksInPath())
             return nil
         }
-        precondition(asked && app.session.fileURL == original && app.document.isDirty && app.document.text == textBeforeSave)
-        precondition(app.textView.selectedRange() == NSRange(location: 0, length: 1))
+        nativeSmokeInvariant(asked && app.session.fileURL == original && app.document.isDirty && app.document.text == textBeforeSave)
+        nativeSmokeInvariant(app.textView.selectedRange() == NSRange(location: 0, length: 1))
         let readOnly = root.appendingPathComponent("readonly.txt")
         let symlink = root.appendingPathComponent("link.txt")
         try! "preserve".write(to: readOnly, atomically: true, encoding: .utf8)
@@ -2439,26 +2433,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
                 try app.performSave(alwaysChooseDestination: true) { _ in invalid }
                 preconditionFailure("A failed Save As must keep the original destination")
             } catch {}
-            precondition(app.session.fileURL == original && app.document.isDirty && app.document.text == textBeforeSave)
+            nativeSmokeInvariant(app.session.fileURL == original && app.document.isDirty && app.document.text == textBeforeSave)
         }
         try! "replace fixture".write(to: renamed, atomically: true, encoding: .utf8)
         try! app.performSave(alwaysChooseDestination: true) { _ in renamed }
-        precondition(app.session.fileURL == renamed && !app.document.isDirty && app.session.count == 1)
-        precondition(app.session.label(0) == "копия.txt" && app.textView.selectedRange() == NSRange(location: 0, length: 1))
-        precondition(try! Data(contentsOf: original) == Data(fixture.utf8))
-        precondition(try! Data(contentsOf: renamed) == Data((fixture + "!").utf8))
-        precondition(try! String(contentsOf: readOnly, encoding: .utf8) == "preserve")
-        precondition(app.document.history(redo: false) != nil && app.document.isDirty)
-        precondition(app.document.history(redo: true) != nil && !app.document.isDirty)
-        precondition(app.document.replace(NSRange(location: app.document.text.utf16.count, length: 0), with: "?"))
+        nativeSmokeInvariant(app.session.fileURL == renamed && !app.document.isDirty && app.session.count == 1)
+        nativeSmokeInvariant(app.session.label(0) == "копия.txt" && app.textView.selectedRange() == NSRange(location: 0, length: 1))
+        nativeSmokeInvariant(try! Data(contentsOf: original) == Data(fixture.utf8))
+        nativeSmokeInvariant(try! Data(contentsOf: renamed) == Data((fixture + "!").utf8))
+        nativeSmokeInvariant(try! String(contentsOf: readOnly, encoding: .utf8) == "preserve")
+        nativeSmokeInvariant(app.document.history(redo: false) != nil && app.document.isDirty)
+        nativeSmokeInvariant(app.document.history(redo: true) != nil && !app.document.isDirty)
+        nativeSmokeInvariant(app.document.replace(NSRange(location: app.document.text.utf16.count, length: 0), with: "?"))
         app.showActiveBuffer()
         try! app.performSave(alwaysChooseDestination: false) { _ in preconditionFailure("Regular Save must reuse the new destination") }
-        precondition(try! Data(contentsOf: renamed) == Data((fixture + "!?").utf8))
-        precondition(try! Data(contentsOf: original) == Data(fixture.utf8))
-        precondition(app.recovery!.flush(app.session.checkpoint()))
+        nativeSmokeInvariant(try! Data(contentsOf: renamed) == Data((fixture + "!?").utf8))
+        nativeSmokeInvariant(try! Data(contentsOf: original) == Data(fixture.utf8))
+        nativeSmokeInvariant(app.recovery!.flush(app.session.checkpoint()))
         let restored = RustSession()
-        precondition(try! restored.restore(from: app.recovery!.fileURL))
-        precondition(restored.fileURL == renamed && RustDocument(session: restored).text == fixture + "!?")
+        nativeSmokeInvariant(try! restored.restore(from: app.recovery!.fileURL))
+        nativeSmokeInvariant(restored.fileURL == renamed && RustDocument(session: restored).text == fixture + "!?")
         print("Save As native smoke passed: menu, cancel/failure, replacement, Unicode/CRLF, selection/history, next save, restart")
     }
 
@@ -2804,5 +2798,25 @@ private func nativeSmokeInvariant(_ condition: @autoclosure () -> Bool, _ messag
     guard condition() else {
         fputs("Native smoke invariant failed at VibecharApp.swift:\(line): \(message)\n", stderr)
         exit(1)
+    }
+}
+
+// Keep destination choice injectable without contacting the system's remote
+// save-panel service during filesystem tests on a headless runner.
+@MainActor
+private struct SaveDestination {
+    let name: String
+    let directory: URL?
+    let isPrivate: Bool
+
+    func choose() -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = name
+        if let directory { panel.directoryURL = directory }
+        if isPrivate {
+            panel.title = "Save Private Tab"
+            panel.message = "Saving makes this a regular file tab, includes it in local recovery, and closes its agent access."
+        }
+        return panel.runModal() == .OK ? panel.url : nil
     }
 }

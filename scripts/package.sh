@@ -11,7 +11,7 @@ if [[ "$system" == Darwin ]]; then
   app="${1:-$root/dist/Vibechar.app}"
   arch="$(lipo -archs "$app/Contents/MacOS/Vibechar")"
   case "$arch" in arm64|x86_64) ;; *) echo 'Expected a single-architecture Mac bundle.' >&2; exit 1 ;; esac
-  for helper in vc vibechar; do lipo -verify_arch "$arch" "$app/Contents/Helpers/$helper"; done
+  for helper in vc vibechar; do lipo "$app/Contents/Helpers/$helper" -verify_arch "$arch"; done
   if spctl --assess --type execute "$app" >/dev/null 2>&1 && xcrun stapler validate "$app" >/dev/null 2>&1; then notarized=true; fi
   asset="vibechar-$platform-$arch.zip"
   ditto -c -k --keepParent "$app" "$out/$asset"
