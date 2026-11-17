@@ -1612,3 +1612,29 @@ disposable CI signing keychain is present and signs that outer bundle with the
 same Developer ID. The subsequent download/relaunch test has no credentials;
 the candidate ZIP remains the unmodified notarized production archive. Archive
 verification and Sparkle's connection authentication stay enabled.
+
+## Vibechar 1.0.0 — published and verified
+
+[The complete manual Release run](https://github.com/rovnyart/vibechar/actions/runs/44126496415)
+passed at `59c7e383be562780a765040378a924cb23c83133` and published
+[Vibechar 1.0.0](https://github.com/rovnyart/vibechar/releases/tag/v1.0.0).
+Both full client suites passed. The Mac candidate was Developer ID signed,
+accepted by Apple, stapled, packaged and Ed25519 signed. The real Sparkle fixture
+installed it over a Developer ID-signed 0.0.1 host, relaunched, retained scratch
+recovery and verified both helper versions plus the notarized replacement.
+
+Public acceptance checks on this Mac also passed: the actual main-branch curl
+installer performed a fresh install and reinstall into a temporary account;
+`vc --version` and `vc -t --version` both reported 1.0.0. Code signing, the stapled
+ticket and Gatekeeper passed. All six shipped Mach-O files, including Sparkle's
+three runtime binaries, contained only arm64. CryptoKit independently accepted
+the downloaded archive's Ed25519 signature and rejected a mutated byte. The
+installed binary passed the native update UI/private/recovery smoke suite.
+
+The public unauthenticated latest-feed URL returned 1.0.0 with the versioned
+Mac download URL. The stable release contains exactly six declared assets: both
+platform archives and metadata, SHA256SUMS and appcast.xml. The generated 1.0.0
+changelog contains the Conventional Commit history and one version entry despite
+failed/cancelled attempts. Ordinary main pushes run checks only; publication is
+manual. Temporary install homes were removed, and the user's editor, recovery,
+PATH and API credentials were untouched.
