@@ -49,6 +49,7 @@ are generated from Conventional Commits. Earlier `build-*` archives predate vers
 - **ci**: isolate native AI suites and finish AppKit startup ([71b1943](https://github.com/rovnyart/vibechar/commit/71b1943792736f36a6eea2f810a89785af060786))
 - **ci**: use the normal app lifecycle for update installation ([0c47710](https://github.com/rovnyart/vibechar/commit/0c47710c32ceadf5c8dc67220ec8201d7d2f9d75))
 - **ci**: wait for complete Secret Drop clipboard references ([fa2dda9](https://github.com/rovnyart/vibechar/commit/fa2dda930b12ecd529119de66291a38c81d25442))
+- **ci**: sign the update bootstrap with the release identity ([674edc6](https://github.com/rovnyart/vibechar/commit/674edc660b5ab72d6f145d0bb9cdecc8af2312c7))
 
 ### Performance
 
