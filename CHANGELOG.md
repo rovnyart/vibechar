@@ -3,7 +3,7 @@
 Notable changes to Vibechar. Versions follow Semantic Versioning; release notes
 are generated from Conventional Commits. Earlier `build-*` archives predate versioned releases.
 
-## [1.0.0] — 2026-11-17
+## [1.0.0](https://github.com/rovnyart/vibechar/releases/tag/v1.0.0) — 2026-11-17
 
 ### Added
 
@@ -23,3 +23,4 @@ are generated from Conventional Commits. Earlier `build-*` archives predate vers
 - Developer ID signing, Apple notarization and checksum-verified downloads.
 - Mac GUI, terminal and launcher update together in one app bundle.
 - Portable Linux x86_64 terminal client.
+
