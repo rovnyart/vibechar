@@ -32,6 +32,16 @@ def main():
             assert FIXTURE not in text, "copied instruction exposed the value"
             match = re.search(r"vibechar://grant/[0-9a-f]{16}/[0-9a-f]{64}", text)
             return match.group() if match else None
+        def wait_reference(editor, previous=None):
+            # The synthetic copy helper truncates the file before writing it.
+            # A transient None is not a new grant; retain the value we waited for.
+            found = None
+            def ready():
+                nonlocal found
+                found = reference()
+                return found is not None and found != previous
+            editor.wait_until(ready)
+            return found
         def use(ref, code, expected=0, name="TEST_TOKEN"):
             result = subprocess.run([str(BINARY), "run", ref, "--env", name, "--", sys.executable, "-c", code],
                                     env={"PATH": os.defpath, "VIBECHAR_HANDOFF_DIR": str(bridge), "EXPECTED": FIXTURE},
@@ -44,8 +54,7 @@ def main():
         state = folder / "state"
         with Session(state=state, extra_env=environment) as editor:
             editor.send(b"ordinary survives\x10\x1b[200~" + FIXTURE.encode() + b"\x1b[201~\x07")
-            editor.wait_until(lambda: clipboard.exists())
-            ref = reference(); assert ref
+            ref = wait_reference(editor)
             exact = use(ref, "import os; print(os.environ['TEST_TOKEN']==os.environ['EXPECTED'])")
             assert exact.stdout == b"True\n" and not exact.stderr
             masked = use(ref, "import os,sys; print(os.environ['TEST_TOKEN']); print(os.environ['TEST_TOKEN'],file=sys.stderr); sys.exit(7)", expected=7)
@@ -60,8 +69,7 @@ def main():
             use(ref, no_child, expected=1); assert not marker.exists()
             copy.write_text(copy_program)
             editor.send(b"\x07")
-            editor.wait_until(lambda: reference() != ref)
-            ref = reference()
+            ref = wait_reference(editor, ref)
             editor.wait_until(lambda: (data := editor.checkpoint()) is not None and data["buffers"][0]["text"] == "ordinary survives")
             snapshot = (state / "session.json").read_bytes()
             assert len(editor.checkpoint()["buffers"]) == 1
@@ -70,15 +78,13 @@ def main():
             editor.wait_for(b"All agent access closed")
             use(ref, no_child, expected=1); assert not marker.exists()
             editor.send(b"\x07")
-            editor.wait_until(lambda: reference() != ref)
-            ref = reference()
+            ref = wait_reference(editor, ref)
             editor.send(b"!")
             # Wait for edit acknowledgement before checking the old reference.
             editor.wait_until(lambda: "second line!" in editor.screen_text())
             use(ref, no_child, expected=1); assert not marker.exists()
             editor.send(b"\x1a\x07")  # Undo preserves private text, but opens a fresh grant.
-            editor.wait_until(lambda: reference() != ref)
-            last = reference()
+            last = wait_reference(editor, ref)
             use(last, "import os; print(os.environ['TEST_TOKEN']==os.environ['EXPECTED'])")
             editor.send(b"\x11\x11"); editor.finish()
         use(last, no_child, expected=1); assert not marker.exists()
@@ -91,8 +97,7 @@ def main():
         clipboard.write_text(FIXTURE)
         with Session(state=folder / "fast-state", extra_env=environment) as editor:
             editor.send(b"\x1b[19~")  # F8 Paste Secret for Agent.
-            editor.wait_until(lambda: reference() is not None)
-            fast = reference()
+            fast = wait_reference(editor)
             assert use(fast, "import os; print(os.environ['TEST_TOKEN']==os.environ['EXPECTED'])").stdout == b"True\n"
             editor.send(b"\x1b[19~")
             editor.wait_for(b"Clipboard already contains instructions")

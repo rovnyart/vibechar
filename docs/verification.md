@@ -1596,3 +1596,10 @@ again. The fixture was reopening its own locked recovery file. It now uses the
 normal single application lifecycle, canonical temporary paths and explicit
 phase/error diagnostics. Local native suites and the 24 version/publication
 fixtures passed again before the retry; production launch behavior is unchanged.
+
+The next run (`44123434875`) exposed an existing Linux Secret Drop PTY fixture
+race while the Mac job was still queued. Its `reference() != previous` condition
+accepted `None` during truncation of the synthetic clipboard file, then passed
+that value to the helper. The fixture now waits for a nonempty parsed grant and
+retains the exact value that satisfied the wait, including the initial/fast paths.
+This changes only test synchronization, not Secret Drop behavior or permissions.
