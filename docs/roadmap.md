@@ -222,22 +222,22 @@ the broader imported-language count is reported honestly.
 AI UI and provider networking are macOS-only. Shared Rust retains document/history,
 proposal validation and atomic apply; implementing AI in the TUI is outside MVP.
 
-#### M4.1 — Connect OpenAI in Settings (next runnable increment)
+#### M4.1 — Connect OpenAI in Settings
 
-- [ ] Native Settings → AI, reachable through Cmd+, with masked key entry,
+- [x] Native Settings → AI, reachable through Cmd+, with masked key entry,
   replace/delete actions and Keychain storage. Keep keys out of ordinary settings,
   session recovery, logs and request/error diagnostics.
-- [ ] A compact searchable choice of supported Responses text models, with a useful
+- [x] A compact searchable choice of supported Responses text models, with a useful
   default and saved model ID. Use current official model capabilities and account
   discovery where permitted; do not expose an unfiltered all-purpose model catalog.
-- [ ] Explicit model refresh and Test Connection actions through a small asynchronous
+- [x] Explicit model refresh and Test Connection actions through a small asynchronous
   native OpenAI adapter. A short synthetic Responses request verifies the chosen
   model; listing models alone is not an end-to-end inference test.
-- [ ] Distinguish authentication, model access, quota/rate limit and connectivity
+- [x] Distinguish authentication, model access, quota/rate limit and connectivity
   failures. Restricted model-list access must not be called an invalid key.
-- [ ] Explain that the model test is an API-billed request. Send no tab content,
+- [x] Explain that the model test is an API-billed request. Send no tab content,
   selection or clipboard text. No background checking or requests on launch.
-- [ ] Preserve a working saved configuration if replacement/testing fails; cancel
+- [x] Preserve a working saved configuration if replacement/testing fails; cancel
   or supersede stale checks after key/model edits. Test with isolated Keychain
   entries and provider fixtures; live smoke is explicitly invoked.
 

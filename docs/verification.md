@@ -1,6 +1,6 @@
 # Prototype verification
 
-Started: 2026-11-11. Latest increment: 2026-11-16.
+Started: 2026-11-11. Latest increment: 2026-11-17.
 This records local prototype evidence, not MVP release acceptance.
 
 ## Environment
@@ -15,6 +15,8 @@ This records local prototype evidence, not MVP release acceptance.
   syntax, find/replace, local tools, the C bridge and terminal model/layout.
 - Rust formatting and Clippy with warnings as errors.
 - Rust release workspace build and Swift release link.
+- Mac AI Settings smoke: isolated Keychain, synthetic HTTP responses, safe failures,
+  model preferences, cancellation/stale checks, native controls and menu routing.
 - Native Swift ↔ Rust smoke test: embedded NUL, Russian text, UTF-16 rejection,
   emoji substitution, undo/redo, dirty tracking, and saved-state reset.
 - Native input smoke exercises AppKit typing/deletion, isolated one-character
@@ -1207,5 +1209,60 @@ above. Native startup percentiles, the full memory matrix and renderer decisions
 still need qualification; M1's baseline checkbox remains open. M2 recovery is partial: retention and broader durability
 qualification remain open. M3 smart syntax, find/replace, nine local tools and
 basic shared multicursor editing are implemented; complete large-document mode
-remains open. M4/M5 AI is not
-implemented. The prototype should not hold the only copy of important text.
+remains open. M4.1 connection settings are implemented; M4.2/M5 editor AI remains
+open. The prototype should not hold the only copy of important text.
+
+## 2026-11-17 — M4.1: Mac OpenAI connection settings
+
+Implemented a native Pocket Settings window (Cmd+,): secure key entry, replace /
+remove, a searchable four-model Responses catalog, explicit Refresh and Test &
+Save. The only startup change is the menu entry; opening Settings is the first
+Keychain read, and provider requests require an explicit action. The terminal
+and shared Rust engine have no provider changes.
+
+`bash scripts/check.sh` passed formatting, strict Clippy, **141 Rust tests**, the
+release workspace build, **53 real PTY scenarios**, the separate Secret Drop
+helper scenario, and all Swift/native smoke tests including AI Settings. The
+development app was rebuilt and ad-hoc signed; `codesign --verify --deep --strict`
+passed. The dedicated `--smoke-ai-settings` also passed from the signed bundle.
+
+New synthetic/native evidence:
+
+- A UUID-scoped real Keychain item was added, read, replaced and deleted, including
+  repeated removal. All test values were synthetic; the production service was
+  never read. In-memory failure fixtures verified that authentication failure and
+  a failed Keychain replacement preserve the saved credential/model preference.
+- Reopening settings restores the saved model and shows an empty secure field.
+  The temporary preferences domain contains no synthetic key. Closing clears the
+  field/editor undo state and retained settings keys (a short Keychain commit
+  already in progress finishes first). Model-availability metadata is discarded
+  so it cannot survive into a different credential's session.
+- URLProtocol fixtures checked the actual adapter's HTTPS endpoint, method,
+  synthetic Authorization header and exact request fields. Responses tests send
+  only the fixed test prompt, `store: false`, and a bounded model-specific output
+  budget. Catalog discovery filters unsupported IDs.
+- Fixtures exercised 401 authentication, listing 403 versus inference 403, model
+  404, quota versus rate-limit 429, 503, rejected requests, malformed / incomplete /
+  refusal responses, timeout and offline errors. Error text never includes the
+  provider body or its echoed synthetic key. Oversized response bodies are rejected;
+  cancellation stops a suspended URL loading task. The production redirect
+  delegate rejects a constructed cross-host redirect without contacting it.
+- A deliberately cancellation-insensitive service completed late replies after
+  key changes, model changes, Cancel, close and removal. None saved a stale key or
+  model. Opening, searching and selecting models made zero provider calls.
+  Restricted model listing still allowed a direct model test.
+- Native controls exercised local search (including no matches and Return),
+  Test & Save error/success, refresh, secure-field clearing, singleton Settings
+  opening and menu definitions. Settings command routing uses an injected focused
+  window in the background harness: Close closes Settings, editor actions are
+  disabled, and field Undo leaves the document's revision/tab count unchanged.
+  This avoids depending on macOS granting foreground activation to a CLI test.
+- Ready, error and saved-key/availability views were bitmap-rendered and visually
+  inspected in light and dark appearances. These captures exclude the system
+  titlebar. Focus stealing, physical keyboard interaction, VoiceOver and broader
+  accessibility acceptance remain manual qualification.
+
+No real OpenAI request was made and no real key was collected. Account/model
+access and billing must be checked through the explicit UI Test & Save action.
+It is API-billed and sends no editor/selection/clipboard content. Rewriting, diffs
+and recipes remain subsequent increments; no AI editing was added here.

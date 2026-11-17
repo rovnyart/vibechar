@@ -214,8 +214,8 @@ modification dot is independent from the footer's local session-save status.
 View provides text zoom (Zoom In/Out and Cmd+0 reset), an appearance submenu
 (Follow System/Light/Dark), and full screen. Appearance and the normal window frame
 persist locally. The canvas uses native AppKit input and an opaque light/dark
-surface. Line numbers and native line/column indicators are implemented. AI remains
-later work; the design studies showed illustrative future interactions.
+surface. Line numbers and native line/column indicators are implemented. AI connection
+settings are implemented below; rewriting and the illustrated previews remain later work.
 
 The build's native smoke test checks tab geometry at 420–1600 pt, active-tab
 visibility with 14 tabs, per-tab close targets, and the actual window composition
@@ -474,8 +474,9 @@ their grants are unaffected. Ordinary recovery can now include the saved text.
 Existing ordinary tabs cannot be converted to private: their earlier snapshots
 may already exist. This is recovery exclusion, not encrypted or securely wiped
 memory. It does not erase clipboard contents, explicit exports, or OS-managed
-swap/crash data. No AI/action/diagnostic service exists yet; each future service
-must enforce private-buffer exclusion before collecting content.
+swap/crash data. Document AI actions and diagnostics are future work; each service
+must enforce private-buffer exclusion before collecting content. The global AI
+Settings test reads no document content.
 
 ## Secret Drop
 
@@ -676,14 +677,62 @@ scripts/           local build and verification entry points
 docs/              roadmap, architecture, development, verification evidence
 ```
 
+## OpenAI connection settings (Mac only)
+
+Open **vibechar → Settings…** with **Cmd+,**. Paste an API key, pick a model, and
+click **Test & Save** (Cmd+Return). The test sends only `Reply with the single word
+OK.` to OpenAI Responses, with `store: false` and a bounded output budget. It uses
+your API billing. No document, selection or clipboard text is read by the adapter.
+Opening Settings, searching and selecting a model make no network requests.
+
+The key is stored as a non-synchronizing generic password in this Mac's Keychain
+(`dev.vibechar.openai`, account `api-key`, WhenUnlockedThisDeviceOnly). The model ID
+alone is saved in UserDefaults (`OpenAIModel`). Reopening Settings leaves the masked
+entry blank; paste a new key to replace the saved one. A successful test precedes
+saving. A failed test or Keychain write keeps the working saved configuration.
+**Remove** deletes the saved key; closing Settings clears its in-memory key entries.
+Edits, Cancel or closing the window supersede pending requests. A short Keychain
+commit already in progress finishes even if the window closes.
+
+**Refresh** lists account model IDs and marks availability within the supported
+text-model catalog. It doesn't run inference. A listing permission error still
+allows a direct model test. An unlisted model can be tested; listing is advisory.
+The initial catalog is Luna, Sol, Terra and Astra; Luna is the default. Model IDs,
+Responses support and test reasoning settings were checked on 2026-11-17 against
+the official [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+[Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) and
+[Astra](https://developers.openai.com/api/docs/models/gpt-6-astra) documentation.
+Luna/Terra tests use `none` with 128 output tokens; Sol/Astra use `low` with 1,024
+tokens (including reasoning). Completed text output is required for success.
+
+Provider bodies and raw network errors never appear in diagnostics. Requests use
+an ephemeral URLSession with no disk cache, cookies or credential cache, reject
+redirects, cap response bodies at 1 MiB, and have 30 s request / 45 s resource
+timeouts. There is no retry loop or background account check. The TUI neither
+reads this credential nor calls OpenAI. Selection rewriting/diffs are M4.2.
+
+Run isolated fixtures and native UI/menu checks without real API requests:
+
+```sh
+dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-ai-settings
+VIBECHAR_INTERFACE_SNAPSHOTS="$PWD/dist/ai-settings-ui" \
+  dist/Vibechar.app/Contents/MacOS/Vibechar --smoke-ai-settings
+```
+
+The standard Mac build includes this smoke. It uses a temporary UserDefaults suite,
+synthetic HTTP responses and a UUID-scoped Keychain service, removed afterward.
+For an opt-in live check, enter your key in the UI and click Test & Save; automated
+tests never discover real credentials from Keychain, the environment or clipboard.
+
 ## M1 limitations
 
-The app is an early prototype. AI and global hotkeys are later milestones. AI is
-planned only for the Mac GUI: Settings/key/model/connection test first, then
-selection rewriting and previews. TUI remains a local editor with Secret Drop.
+The app is an early prototype. Global hotkeys and AI editing are later milestones.
+AI connection settings are Mac GUI-only; selection rewriting and previews follow.
+TUI remains a local editor with Secret Drop.
 Shared multicursors and TUI selection/clipboard are implemented; acceptance across terminal
 emulators/Linux and native IME composition qualification remain pending. No
-dedicated settings window exists; recovery uses a versioned JSON checkpoint.
+general editing settings pane exists yet; recovery uses a versioned JSON checkpoint.
 
 Adjacent typing and repeated backspace/forward delete undo as runs in both clients.
 A pause of at least one second, cursor/selection movement, newline, paste/cut,
@@ -726,8 +775,8 @@ Saves are atomic at the file replacement level, but external-change checks,
 filesystem race handling, durability/permission edge cases, and a unified file
 service are M2 work. Do not use this prototype as the only copy of important text.
 Both interfaces reject replacing known symlinks and read-only destinations.
-External-change and filesystem-race protection remain unqualified. No network
-calls are made by the editor.
+External-change and filesystem-race protection remain unqualified. Network calls
+are made only by explicit Mac AI Settings actions.
 
 ## Validation policy
 

@@ -10,7 +10,7 @@ let package = Package(
         .executableTarget(
             name: "Vibechar",
             dependencies: ["CVibechar"],
-            linkerSettings: [.linkedLibrary("vibechar_bridge"), .linkedFramework("AppKit")]
+            linkerSettings: [.linkedLibrary("vibechar_bridge"), .linkedFramework("AppKit"), .linkedFramework("Security")]
         ),
     ]
 )

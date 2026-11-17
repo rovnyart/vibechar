@@ -34,9 +34,10 @@ The shared Rust engine drives both a terminal editor and a native macOS editing
 shell. Both support multiple scratch buffers with independent text,
 cursor/selection, undo history, file destinations, and unsaved-close protection.
 Both clients save their own local sessions and restore ordinary tabs after restart. Their
-session files are separate; live synchronization is not implemented. AI is still
-ahead. The next AI increment is Mac Settings: Keychain key storage, connection
-testing and model selection; rewriting/previews follow separately. The first
+session files are separate; live synchronization is not implemented. Mac Settings
+(Cmd+,) connects your OpenAI account: Keychain storage, searchable model choice,
+explicit model refresh and **Test & Save**. Tests use a small API-billed synthetic
+prompt; tab content is never included. Rewriting/previews follow separately. The first
 native Pocket interface is implemented: compact
 tabs with overflow, the `V_` mark, warm light/graphite dark appearances, text zoom,
 and quiet session status. Art accepted the first Pocket increment.

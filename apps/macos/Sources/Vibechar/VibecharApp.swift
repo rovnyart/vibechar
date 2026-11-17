@@ -8,6 +8,10 @@ struct VibecharApp {
             AppDelegate.profileNativeEditing()
             return
         }
+        if CommandLine.arguments.contains("--smoke-ai-settings") {
+            aiSettingsSmokeTest()
+            return
+        }
         if CommandLine.arguments.contains("--smoke-first-presentation") {
             AppDelegate.firstPresentationSmokeTest()
             return
@@ -73,6 +77,7 @@ struct VibecharApp {
             AppDelegate.toolsSmokeTest()
             AppDelegate.multicursorPasteSmokeTest()
             AppDelegate.multiSmokeTest()
+            aiSettingsSmokeTest()
             print("Swift ↔ Rust smoke test passed")
             return
         }
@@ -146,6 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     private let session: RustSession
     private let document: RustDocument
     private let clipboard: NSPasteboard
+    private let aiSettingsFactory: (@MainActor () -> AISettingsWindowController)?
+    private let commandWindow: @MainActor () -> NSWindow?
+    private var aiSettings: AISettingsWindowController?
     private var fileURL: URL? { session.fileURL }
     private var window: NSWindow!
     private let textView = PocketTextView()
@@ -476,11 +484,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         print("Presentation history native smoke passed: incremental edits, UTF-16, empty Redo, typography, fallback, marked text and layout policy")
     }
 
-    init(clipboard: NSPasteboard = .general) {
+    init(clipboard: NSPasteboard = .general, aiSettingsFactory: (@MainActor () -> AISettingsWindowController)? = nil,
+         commandWindow: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow }) {
         let session = RustSession()
         self.session = session
         document = RustDocument(session: session)
         self.clipboard = clipboard
+        self.aiSettingsFactory = aiSettingsFactory
+        self.commandWindow = commandWindow
         super.init()
     }
 
@@ -664,6 +675,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         let menu = NSMenu()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About vibechar", action: #selector(showAbout), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        addItem("Settings…", action: #selector(showAISettings), key: ",", to: appMenu)
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit vibechar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         addMenu("vibechar", submenu: appMenu, to: menu)
@@ -1040,11 +1053,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func undoEdit() {
-        if let field=NSApp.keyWindow?.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.undo(); return }
+        if let field=commandWindow()?.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.undo(); return }
         applyHistory(redo: false)
     }
     @objc private func redoEdit() {
-        if let field=NSApp.keyWindow?.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.redo(); return }
+        if let field=commandWindow()?.firstResponder as? NSTextView,field.isFieldEditor { field.undoManager?.redo(); return }
         applyHistory(redo: true)
     }
 
@@ -1188,7 +1201,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     @objc private func closeScratch() {
+        if let settings = aiSettings, commandWindow() === settings.window { settings.close(); return }
         closeBuffer(at: session.active)
+    }
+
+    @objc private func showAISettings() {
+        if aiSettings == nil { aiSettings = aiSettingsFactory?() ?? AISettingsWindowController() }
+        aiSettings?.present()
+    }
+
+    static func aiSettingsMenuSmokeTest(controller: AISettingsWindowController) {
+        let previousMenu = NSApp.mainMenu
+        let clipboard = NSPasteboard.withUniqueName()
+        var creations = 0
+        // Window activation is controlled by macOS and may be denied to background
+        // CLI builds. Supply the focused window to test the same command routing.
+        let app = AppDelegate(clipboard: clipboard, aiSettingsFactory: { creations += 1; return controller }, commandWindow: { controller.window })
+        app.makeWindow(restoreFrame: false); app.makeMenus()
+        defer {
+            controller.shutdown(); app.textView.delegate = nil; app.window.orderOut(nil)
+            clipboard.releaseGlobally(); NSApp.mainMenu = previousMenu
+        }
+        let settingsItem = NSApp.mainMenu!.items[0].submenu!.items.first { $0.action == #selector(showAISettings) }!
+        precondition(settingsItem.keyEquivalent == "," && settingsItem.keyEquivalentModifierMask == [.command])
+        precondition(NSApp.sendAction(settingsItem.action!, to: settingsItem.target, from: settingsItem))
+        app.showAISettings()
+        precondition(creations == 1 && controller.window?.isVisible == true)
+        for action in [#selector(saveFile), #selector(saveFileAs), #selector(newScratch), #selector(openTools), #selector(addNextOccurrence)] {
+            precondition(!app.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: "")))
+        }
+        let count = app.session.count, revision = app.document.revision
+        controller.window?.makeFirstResponder(controller.keyField)
+        precondition((controller.window?.firstResponder as? NSTextView)?.isFieldEditor == true)
+        app.undoEdit()
+        precondition(app.session.count == count && app.document.revision == revision)
+        precondition(app.validateMenuItem(NSMenuItem(title: "", action: #selector(closeScratch), keyEquivalent: "w")))
+        app.closeScratch()
+        precondition(controller.window?.isVisible == false && app.session.count == count && app.document.revision == revision)
     }
 
     private func closeBuffer(at index: Int) {
@@ -1225,6 +1274,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(closeScratch) {
+            menuItem.title = aiSettings != nil && commandWindow() === aiSettings?.window ? "Close Window" : "Close Tab"
+        }
+        if let settings = aiSettings, commandWindow() === settings.window {
+            if menuItem.action == #selector(undoEdit) || menuItem.action == #selector(redoEdit) {
+                return (commandWindow()?.firstResponder as? NSTextView)?.isFieldEditor == true
+            }
+            return [#selector(showAISettings), #selector(showAbout), #selector(closeScratch), #selector(changeAppearance(_:))].contains(menuItem.action)
+        }
         if menuItem.action == #selector(changeLargeTextMode(_:)) {menuItem.state=menuItem.tag==largeTextChoice ? .on : .off}
         if menuItem.action == #selector(toggleLineNumbers) {menuItem.state=showLineNumbers ? .on : .off}
         if menuItem.action == #selector(toggleWrapLines) {menuItem.state=wrapLines ? .on : .off}
@@ -1308,11 +1366,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTe
         closingWindow = saveBeforeQuitting()
         return closingWindow
     }
+    func windowWillClose(_ notification: Notification) {
+        if notification.object as? NSWindow === window { aiSettings?.close() }
+    }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         (closingWindow || saveBeforeQuitting()) ? .terminateNow : .terminateCancel
     }
     func applicationWillTerminate(_ notification: Notification) {
         stopping=true
+        aiSettings?.shutdown()
         // AppKit terminates the process without guaranteeing Swift/Rust deinit.
         closeAllAgentAccess()
         syntaxWork?.cancel(); syntaxTimer?.invalidate()

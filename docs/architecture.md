@@ -3,7 +3,7 @@
 ## Shared engine, native interfaces
 
 ```text
-AppKit / Swift ── optional OpenAI adapter + Keychain (later, Mac only)
+AppKit / Swift ── optional OpenAI adapter + Keychain (Mac only)
        │
        └── small C ABI ──┐
                         ├── Rust engine ── documents / history / commands
