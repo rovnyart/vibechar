@@ -1,5 +1,7 @@
 name: CI
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -17,11 +19,11 @@ jobs:
           fetch-depth: 0
       - name: Check version and Conventional Commits
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 scripts/versioning.py current
-          if [[ -n "$BASE" ]]; then python3 scripts/versioning.py lint --base "$BASE" --head "$HEAD"; fi
+          if [[ -n "$BASE" && ! "$BASE" =~ ^0+$ ]]; then python3 scripts/versioning.py lint --base "$BASE" --head "$HEAD"; fi
   build:
     needs: conventions
     uses: ./.github/workflows/build.yml

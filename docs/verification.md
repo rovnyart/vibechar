@@ -1565,7 +1565,7 @@ untouched. Product versioning was not changed in this increment.
 
 Release preparation now has disposable Git fixtures for initial 1.0.0, default
 minor bumps, manual versions, breaking changes, changelog generation, pending
-version reuse, reruns, no-op pushes and Conventional Commit validation. Publication
+version reuse, reruns, explicit empty releases and Conventional Commit validation. Publication
 fixtures cover exact platform/revision/version matching, corrupt archives,
 inconsistent feeds, absent update signatures and immutable stable releases.
 
@@ -1582,3 +1582,8 @@ process, retained scratch recovery, both client versions, code signatures,
 notarization and the production feed/public key in the replacement. This fixture
 is guarded to run only on a disposable GitHub Mac with no existing user profile.
 Live publication and the integration result will be recorded after that run.
+
+Release publication is now manual-only at Art's request. Main pushes run CI;
+**Actions → Release → Run workflow** generates the changelog from Conventional
+Commits since the last stable tag and reserves the chosen version. The cancelled
+initial push-triggered run reserved 1.0.0 but did not publish it.

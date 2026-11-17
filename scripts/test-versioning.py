@@ -27,18 +27,18 @@ class VersionTests(unittest.TestCase):
         self.git('add','.');self.git('commit','--allow-empty','-qm',message)
 
     def first(self):
-        plan=prepare(self.root,None,set(),'minor','','100',automatic=True)
+        plan=prepare(self.root,None,set(),'minor','','100')
         self.git('tag','v1.0.0')
         return plan
 
-    def plan(self,run='101',bump='minor',exact='',automatic=True):
-        return prepare(self.root,Version(1,0,0),{'1.0.0'},bump,exact,run,automatic)
+    def plan(self,run='101',bump='minor',exact=''):
+        return prepare(self.root,Version(1,0,0),{'1.0.0'},bump,exact,run)
 
-    def test_first_is_one_and_keeps_curated_notes(self):
-        plan=prepare(self.root,None,set(),'minor','','100',automatic=True)
+    def test_first_is_one_and_generates_conventional_notes(self):
+        plan=prepare(self.root,None,set(),'minor','','100')
         self.assertEqual(plan['version'],'1.0.0')
         self.assertEqual(version(self.root),Version(1,0,0))
-        self.assertIn('Curated first release.',release_entry((self.root/'CHANGELOG.md').read_text(),Version(1,0,0)))
+        self.assertIn('initial editor',release_entry((self.root/'CHANGELOG.md').read_text(),Version(1,0,0)))
         self.assertEqual(self.git('show','-s','--format=%s'),'chore(release): 1.0.0 [skip ci]')
 
     def test_same_run_reuses_commit_and_does_not_double_bump(self):
@@ -55,7 +55,7 @@ class VersionTests(unittest.TestCase):
         notes=(self.root/'CHANGELOG.md').read_text()
         self.assertEqual(notes.count('## [1.1.0]'),1)
         self.assertIn('repair that tool',notes)
-        self.assertIn('Curated first release.',notes)
+        self.assertIn('initial editor',notes)
 
     def test_ordinary_fix_uses_requested_default_minor(self):
         self.first();self.commit('fix: correct a label')
@@ -63,32 +63,32 @@ class VersionTests(unittest.TestCase):
 
     def test_manual_patch_and_exact(self):
         self.first();self.commit('fix: correct a label')
-        self.assertEqual(self.plan(bump='exact',exact='v1.4.2',automatic=False)['version'],'1.4.2')
+        self.assertEqual(self.plan(bump='exact',exact='v1.4.2')['version'],'1.4.2')
 
     def test_patch(self):
         self.first();self.commit('fix: correct a label')
-        self.assertEqual(self.plan(bump='patch',automatic=False)['version'],'1.0.1')
+        self.assertEqual(self.plan(bump='patch')['version'],'1.0.1')
 
     def test_major(self):
         self.first();self.commit('feat: improve editor')
-        self.assertEqual(self.plan(bump='major',automatic=False)['version'],'2.0.0')
+        self.assertEqual(self.plan(bump='major')['version'],'2.0.0')
 
     def test_breaking_change_gets_major(self):
         self.first();self.commit('feat(core)!: change format')
-        self.assertEqual(self.plan()['version'],'2.0.0')
+        self.assertEqual(self.plan(bump='major')['version'],'2.0.0')
 
     def test_breaking_footer_refuses_manual_minor(self):
         self.first();self.commit('fix(core): change format\n\nBREAKING-CHANGE: older readers need migration')
         before=(self.root/'Cargo.toml').read_bytes()
         with self.assertRaisesRegex(ValueError,'Breaking changes'):
-            self.plan(automatic=False)
+            self.plan()
         self.assertEqual((self.root/'Cargo.toml').read_bytes(),before)
 
-    def test_published_run_is_idempotent_and_automatic_empty_push_is_skipped(self):
+    def test_published_run_is_idempotent_and_manual_empty_release_is_allowed(self):
         self.first()
-        same=prepare(self.root,Version(1,0,0),{'1.0.0'},'minor','','100',True)
+        same=prepare(self.root,Version(1,0,0),{'1.0.0'},'minor','','100')
         self.assertFalse(same['release'])
-        self.assertFalse(self.plan()['release'])
+        self.assertEqual(self.plan()['version'],'1.1.0')
 
     def test_lint_reports_bad_subject(self):
         base=self.git('rev-parse','HEAD');self.commit('random commit')
@@ -96,7 +96,7 @@ class VersionTests(unittest.TestCase):
 
     def test_version_does_not_go_backwards(self):
         self.first();self.commit('feat: improve editor')
-        with self.assertRaisesRegex(ValueError,'increase'): self.plan(bump='exact',exact='1.0.0',automatic=False)
+        with self.assertRaisesRegex(ValueError,'increase'): self.plan(bump='exact',exact='1.0.0')
 
     def test_stable_version_parser(self):
         for invalid in ['1.0','01.2.3','1.2.3-beta','1.2.3\n','1.2.3; echo bad']:

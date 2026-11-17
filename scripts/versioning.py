@@ -123,7 +123,7 @@ def write_changelog(root, target, body):
     path.write_text(text[:position].rstrip()+'\n\n'+entry+text[position:].lstrip())
 
 
-def prepare(root, latest, published, bump, exact, run_id, automatic=False, validation_base=None):
+def prepare(root, latest, published, bump, exact, run_id):
     if not re.fullmatch(r'\d+',run_id): raise ValueError('Release run ID must be numeric.')
     if git(root,'status','--porcelain','--untracked-files=no'): raise ValueError('Release preparation needs a clean checkout.')
     previous = git(root,'log','--format=%H','-1','--grep',f'^Release-Run: {run_id}$')
@@ -135,12 +135,8 @@ def prepare(root, latest, published, bump, exact, run_id, automatic=False, valid
     current = version(root)
     base = 'v'+str(latest) if latest else None
     changes = commits(root,base)
-    if latest:
-        lint(root,base)
-        if automatic and not changes:
-            return dict(version=str(latest),tag='v'+str(latest),revision=git(root,'rev-parse','HEAD'),release=False)
-    elif validation_base and set(validation_base)!={'0'}:
-        lint(root,validation_base)
+    if latest: lint(root,base)
+    else: changes=[c for c in changes if HEADER.fullmatch(c['subject']) and c['kind'] in TYPES]
     breaking = any(c['breaking'] for c in changes)
     if latest is None:
         target = Version(1,0,0)
@@ -155,13 +151,11 @@ def prepare(root, latest, published, bump, exact, run_id, automatic=False, valid
             target = Version.parse(exact)
         else:
             if exact: raise ValueError('Choose exact to supply an explicit version.')
-            target = latest.bump('major' if automatic and breaking else bump)
+            target = latest.bump(bump)
         if target<=latest: raise ValueError('The release version must increase.')
         if breaking and target.major<=latest.major: raise ValueError('Breaking changes require a major version.')
-    path=root/'CHANGELOG.md'
-    curated = release_entry(path.read_text(),target) if latest is None and path.exists() else None
     set_version(root,target)
-    write_changelog(root,target,curated or changelog_entry(target,changes))
+    write_changelog(root,target,changelog_entry(target,changes))
     subprocess.run(['git','-C',str(root),'add','Cargo.toml','Cargo.lock','CHANGELOG.md'],check=True)
     subprocess.run(['git','-C',str(root),'commit','--allow-empty','-m',f'chore(release): {target} [skip ci]','-m',f'Release-Run: {run_id}'],check=True,capture_output=True)
     return dict(version=str(target),tag='v'+str(target),revision=git(root,'rev-parse','HEAD'),release=True)
@@ -174,7 +168,6 @@ def main():
     check=sub.add_parser('lint');check.add_argument('--base',required=True);check.add_argument('--head',default='HEAD')
     release=sub.add_parser('prepare');release.add_argument('--bump',choices=['patch','minor','major','exact'],default='minor')
     release.add_argument('--version',default='');release.add_argument('--run-id',required=True)
-    release.add_argument('--automatic',action='store_true');release.add_argument('--validation-base')
     release.add_argument('--output',default='dist/release-plan.json')
     args=parser.parse_args()
     if args.command=='current': print(version());return
@@ -186,7 +179,7 @@ def main():
         try: published.add(str(Version.parse(item['tagName'])))
         except ValueError: pass  # Historical build-<sha> archives are not SemVer releases.
     latest=max((Version.parse(x) for x in published),default=None)
-    plan=prepare(ROOT,latest,published,args.bump,args.version,args.run_id,args.automatic,args.validation_base)
+    plan=prepare(ROOT,latest,published,args.bump,args.version,args.run_id)
     path=ROOT/args.output;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(plan,indent=2)+'\n')
     print(json.dumps(plan))
 

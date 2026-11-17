@@ -1,7 +1,5 @@
 name: Release
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
@@ -52,8 +50,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BUMP: ${{ inputs.bump || 'minor' }}
           EXACT_VERSION: ${{ inputs.version }}
-          AUTOMATIC: ${{ github.event_name == 'push' }}
-          BEFORE: ${{ github.event.before }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -61,8 +57,6 @@ jobs:
             git fetch origin main --tags
             git checkout -B main origin/main
             arguments=(--bump "$BUMP" --version "$EXACT_VERSION" --run-id "$GITHUB_RUN_ID")
-            if [[ "$AUTOMATIC" == true ]]; then arguments+=(--automatic); fi
-            if [[ -n "$BEFORE" ]]; then arguments+=(--validation-base "$BEFORE"); fi
             python3 scripts/versioning.py prepare "${arguments[@]}"
             if git push origin HEAD:main; then
               python3 - <<'PYOUTPUT' >> "$GITHUB_OUTPUT"

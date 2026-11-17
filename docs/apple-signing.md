@@ -97,8 +97,9 @@ under **Membership details**. The value must belong to the certificate's team.
 ### 4. Run the first automated signed release
 
 Open [Actions → Release](https://github.com/rovnyart/vibechar/actions/workflows/release.yml),
-choose **Run workflow**, select `main` and run it. Subsequent pushes to `main`
-build, test, sign, notarize and publish automatically.
+choose **Run workflow**, select `main` and run it. Future pushes to `main` run checks only. Each publication is explicitly started
+through this manual workflow; changelog generation, builds, signing and publishing
+then run automatically.
 
 GitHub uses a disposable keychain on each Mac runner. The Sparkle framework and
 its nested installer tools, then both client helpers, are signed before the app.

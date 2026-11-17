@@ -9,13 +9,19 @@ workflow updates it, all four local packages in `Cargo.lock`, and `CHANGELOG.md`
 The Mac bundle, About window, `vc --version`, `vibechar --version` and artifact
 metadata use that same version.
 
-## Automatic releases
+## Manual releases, automatic changelog
 
-A normal push to `main` runs [Release](https://github.com/rovnyart/vibechar/actions/workflows/release.yml).
-As requested for this project, the default is a **minor** bump, including pushes
-that only contain fixes or documentation. Breaking changes automatically use a
-major bump. Release jobs are serialized; if several pushes arrive during a build,
-the latest pending run includes the accumulated changes on main.
+Ordinary pushes to `main` run **CI checks only**. They do not change the version
+or publish anything. To release, explicitly run
+[Release](https://github.com/rovnyart/vibechar/actions/workflows/release.yml) with a
+patch/minor/major bump or an exact version. The default selection is minor.
+Release jobs are serialized; version calculation uses the current main checkout.
+
+The manual trigger automatically collects Conventional Commits since the last
+stable version, groups them and commits `CHANGELOG.md` together with the new
+version. The same notes appear in GitHub Releases. Initial 1.0.0 collects the
+project's Conventional Commit history; the legacy non-conventional initial
+commit and generated release commits are excluded.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
@@ -29,7 +35,7 @@ feat(api)!: change the command format
 Supported types: `feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `test`,
 `build`, `ci`, `chore`, `revert`. A `!` or `BREAKING CHANGE:` footer marks an
 incompatible change. The workflow groups changes into the changelog and release
-notes, with links to commits. Pull requests check commit conventions as well as
+notes, with links to commits. Main pushes and pull requests check commit conventions as well as
 building both clients without signing credentials.
 
 GitHub first commits `chore(release): VERSION [skip ci]` to main, then tests and
@@ -52,8 +58,8 @@ use it when you want validation without publishing or incrementing a version.
 
 A failed build leaves its reserved version on main but publishes no new stable
 release. Rerun the failed workflow; it reuses the same version and source commit.
-If a code fix is necessary, commit it normally: the next run reuses the pending
-version and refreshes its changelog. It does not skip another minor number.
+If a code fix is necessary, commit it normally and run Release again: it reuses the pending
+version and refreshes its changelog. It does not skip another version number.
 
 Already-published stable versions are immutable. A retry for the same source
 preserves the existing assets; a different source cannot replace that version.
